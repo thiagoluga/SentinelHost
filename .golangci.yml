@@ -32,6 +32,12 @@ linters-settings:
       # subprocesso. Os argumentos sao montados em internal/exec, que resolve
       # o binario e nunca passa por shell.
       - G204
+      # G501: o MD5 e obrigatorio por INTEROPERABILIDADE, nao por escolha. A
+      # API de checksums do WordPress.org publica MD5, e a comparacao tem que
+      # usar o mesmo algoritmo que a fonte. Nao ha uso criptografico: o MD5
+      # so serve para casar com o valor publicado, e o hash que entra no
+      # esquema normalizado e SHA-256, calculado na mesma leitura do arquivo.
+      - G501
   revive:
     rules:
       - name: exported
