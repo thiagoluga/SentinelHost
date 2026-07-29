@@ -38,6 +38,9 @@ linters-settings:
       # so serve para casar com o valor publicado, e o hash que entra no
       # esquema normalizado e SHA-256, calculado na mesma leitura do arquivo.
       - G501
+      # G401 pelo mesmo motivo: e a CHAMADA do md5.New() que casa com o valor
+      # publicado pela API. Sem ela nao ha como comparar com a fonte oficial.
+      - G401
   revive:
     rules:
       - name: exported
