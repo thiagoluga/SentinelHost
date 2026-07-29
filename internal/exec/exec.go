@@ -1,10 +1,10 @@
-// Package exec executa engines externos como subprocessos com os limites de
-// recursos da constituicao aplicados.
+// Package exec runs external engines as subprocesses with the constitution's
+// resource limits applied.
 //
-// Este pacote e o Principio IV em codigo: nice, ionice, timeout por engine,
-// pausa entre lotes e captura da saida bruta passam todos por aqui. Nenhum
-// adaptador executa processo por conta propria — se executasse, os limites
-// seriam opcionais na pratica.
+// This package is Principle IV in code: nice, ionice, per-engine timeout, the
+// pause between batches and the capture of raw output all go through here. No
+// adapter spawns a process on its own — if it did, the limits would be optional
+// in practice.
 package exec
 
 import (
@@ -21,34 +21,34 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
 
-// Limits sao os limites aplicados a cada subprocesso.
+// Limits are the limits applied to every subprocess.
 type Limits struct {
-	// Nice de 0 a 19. 19 e a menor prioridade.
+	// Nice from 0 to 19. 19 is the lowest priority.
 	Nice int
 	// IoniceClass 3 = idle.
 	IoniceClass int
-	// Timeout de UMA execucao.
+	// Timeout of ONE execution.
 	Timeout time.Duration
-	// MaxOutputBytes limita a captura de stdout/stderr. Um engine em loop
-	// pode despejar gigabytes; sem limite, o orquestrador que promete caber
-	// em 128 MB morre por OOM antes de conseguir reportar o problema.
+	// MaxOutputBytes caps the capture of stdout/stderr. An engine stuck in a
+	// loop can dump gigabytes; with no cap, the orchestrator that promises to
+	// fit in 128 MB dies of OOM before it can report the problem.
 	MaxOutputBytes int64
 }
 
-// DefaultMaxOutput e o teto de captura por fluxo.
+// DefaultMaxOutput is the capture ceiling per stream.
 const DefaultMaxOutput int64 = 32 << 20 // 32 MiB
 
-// Runner executa comandos com limites e arquiva a saida bruta.
+// Runner executes commands with limits and archives the raw output.
 type Runner struct {
 	limits Limits
-	// rawDir e a raiz do arquivamento de saida bruta. Vazio desliga o
-	// arquivamento (usado nos testes).
+	// rawDir is the root of the raw-output archive. Empty disables archiving
+	// (used in tests).
 	rawDir string
-	// lookPath e injetavel para teste; em producao e exec.LookPath.
+	// lookPath is injectable for tests; in production it is exec.LookPath.
 	lookPath func(string) (string, error)
 }
 
-// New cria um Runner.
+// New creates a Runner.
 func New(limits Limits, rawDir string) *Runner {
 	if limits.MaxOutputBytes <= 0 {
 		limits.MaxOutputBytes = DefaultMaxOutput
@@ -56,63 +56,63 @@ func New(limits Limits, rawDir string) *Runner {
 	return &Runner{limits: limits, rawDir: rawDir, lookPath: exec.LookPath}
 }
 
-// Command descreve uma execucao de engine.
+// Command describes one engine execution.
 type Command struct {
-	// Engine e o slug, usado para nomear a saida bruta arquivada.
+	// Engine is the slug, used to name the archived raw output.
 	Engine string
-	// ScanID agrupa as saidas brutas de um ciclo.
+	// ScanID groups a cycle's raw outputs together.
 	ScanID string
-	// Path e o binario. Precisa existir; o Runner nunca passa por shell.
+	// Path is the binary. It has to exist; the Runner never goes through a shell.
 	Path string
 	Args []string
 	Dir  string
-	// Env extra. Herda o ambiente atual.
+	// Env extras. Inherits the current environment.
 	Env []string
-	// Stdin opcional (lista de arquivos por linha, por exemplo).
+	// Stdin, optional (a newline-separated file list, for example).
 	Stdin []byte
-	// Timeout sobrepoe o limite do Runner quando > 0.
+	// Timeout overrides the Runner's limit when > 0.
 	Timeout time.Duration
 }
 
-// Result e o desfecho da execucao.
+// Result is the outcome of the execution.
 type Result struct {
 	Stdout   []byte
 	Stderr   []byte
 	ExitCode int
 	Duration time.Duration
 	MaxRSSMB int
-	// Status ja traduzido para o vocabulario do esquema: e o que determina se
-	// o engine vota ou se abstem.
+	// Status already translated into the schema's vocabulary: it is what decides
+	// whether the engine votes or abstains.
 	Status schema.ScanStatus
-	// Err e o motivo real quando Status != completed.
+	// Err is the real reason when Status != completed.
 	Err error
-	// RawRef aponta para a saida bruta arquivada.
+	// RawRef points at the archived raw output.
 	RawRef string
-	// Truncated indica que a saida bateu no teto de captura.
+	// Truncated indicates the output hit the capture ceiling.
 	Truncated bool
-	// Wrapped mostra o comando final, com nice/ionice, para o painel e o
-	// comando doctor.
+	// Wrapped shows the final command, with nice/ionice, for the panel and the
+	// doctor command.
 	Wrapped []string
 }
 
-// Abstains responde se este resultado deve virar abstencao.
+// Abstains answers whether this result should become an abstention.
 func (r Result) Abstains() bool { return !r.Status.CountsAsVote() }
 
-// ErrBinaryNotFound indica engine indisponivel neste ambiente.
-var ErrBinaryNotFound = errors.New("binario nao encontrado")
+// ErrBinaryNotFound signals an engine unavailable in this environment.
+var ErrBinaryNotFound = errors.New("binary not found")
 
-// Run executa o comando aplicando os limites.
+// Run executes the command with the limits applied.
 //
-// Nunca devolve erro de execucao como panico ou como falha do ciclo: o
-// desfecho vem em Result.Status, e cabe ao chamador transformar isso em
-// abstencao (Principio VI).
+// It never surfaces an execution error as a panic or as a cycle failure: the
+// outcome comes back in Result.Status, and it is up to the caller to turn that
+// into an abstention (Principle VI).
 func (r *Runner) Run(ctx context.Context, c Command) Result {
 	started := time.Now()
 	res := Result{Status: schema.StatusCompleted}
 
 	if c.Path == "" {
 		res.Status = schema.StatusFailed
-		res.Err = fmt.Errorf("%w: caminho vazio para o engine %s", ErrBinaryNotFound, c.Engine)
+		res.Err = fmt.Errorf("%w: empty path for engine %s", ErrBinaryNotFound, c.Engine)
 		return res
 	}
 	bin, err := r.resolve(c.Path)
@@ -136,7 +136,7 @@ func (r *Runner) Run(ctx context.Context, c Command) Result {
 	name, args := r.wrap(bin, c.Args)
 	res.Wrapped = append([]string{name}, args...)
 
-	cmd := exec.CommandContext(runCtx, name, args...) // argumentos montados pelo adaptador, nunca por shell
+	cmd := exec.CommandContext(runCtx, name, args...) // args built by the adapter, never via a shell
 	cmd.Dir = c.Dir
 	cmd.Env = append(os.Environ(), c.Env...)
 	if len(c.Stdin) > 0 {
@@ -148,9 +148,9 @@ func (r *Runner) Run(ctx context.Context, c Command) Result {
 	cmd.Stdout = outBuf
 	cmd.Stderr = errBuf
 
-	// Grupo de processo proprio: engines em PHP e shell criam filhos, e matar
-	// so o pai deixaria orfaos consumindo CPU da conta do usuario depois do
-	// timeout — exatamente o que causa suspensao por abuso de recursos.
+	// Its own process group: PHP and shell engines spawn children, and killing
+	// only the parent would leave orphans burning the user's account CPU after
+	// the timeout — exactly what gets an account suspended for resource abuse.
 	setProcessGroup(cmd)
 
 	runErr := cmd.Run()
@@ -169,21 +169,21 @@ func (r *Runner) Run(ctx context.Context, c Command) Result {
 		res.Status = schema.StatusCompleted
 	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
 		res.Status = schema.StatusTimeout
-		res.Err = fmt.Errorf("engine %s excedeu o timeout de %s", c.Engine, timeout)
+		res.Err = fmt.Errorf("engine %s exceeded the %s timeout", c.Engine, timeout)
 	case errors.Is(ctx.Err(), context.Canceled):
 		res.Status = schema.StatusKilled
-		res.Err = fmt.Errorf("engine %s cancelado: %w", c.Engine, ctx.Err())
+		res.Err = fmt.Errorf("engine %s cancelled: %w", c.Engine, ctx.Err())
 	default:
-		// Muitos scanners usam exit code != 0 para dizer "achei coisa". O
-		// adaptador decide o que cada codigo significa; aqui so registramos.
+		// Many scanners use a non-zero exit code to mean "I found something".
+		// The adapter decides what each code means; here we only record it.
 		res.Status = schema.StatusCompleted
 		res.Err = runErr
 	}
 
 	if ref, err := r.archive(c, res); err != nil {
-		// Falhar em arquivar nao invalida o scan, mas o usuario precisa
-		// saber que perdeu a trilha de auditoria daquele ciclo.
-		res.Err = errors.Join(res.Err, fmt.Errorf("arquivando saida bruta: %w", err))
+		// Failing to archive does not invalidate the scan, but the user needs to
+		// know they lost that cycle's audit trail.
+		res.Err = errors.Join(res.Err, fmt.Errorf("archiving raw output: %w", err))
 	} else {
 		res.RawRef = ref
 	}
@@ -191,7 +191,7 @@ func (r *Runner) Run(ctx context.Context, c Command) Result {
 	return res
 }
 
-// resolve encontra o binario, aceitando caminho absoluto ou nome no PATH.
+// resolve finds the binary, accepting an absolute path or a name on PATH.
 func (r *Runner) resolve(path string) (string, error) {
 	if strings.ContainsAny(path, `/\`) {
 		info, err := os.Stat(path)
@@ -199,14 +199,14 @@ func (r *Runner) resolve(path string) (string, error) {
 			return "", err
 		}
 		if info.IsDir() {
-			return "", fmt.Errorf("%s e um diretorio", path)
+			return "", fmt.Errorf("%s is a directory", path)
 		}
 		return path, nil
 	}
 	return r.lookPath(path)
 }
 
-// cappedBuffer acumula ate limit bytes e descarta o resto.
+// cappedBuffer accumulates up to limit bytes and discards the rest.
 type cappedBuffer struct {
 	buf       bytes.Buffer
 	limit     int64
@@ -215,9 +215,9 @@ type cappedBuffer struct {
 }
 
 func (c *cappedBuffer) Write(p []byte) (int, error) {
-	// Sempre reporta ter escrito tudo: devolver n < len(p) faria o os/exec
-	// abortar o processo com ErrShortWrite, e a saida ja capturada ate ali
-	// seria perdida junto.
+	// Always reports having written everything: returning n < len(p) would make
+	// os/exec abort the process with ErrShortWrite, and the output captured so
+	// far would be lost along with it.
 	if c.written >= c.limit {
 		c.truncated = true
 		return len(p), nil
@@ -236,14 +236,14 @@ func (c *cappedBuffer) Write(p []byte) (int, error) {
 
 func (c *cappedBuffer) Bytes() []byte { return c.buf.Bytes() }
 
-// archive grava a saida bruta para auditoria e reprocessamento por Parse().
+// archive writes the raw output for auditing and for reprocessing via Parse().
 func (r *Runner) archive(c Command, res Result) (string, error) {
 	if r.rawDir == "" || c.Engine == "" {
 		return "", nil
 	}
 	scanID := c.ScanID
 	if scanID == "" {
-		scanID = "avulso"
+		scanID = "adhoc"
 	}
 	dir := filepath.Join(r.rawDir, sanitizeName(scanID))
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -263,8 +263,8 @@ func (r *Runner) archive(c Command, res Result) (string, error) {
 	return stdout, nil
 }
 
-// sanitizeName impede que um slug ou scan_id inesperado escape do diretorio de
-// arquivamento.
+// sanitizeName stops an unexpected slug or scan_id from escaping the archive
+// directory.
 func sanitizeName(s string) string {
 	var b strings.Builder
 	for _, r := range s {
@@ -278,7 +278,7 @@ func sanitizeName(s string) string {
 	}
 	out := strings.Trim(b.String(), ".")
 	if out == "" {
-		return "desconhecido"
+		return "unknown"
 	}
 	return out
 }

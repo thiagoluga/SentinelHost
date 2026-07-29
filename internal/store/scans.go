@@ -11,7 +11,7 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
 
-// ScanRecord e o registro de um ciclo completo.
+// ScanRecord is the record of a complete cycle.
 type ScanRecord struct {
 	ScanID          string
 	Mode            schema.ScanMode
@@ -24,15 +24,15 @@ type ScanRecord struct {
 	Summary         map[string]any
 }
 
-// ScanRunning e o status de um ciclo que comecou e ainda nao terminou.
+// ScanRunning is the status of a cycle that started and has not finished.
 //
-// Nao e um schema.ScanStatus de proposito: aquele enum descreve o desfecho da
-// execucao de um ENGINE, e "em andamento" nao e desfecho. Um ciclo que a
-// hospedagem matou no meio fica com este status e sem finished_at — que e
-// exatamente o sinal que o watchdog procura para saber que precisa retomar.
+// Deliberately not a schema.ScanStatus: that enum describes the outcome of an
+// ENGINE execution, and "in progress" is not an outcome. A cycle the host killed
+// mid-run keeps this status with no finished_at — which is exactly the signal the
+// watchdog looks for to know it has to recover.
 const ScanRunning = "running"
 
-// StartScan registra o inicio de um ciclo.
+// StartScan records the beginning of a cycle.
 func (s *Store) StartScan(ctx context.Context, rec ScanRecord) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO scans (scan_id, mode, roots, started_at, status, files_considered, files_scanned)
@@ -40,19 +40,20 @@ func (s *Store) StartScan(ctx context.Context, rec ScanRecord) error {
 		rec.ScanID, string(rec.Mode), strings.Join(rec.Roots, "\n"),
 		formatTime(orNow(rec.StartedAt)), ScanRunning, 0, 0)
 	if err != nil {
-		return fmt.Errorf("registrando inicio do ciclo %s: %w", rec.ScanID, err)
+		return fmt.Errorf("recording the start of cycle %s: %w", rec.ScanID, err)
 	}
 	return nil
 }
 
-// InterruptedScans devolve ciclos que comecaram e nunca terminaram. O watchdog
-// usa isto para retomar do ultimo estado sem corromper baseline nem quarentena.
+// InterruptedScans returns cycles that started and never finished. The watchdog
+// uses this to resume from the last state without corrupting the baseline or the
+// quarantine.
 func (s *Store) InterruptedScans(ctx context.Context) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT scan_id FROM scans WHERE status = ? AND finished_at IS NULL ORDER BY started_at`,
 		ScanRunning)
 	if err != nil {
-		return nil, fmt.Errorf("buscando ciclos interrompidos: %w", err)
+		return nil, fmt.Errorf("looking for interrupted cycles: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -67,13 +68,13 @@ func (s *Store) InterruptedScans(ctx context.Context) ([]string, error) {
 	return out, rows.Err()
 }
 
-// FinishScan fecha o ciclo com o desfecho real.
+// FinishScan closes the cycle with its real outcome.
 func (s *Store) FinishScan(ctx context.Context, rec ScanRecord) error {
 	summary := "{}"
 	if rec.Summary != nil {
 		b, err := json.Marshal(rec.Summary)
 		if err != nil {
-			return fmt.Errorf("serializando resumo do ciclo: %w", err)
+			return fmt.Errorf("serializing the cycle summary: %w", err)
 		}
 		summary = string(b)
 	}
@@ -84,20 +85,20 @@ func (s *Store) FinishScan(ctx context.Context, rec ScanRecord) error {
 		formatTime(orNow(rec.FinishedAt)), string(rec.Status),
 		rec.FilesConsidered, rec.FilesScanned, summary, rec.ScanID)
 	if err != nil {
-		return fmt.Errorf("fechando ciclo %s: %w", rec.ScanID, err)
+		return fmt.Errorf("closing cycle %s: %w", rec.ScanID, err)
 	}
 	return checkAffected(res, rec.ScanID)
 }
 
-// SaveScanReport arquiva o relatorio de um engine.
+// SaveScanReport archives one engine's report.
 //
-// Relatorios de falha sao gravados com o mesmo cuidado que os de sucesso: o
-// painel precisa mostrar POR QUE um engine nao contribuiu num ciclo, senao a
-// degradacao de cobertura fica invisivel.
+// Failure reports are stored with the same care as successful ones: the panel
+// needs to show WHY an engine did not contribute to a cycle, otherwise the
+// coverage degradation stays invisible.
 func (s *Store) SaveScanReport(ctx context.Context, r schema.ScanReport) error {
 	blob, err := json.Marshal(r)
 	if err != nil {
-		return fmt.Errorf("serializando relatorio de %s: %w", r.Engine, err)
+		return fmt.Errorf("serializing the report of %s: %w", r.Engine, err)
 	}
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO scan_reports (
@@ -108,17 +109,17 @@ func (s *Store) SaveScanReport(ctx context.Context, r schema.ScanReport) error {
 		nullTime(r.StartedAt), nullTime(r.FinishedAt), r.ResourceUsage.WallSeconds,
 		r.ResourceUsage.MaxRSSMB, len(r.Findings), nullString(r.RawRef), string(blob))
 	if err != nil {
-		return fmt.Errorf("gravando relatorio de %s: %w", r.Engine, err)
+		return fmt.Errorf("writing the report of %s: %w", r.Engine, err)
 	}
 	return nil
 }
 
-// ListScanReports devolve os relatorios de um ciclo.
+// ListScanReports returns a cycle's reports.
 func (s *Store) ListScanReports(ctx context.Context, scanID string) ([]schema.ScanReport, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT report_json FROM scan_reports WHERE scan_id = ? ORDER BY id`, scanID)
 	if err != nil {
-		return nil, fmt.Errorf("listando relatorios do ciclo %s: %w", scanID, err)
+		return nil, fmt.Errorf("listing the reports of cycle %s: %w", scanID, err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -130,18 +131,18 @@ func (s *Store) ListScanReports(ctx context.Context, scanID string) ([]schema.Sc
 		}
 		var r schema.ScanReport
 		if err := json.Unmarshal([]byte(blob), &r); err != nil {
-			return nil, fmt.Errorf("relatorio do ciclo %s corrompido: %w", scanID, err)
+			return nil, fmt.Errorf("the report of cycle %s is corrupt: %w", scanID, err)
 		}
 		out = append(out, r)
 	}
 	return out, rows.Err()
 }
 
-// SaveFinding arquiva um achado individual.
+// SaveFinding archives one individual finding.
 func (s *Store) SaveFinding(ctx context.Context, f schema.Finding) error {
 	blob, err := json.Marshal(f)
 	if err != nil {
-		return fmt.Errorf("serializando achado: %w", err)
+		return fmt.Errorf("serializing the finding: %w", err)
 	}
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO findings (
@@ -153,18 +154,18 @@ func (s *Store) SaveFinding(ctx context.Context, f schema.Finding) error {
 		string(f.Category), string(f.Severity), string(f.Confidence),
 		nullString(f.MatchedContent), f.MatchedOffset, formatTime(f.DetectedAt), string(blob))
 	if err != nil {
-		return fmt.Errorf("gravando achado %s: %w", f.ID, err)
+		return fmt.Errorf("writing finding %s: %w", f.ID, err)
 	}
 	return nil
 }
 
-// FindingsForHash devolve os achados de todos os engines sobre um arquivo.
-// E o que o painel usa para responder "por que este arquivo foi apontado?".
+// FindingsForHash returns every engine's findings about one file. It is what the
+// panel uses to answer "why was this file flagged?".
 func (s *Store) FindingsForHash(ctx context.Context, sha string) ([]schema.Finding, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT finding_json FROM findings WHERE file_sha256 = ? ORDER BY detected_at DESC`, sha)
 	if err != nil {
-		return nil, fmt.Errorf("buscando achados de %s: %w", sha, err)
+		return nil, fmt.Errorf("looking for findings of %s: %w", sha, err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -176,14 +177,14 @@ func (s *Store) FindingsForHash(ctx context.Context, sha string) ([]schema.Findi
 		}
 		var f schema.Finding
 		if err := json.Unmarshal([]byte(blob), &f); err != nil {
-			return nil, fmt.Errorf("achado corrompido: %w", err)
+			return nil, fmt.Errorf("corrupt finding: %w", err)
 		}
 		out = append(out, f)
 	}
 	return out, rows.Err()
 }
 
-// LastScan devolve o ciclo mais recente.
+// LastScan returns the most recent cycle.
 func (s *Store) LastScan(ctx context.Context) (ScanRecord, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT scan_id, mode, roots, started_at, finished_at, status,

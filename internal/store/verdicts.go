@@ -10,26 +10,26 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
 
-// ErrNotFound indica registro inexistente.
-var ErrNotFound = errors.New("registro nao encontrado")
+// ErrNotFound signals a record that does not exist.
+var ErrNotFound = errors.New("record not found")
 
-// SaveVerdict grava ou atualiza um veredito.
+// SaveVerdict inserts or updates a verdict.
 //
-// A chave e o verdict_id, nao o hash: o mesmo arquivo pode receber vereditos
-// diferentes em ciclos diferentes, e apagar o anterior destruiria o historico
-// que o usuario usa para entender o que aconteceu com o site dele.
+// The key is verdict_id, not the hash: the same file can receive different
+// verdicts in different cycles, and deleting the previous one would destroy the
+// history the user relies on to understand what happened to their site.
 func (s *Store) SaveVerdict(ctx context.Context, v schema.Verdict) error {
 	if err := v.Validate(); err != nil {
-		return fmt.Errorf("veredito invalido nao pode ser persistido: %w", err)
+		return fmt.Errorf("an invalid verdict cannot be persisted: %w", err)
 	}
 
 	votes, err := json.Marshal(v.Votes)
 	if err != nil {
-		return fmt.Errorf("serializando votos: %w", err)
+		return fmt.Errorf("serializing votes: %w", err)
 	}
 	abst, err := json.Marshal(v.Abstentions)
 	if err != nil {
-		return fmt.Errorf("serializando abstencoes: %w", err)
+		return fmt.Errorf("serializing abstentions: %w", err)
 	}
 
 	_, err = s.db.ExecContext(ctx, `
@@ -60,38 +60,38 @@ func (s *Store) SaveVerdict(ctx context.Context, v schema.Verdict) error {
 		v.ScanID, formatTime(orNow(v.CreatedAt)), nowUTC(),
 	)
 	if err != nil {
-		return fmt.Errorf("gravando veredito %s: %w", v.VerdictID, err)
+		return fmt.Errorf("writing verdict %s: %w", v.VerdictID, err)
 	}
 	return nil
 }
 
-// GetVerdict busca um veredito por id.
+// GetVerdict looks a verdict up by id.
 func (s *Store) GetVerdict(ctx context.Context, id string) (schema.Verdict, error) {
 	row := s.db.QueryRowContext(ctx, verdictSelect+` WHERE verdict_id = ?`, id)
 	v, err := scanVerdict(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return v, fmt.Errorf("%w: veredito %s", ErrNotFound, id)
+		return v, fmt.Errorf("%w: verdict %s", ErrNotFound, id)
 	}
 	return v, err
 }
 
-// VerdictFilter parametriza a listagem do painel.
+// VerdictFilter parameterizes the panel's listing.
 type VerdictFilter struct {
-	// Levels vazio = todos.
+	// Levels empty = all.
 	Levels []schema.Level
-	// ScanID vazio = todos os ciclos.
+	// ScanID empty = every cycle.
 	ScanID string
-	// PendingOnly limita ao que ainda espera decisao humana.
+	// PendingOnly narrows to what still awaits a human decision.
 	PendingOnly bool
-	// IncludeClean: por padrao o nivel clean fica de fora das listagens, senao
-	// o painel mostraria milhares de arquivos limpos e esconderia os 3 que
-	// importam.
+	// IncludeClean: by default the clean level is left out of listings,
+	// otherwise the panel would show thousands of clean files and hide the 3
+	// that matter.
 	IncludeClean bool
 	Limit        int
 	Offset       int
 }
 
-// ListVerdicts lista vereditos, mais recentes primeiro.
+// ListVerdicts lists verdicts, most recent first.
 func (s *Store) ListVerdicts(ctx context.Context, f VerdictFilter) ([]schema.Verdict, error) {
 	q := verdictSelect + ` WHERE 1=1`
 	var args []any
@@ -110,8 +110,8 @@ func (s *Store) ListVerdicts(ctx context.Context, f VerdictFilter) ([]schema.Ver
 		args = append(args, f.ScanID)
 	}
 	if f.PendingOnly {
-		// "Pendente" e o que ninguem decidiu e a ferramenta nao resolveu
-		// sozinha.
+		// "Pending" means nobody has decided and the tool did not resolve it on
+		// its own.
 		q += ` AND acknowledged_by_user = 0 AND action_taken IN ('none','recommended','rescan_needed','failed')`
 	}
 
@@ -122,7 +122,7 @@ func (s *Store) ListVerdicts(ctx context.Context, f VerdictFilter) ([]schema.Ver
 
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("listando vereditos: %w", err)
+		return nil, fmt.Errorf("listing verdicts: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -137,21 +137,21 @@ func (s *Store) ListVerdicts(ctx context.Context, f VerdictFilter) ([]schema.Ver
 	return out, rows.Err()
 }
 
-// LatestVerdictForHash devolve o veredito mais recente de um arquivo.
+// LatestVerdictForHash returns a file's most recent verdict.
 func (s *Store) LatestVerdictForHash(ctx context.Context, sha string) (schema.Verdict, error) {
 	row := s.db.QueryRowContext(ctx,
 		verdictSelect+` WHERE file_sha256 = ? ORDER BY created_at DESC LIMIT 1`, sha)
 	v, err := scanVerdict(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return v, fmt.Errorf("%w: nenhum veredito para %s", ErrNotFound, sha)
+		return v, fmt.Errorf("%w: no verdict for %s", ErrNotFound, sha)
 	}
 	return v, err
 }
 
-// UpdateVerdictAction registra o desfecho da acao sobre o arquivo.
+// UpdateVerdictAction records the outcome of the action on the file.
 func (s *Store) UpdateVerdictAction(ctx context.Context, id string, action schema.ActionTaken, quarantineRef, actionErr string) error {
 	if !action.Valid() {
-		return fmt.Errorf("action_taken %q desconhecido", action)
+		return fmt.Errorf("unknown action_taken %q", action)
 	}
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE verdicts
@@ -159,24 +159,24 @@ func (s *Store) UpdateVerdictAction(ctx context.Context, id string, action schem
 		WHERE verdict_id = ?`,
 		string(action), nowUTC(), nullString(quarantineRef), nullString(actionErr), nowUTC(), id)
 	if err != nil {
-		return fmt.Errorf("atualizando acao do veredito %s: %w", id, err)
+		return fmt.Errorf("updating the action of verdict %s: %w", id, err)
 	}
 	return checkAffected(res, id)
 }
 
-// AcknowledgeVerdict marca que o usuario decidiu sobre este achado.
+// AcknowledgeVerdict marks that the user decided about this finding.
 func (s *Store) AcknowledgeVerdict(ctx context.Context, id string) error {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE verdicts SET acknowledged_by_user = 1, acknowledged_at = ?, updated_at = ?
 		WHERE verdict_id = ?`, nowUTC(), nowUTC(), id)
 	if err != nil {
-		return fmt.Errorf("marcando veredito %s como decidido: %w", id, err)
+		return fmt.Errorf("marking verdict %s as decided: %w", id, err)
 	}
 	return checkAffected(res, id)
 }
 
-// CountByLevel resume os vereditos de um ciclo por nivel (visao geral do
-// painel e payload de scan.completed).
+// CountByLevel summarizes a cycle's verdicts per level (the panel overview and
+// the scan.completed payload).
 func (s *Store) CountByLevel(ctx context.Context, scanID string) (map[schema.Level]int, error) {
 	q := `SELECT level, COUNT(*) FROM verdicts`
 	var args []any
@@ -188,7 +188,7 @@ func (s *Store) CountByLevel(ctx context.Context, scanID string) (map[schema.Lev
 
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("contando vereditos: %w", err)
+		return nil, fmt.Errorf("counting verdicts: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -204,7 +204,7 @@ func (s *Store) CountByLevel(ctx context.Context, scanID string) (map[schema.Lev
 	return out, rows.Err()
 }
 
-// SQL e scanning -------------------------------------------------------------
+// SQL and scanning -----------------------------------------------------------
 
 const verdictSelect = `
 	SELECT verdict_id, file_sha256, file_path, file_size, level, score,
@@ -247,11 +247,11 @@ func scanVerdict(r rowScanner) (schema.Verdict, error) {
 	v.CreatedAt = parseTime(createdAt)
 
 	if err := json.Unmarshal([]byte(votesJSON), &v.Votes); err != nil {
-		return v, fmt.Errorf("votos do veredito %s corrompidos: %w", v.VerdictID, err)
+		return v, fmt.Errorf("votes of verdict %s are corrupt: %w", v.VerdictID, err)
 	}
 	if abstJSON != "" && abstJSON != "null" {
 		if err := json.Unmarshal([]byte(abstJSON), &v.Abstentions); err != nil {
-			return v, fmt.Errorf("abstencoes do veredito %s corrompidas: %w", v.VerdictID, err)
+			return v, fmt.Errorf("abstentions of verdict %s are corrupt: %w", v.VerdictID, err)
 		}
 	}
 	return v, nil

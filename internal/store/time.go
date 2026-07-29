@@ -5,10 +5,10 @@ import (
 	"time"
 )
 
-// O banco guarda tempo como RFC3339 em UTC. Texto porque o painel, os
-// relatorios JSON e o proprio SQLite ficam legiveis; UTC porque a hospedagem
-// pode mudar de fuso sem avisar, e um historico de incidente com timestamps
-// ambiguos nao serve para investigar nada.
+// The database stores time as RFC3339 in UTC. Text because the panel, the JSON
+// reports and SQLite itself stay readable; UTC because the host can change time
+// zone without warning, and an incident history with ambiguous timestamps is
+// useless for investigating anything.
 
 func nowUTC() string {
 	return time.Now().UTC().Format(time.RFC3339Nano)
@@ -21,8 +21,8 @@ func formatTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
 }
 
-// nullTime converte tempo zero em NULL, para que "nunca aconteceu" e "aconteceu
-// no ano zero" nao virem a mesma coisa no banco.
+// nullTime turns a zero time into NULL, so that "never happened" and "happened
+// in year zero" do not become the same thing in the database.
 func nullTime(t time.Time) any {
 	if t.IsZero() {
 		return nil

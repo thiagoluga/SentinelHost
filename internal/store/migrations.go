@@ -6,11 +6,11 @@ import (
 	"fmt"
 )
 
-// migration e um passo versionado do esquema do banco.
+// migration is one versioned step of the database schema.
 //
-// Migracoes sao aplicadas em ordem e nunca editadas depois de publicadas: um
-// usuario que atualiza o binario precisa chegar exatamente no mesmo esquema de
-// quem instalou do zero.
+// Migrations are applied in order and never edited once published: a user who
+// upgrades the binary has to end up with exactly the same schema as someone
+// installing from scratch.
 type migration struct {
 	version int
 	name    string
@@ -20,9 +20,9 @@ type migration struct {
 var migrations = []migration{
 	{
 		version: 1,
-		name:    "esquema inicial",
+		name:    "initial schema",
 		stmts: []string{
-			// Ciclos de scan -------------------------------------------------
+			// Scan cycles ----------------------------------------------------
 			`CREATE TABLE scans (
 				scan_id           TEXT PRIMARY KEY,
 				mode              TEXT NOT NULL,
@@ -36,8 +36,8 @@ var migrations = []migration{
 			)`,
 			`CREATE INDEX idx_scans_started ON scans(started_at DESC)`,
 
-			// Relatorio por engine. Guardado inteiro para que o painel possa
-			// mostrar POR QUE um engine nao contribuiu num ciclo.
+			// One report per engine. Stored whole so the panel can show WHY an
+			// engine did not contribute to a cycle.
 			`CREATE TABLE scan_reports (
 				id            INTEGER PRIMARY KEY AUTOINCREMENT,
 				scan_id       TEXT NOT NULL REFERENCES scans(scan_id) ON DELETE CASCADE,
@@ -56,7 +56,7 @@ var migrations = []migration{
 			`CREATE INDEX idx_reports_scan ON scan_reports(scan_id)`,
 			`CREATE INDEX idx_reports_engine_status ON scan_reports(engine, status)`,
 
-			// Achados individuais --------------------------------------------
+			// Individual findings ---------------------------------------------
 			`CREATE TABLE findings (
 				id             TEXT PRIMARY KEY,
 				scan_id        TEXT NOT NULL,
@@ -73,12 +73,12 @@ var migrations = []migration{
 				detected_at    TEXT NOT NULL,
 				finding_json   TEXT NOT NULL
 			)`,
-			// O indice por sha256 e o que torna barata a deduplicacao entre
-			// engines — a operacao central do consenso.
+			// The sha256 index is what makes cross-engine deduplication cheap —
+			// the central operation of the consensus.
 			`CREATE INDEX idx_findings_sha ON findings(file_sha256)`,
 			`CREATE INDEX idx_findings_scan ON findings(scan_id)`,
 
-			// Vereditos consolidados ------------------------------------------
+			// Consolidated verdicts --------------------------------------------
 			`CREATE TABLE verdicts (
 				verdict_id      TEXT PRIMARY KEY,
 				file_sha256     TEXT NOT NULL,
@@ -102,12 +102,12 @@ var migrations = []migration{
 			`CREATE INDEX idx_verdicts_level ON verdicts(level, created_at DESC)`,
 			`CREATE INDEX idx_verdicts_sha ON verdicts(file_sha256)`,
 			`CREATE INDEX idx_verdicts_scan ON verdicts(scan_id)`,
-			`CREATE INDEX idx_verdicts_pendentes ON verdicts(acknowledged_by_user, level)`,
+			`CREATE INDEX idx_verdicts_pending ON verdicts(acknowledged_by_user, level)`,
 
-			// Cofre de quarentena ---------------------------------------------
-			// E a tabela que torna a acao reversivel. Sem ela, o arquivo no
-			// cofre e lixo indecifravel: nao se sabe de onde veio nem com que
-			// permissao voltar.
+			// Quarantine vault ---------------------------------------------------
+			// This is the table that makes the action reversible. Without it the
+			// file in the vault is undecipherable garbage: there is no way to
+			// know where it came from or what permissions to restore.
 			`CREATE TABLE quarantine_items (
 				ref             TEXT PRIMARY KEY,
 				verdict_id      TEXT,
@@ -129,7 +129,7 @@ var migrations = []migration{
 			`CREATE INDEX idx_quarantine_status ON quarantine_items(status, quarantined_at DESC)`,
 			`CREATE INDEX idx_quarantine_retention ON quarantine_items(status, retention_until)`,
 
-			// Entregas de alerta ----------------------------------------------
+			// Alert deliveries ----------------------------------------------------
 			`CREATE TABLE deliveries (
 				delivery_id   TEXT PRIMARY KEY,
 				channel       TEXT NOT NULL,
@@ -145,10 +145,10 @@ var migrations = []migration{
 				next_attempt_at TEXT,
 				delivered_at  TEXT
 			)`,
-			`CREATE INDEX idx_deliveries_pendentes ON deliveries(status, next_attempt_at)`,
+			`CREATE INDEX idx_deliveries_pending ON deliveries(status, next_attempt_at)`,
 			`CREATE INDEX idx_deliveries_target ON deliveries(channel, target, created_at DESC)`,
 
-			// Log estruturado (FR-015) -----------------------------------------
+			// Structured log (FR-015) ----------------------------------------------
 			`CREATE TABLE events (
 				id          INTEGER PRIMARY KEY AUTOINCREMENT,
 				ts          TEXT NOT NULL,
@@ -162,9 +162,9 @@ var migrations = []migration{
 			`CREATE INDEX idx_events_ts ON events(ts DESC)`,
 			`CREATE INDEX idx_events_category ON events(category, ts DESC)`,
 
-			// Configuracao interna que NAO pertence ao TOML: hash de senha do
-			// painel, id da instancia, segredo de sessao. Segredo derivado nao
-			// vai para arquivo legivel que o usuario edita.
+			// Internal configuration that does NOT belong in the TOML: the
+			// panel's password hash, the instance id, the session secret. A
+			// derived secret does not go into a readable file the user edits.
 			`CREATE TABLE settings (
 				key        TEXT PRIMARY KEY,
 				value      TEXT NOT NULL,
@@ -178,10 +178,10 @@ var migrations = []migration{
 				user_agent TEXT,
 				remote_ip  TEXT
 			)`,
-			`CREATE INDEX idx_sessions_expira ON sessions(expires_at)`,
+			`CREATE INDEX idx_sessions_expiry ON sessions(expires_at)`,
 
-			// Estado dos engines: ultima versao vista, data das assinaturas,
-			// motivo de indisponibilidade.
+			// Engine state: last version seen, signature date, reason for being
+			// unavailable.
 			`CREATE TABLE engine_state (
 				slug                  TEXT PRIMARY KEY,
 				available             INTEGER NOT NULL DEFAULT 0,
@@ -204,13 +204,13 @@ func (s *Store) migrate(ctx context.Context) error {
 		applied_at TEXT NOT NULL
 	)`)
 	if err != nil {
-		return fmt.Errorf("criando tabela de migracoes: %w", err)
+		return fmt.Errorf("creating the migrations table: %w", err)
 	}
 
 	var current int
 	if err := s.db.QueryRowContext(ctx,
 		`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&current); err != nil {
-		return fmt.Errorf("lendo versao do esquema: %w", err)
+		return fmt.Errorf("reading the schema version: %w", err)
 	}
 
 	for _, m := range migrations {
@@ -224,27 +224,27 @@ func (s *Store) migrate(ctx context.Context) error {
 	return nil
 }
 
-// applyMigration aplica um passo inteiro dentro de uma transacao: ou o esquema
-// avanca por completo, ou fica exatamente onde estava. Um banco meio migrado
-// seria pior que um banco antigo.
+// applyMigration applies a whole step inside a transaction: either the schema
+// moves forward completely, or it stays exactly where it was. A half-migrated
+// database would be worse than an old one.
 func (s *Store) applyMigration(ctx context.Context, m migration) error {
 	return s.tx(ctx, func(t *sql.Tx) error {
 		for i, stmt := range m.stmts {
 			if _, err := t.ExecContext(ctx, stmt); err != nil {
-				return fmt.Errorf("migracao %d (%s), comando %d: %w", m.version, m.name, i+1, err)
+				return fmt.Errorf("migration %d (%s), statement %d: %w", m.version, m.name, i+1, err)
 			}
 		}
 		_, err := t.ExecContext(ctx,
 			`INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)`,
 			m.version, m.name, nowUTC())
 		if err != nil {
-			return fmt.Errorf("registrando migracao %d: %w", m.version, err)
+			return fmt.Errorf("recording migration %d: %w", m.version, err)
 		}
 		return nil
 	})
 }
 
-// SchemaVersion devolve a versao aplicada do esquema do banco.
+// SchemaVersion returns the applied database schema version.
 func (s *Store) SchemaVersion(ctx context.Context) (int, error) {
 	var v int
 	err := s.db.QueryRowContext(ctx,

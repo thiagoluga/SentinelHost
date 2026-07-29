@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// DeliveryStatus e o estado de uma entrega de alerta.
+// DeliveryStatus is the state of an alert delivery.
 type DeliveryStatus string
 
 const (
@@ -17,15 +17,15 @@ const (
 	DeliveryFailed    DeliveryStatus = "failed"
 )
 
-// Delivery e uma tentativa de notificar o usuario.
+// Delivery is one attempt to notify the user.
 //
-// Persistida antes de sair: se o processo morrer no meio (a hospedagem mata
-// processos longos), a entrega pendente e retomada em vez de perdida.
+// Persisted before it goes out: if the process dies halfway (the host kills
+// long-running processes), the pending delivery is resumed instead of lost.
 type Delivery struct {
 	DeliveryID string
-	// Channel: "email" ou "webhook".
+	// Channel: "email" or "webhook".
 	Channel string
-	// Target: id do webhook ou lista de destinatarios.
+	// Target: the webhook id or the recipient list.
 	Target      string
 	Event       string
 	PayloadJSON string
@@ -40,7 +40,7 @@ type Delivery struct {
 	DeliveredAt   time.Time
 }
 
-// EnqueueDelivery registra uma entrega pendente.
+// EnqueueDelivery records a pending delivery.
 func (s *Store) EnqueueDelivery(ctx context.Context, d Delivery) error {
 	if d.Status == "" {
 		d.Status = DeliveryPending
@@ -53,16 +53,16 @@ func (s *Store) EnqueueDelivery(ctx context.Context, d Delivery) error {
 		d.DeliveryID, d.Channel, d.Target, d.Event, d.PayloadJSON, string(d.Status),
 		d.Attempts, formatTime(orNow(d.CreatedAt)), nullTime(d.NextAttemptAt))
 	if err != nil {
-		return fmt.Errorf("enfileirando entrega %s: %w", d.DeliveryID, err)
+		return fmt.Errorf("enqueueing delivery %s: %w", d.DeliveryID, err)
 	}
 	return nil
 }
 
-// RecordAttempt registra o resultado de uma tentativa.
+// RecordAttempt records the result of one attempt.
 //
-// O delivery_id e estavel entre tentativas (contrato de webhooks): o destino
-// usa esse id para idempotencia. Por isso a tentativa atualiza a linha em vez
-// de criar outra.
+// The delivery_id is stable across attempts (the webhook contract): the
+// destination uses that id for idempotency. That is why an attempt updates the
+// row instead of creating another one.
 func (s *Store) RecordAttempt(ctx context.Context, id string, ok bool, httpStatus int, errMsg string, nextAttempt time.Time) error {
 	status := DeliveryPending
 	var deliveredAt any
@@ -71,7 +71,7 @@ func (s *Store) RecordAttempt(ctx context.Context, id string, ok bool, httpStatu
 		status = DeliveryDelivered
 		deliveredAt = nowUTC()
 	case nextAttempt.IsZero():
-		// Sem proxima tentativa agendada, acabaram as chances.
+		// With no next attempt scheduled, the chances are used up.
 		status = DeliveryFailed
 	}
 
@@ -83,12 +83,12 @@ func (s *Store) RecordAttempt(ctx context.Context, id string, ok bool, httpStatu
 		string(status), nullInt(httpStatus), nullString(errMsg), nowUTC(),
 		nullTime(nextAttempt), deliveredAt, id)
 	if err != nil {
-		return fmt.Errorf("registrando tentativa de %s: %w", id, err)
+		return fmt.Errorf("recording an attempt for %s: %w", id, err)
 	}
 	return checkAffected(res, id)
 }
 
-// PendingDeliveries devolve entregas prontas para nova tentativa.
+// PendingDeliveries returns deliveries ready for another attempt.
 func (s *Store) PendingDeliveries(ctx context.Context, now time.Time, limit int) ([]Delivery, error) {
 	q := deliverySelect + `
 		WHERE status = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
@@ -98,7 +98,7 @@ func (s *Store) PendingDeliveries(ctx context.Context, now time.Time, limit int)
 	}
 	rows, err := s.db.QueryContext(ctx, q, string(DeliveryPending), formatTime(now))
 	if err != nil {
-		return nil, fmt.Errorf("buscando entregas pendentes: %w", err)
+		return nil, fmt.Errorf("looking for pending deliveries: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -113,18 +113,18 @@ func (s *Store) PendingDeliveries(ctx context.Context, now time.Time, limit int)
 	return out, rows.Err()
 }
 
-// GetDelivery busca uma entrega.
+// GetDelivery looks a delivery up.
 func (s *Store) GetDelivery(ctx context.Context, id string) (Delivery, error) {
 	row := s.db.QueryRowContext(ctx, deliverySelect+` WHERE delivery_id = ?`, id)
 	d, err := scanDelivery(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return d, fmt.Errorf("%w: entrega %s", ErrNotFound, id)
+		return d, fmt.Errorf("%w: delivery %s", ErrNotFound, id)
 	}
 	return d, err
 }
 
-// ListDeliveries devolve o historico de um canal/alvo. Alimenta a coluna
-// "ultimo envio" do painel.
+// ListDeliveries returns the history for a channel/target. It feeds the panel's
+// "last delivery" column.
 func (s *Store) ListDeliveries(ctx context.Context, channel, target string, limit int) ([]Delivery, error) {
 	q := deliverySelect + ` WHERE 1=1`
 	var args []any
@@ -143,7 +143,7 @@ func (s *Store) ListDeliveries(ctx context.Context, channel, target string, limi
 
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("listando entregas: %w", err)
+		return nil, fmt.Errorf("listing deliveries: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 

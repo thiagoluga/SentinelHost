@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-// Chaves de settings. Ficam no banco, nao no TOML, porque sao segredos
-// derivados que o usuario nao edita a mao — e um TOML que o painel reescreve
-// nao e lugar para hash de senha.
+// Settings keys. They live in the database rather than the TOML because they are
+// derived secrets the user does not edit by hand — and a TOML the panel rewrites
+// is no place for a password hash.
 const (
 	KeyPanelPasswordHash = "panel.password_hash"
 	KeyInstanceID        = "instance.id"
@@ -19,8 +19,8 @@ const (
 	KeyGraceNotifiedAt   = "instance.grace_notified_at"
 )
 
-// GetSetting le um valor. Ausente devolve ("", nil): a maioria dos chamadores
-// quer "ainda nao configurado", nao um erro.
+// GetSetting reads a value. A missing key returns ("", nil): most callers want
+// "not configured yet", not an error.
 func (s *Store) GetSetting(ctx context.Context, key string) (string, error) {
 	var v string
 	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
@@ -28,65 +28,65 @@ func (s *Store) GetSetting(ctx context.Context, key string) (string, error) {
 		return "", nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("lendo configuracao interna %s: %w", key, err)
+		return "", fmt.Errorf("reading internal setting %s: %w", key, err)
 	}
 	return v, nil
 }
 
-// SetSetting grava um valor.
+// SetSetting writes a value.
 func (s *Store) SetSetting(ctx context.Context, key, value string) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO settings (key, value, updated_at) VALUES (?,?,?)
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 		key, value, nowUTC())
 	if err != nil {
-		return fmt.Errorf("gravando configuracao interna %s: %w", key, err)
+		return fmt.Errorf("writing internal setting %s: %w", key, err)
 	}
 	return nil
 }
 
-// DeleteSetting remove um valor.
+// DeleteSetting removes a value.
 func (s *Store) DeleteSetting(ctx context.Context, key string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM settings WHERE key = ?`, key)
 	return err
 }
 
-// Sessoes do painel -----------------------------------------------------------
+// Panel sessions --------------------------------------------------------------
 
-// CreateSession registra uma sessao autenticada.
+// CreateSession records an authenticated session.
 func (s *Store) CreateSession(ctx context.Context, token string, expiresAt time.Time, userAgent, ip string) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO sessions (token, created_at, expires_at, user_agent, remote_ip)
 		VALUES (?,?,?,?,?)`,
 		token, nowUTC(), formatTime(expiresAt), nullString(userAgent), nullString(ip))
 	if err != nil {
-		return fmt.Errorf("criando sessao: %w", err)
+		return fmt.Errorf("creating session: %w", err)
 	}
 	return nil
 }
 
-// SessionValid responde se o token existe e nao expirou.
+// SessionValid answers whether the token exists and has not expired.
 //
-// A expiracao e checada no SQL e nao em Go para que uma sessao vencida nunca
-// seja aceita por diferenca de relogio entre leitura e comparacao.
+// Expiry is checked in SQL rather than in Go so that an expired session is never
+// accepted because of clock drift between the read and the comparison.
 func (s *Store) SessionValid(ctx context.Context, token string) (bool, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM sessions WHERE token = ? AND expires_at > ?`,
 		token, nowUTC()).Scan(&n)
 	if err != nil {
-		return false, fmt.Errorf("validando sessao: %w", err)
+		return false, fmt.Errorf("validating session: %w", err)
 	}
 	return n > 0, nil
 }
 
-// DeleteSession encerra uma sessao (logout).
+// DeleteSession ends a session (logout).
 func (s *Store) DeleteSession(ctx context.Context, token string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token = ?`, token)
 	return err
 }
 
-// PurgeExpiredSessions limpa sessoes vencidas.
+// PurgeExpiredSessions clears expired sessions.
 func (s *Store) PurgeExpiredSessions(ctx context.Context) (int64, error) {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, nowUTC())
 	if err != nil {
@@ -95,9 +95,9 @@ func (s *Store) PurgeExpiredSessions(ctx context.Context) (int64, error) {
 	return res.RowsAffected()
 }
 
-// Estado dos engines ----------------------------------------------------------
+// Engine state ----------------------------------------------------------------
 
-// EngineState e o que o painel mostra na area "engines".
+// EngineState is what the panel shows in the "engines" area.
 type EngineState struct {
 	Slug                string
 	Available           bool
@@ -110,7 +110,7 @@ type EngineState struct {
 	LastRunStatus       string
 }
 
-// SaveEngineState grava o resultado do probe de um engine.
+// SaveEngineState records the result of probing an engine.
 func (s *Store) SaveEngineState(ctx context.Context, st EngineState) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO engine_state (
@@ -131,19 +131,19 @@ func (s *Store) SaveEngineState(ctx context.Context, st EngineState) error {
 		nullTime(st.SignaturesUpdatedAt), formatTime(orNow(st.LastProbeAt)),
 		nullTime(st.LastRunAt), nullString(st.LastRunStatus))
 	if err != nil {
-		return fmt.Errorf("gravando estado do engine %s: %w", st.Slug, err)
+		return fmt.Errorf("writing the state of engine %s: %w", st.Slug, err)
 	}
 	return nil
 }
 
-// ListEngineStates devolve o estado de todos os engines conhecidos.
+// ListEngineStates returns the state of every known engine.
 func (s *Store) ListEngineStates(ctx context.Context) ([]EngineState, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT slug, available, unavailable_reason, version, binary_path,
 		       signatures_updated_at, last_probe_at, last_run_at, last_run_status
 		FROM engine_state ORDER BY slug`)
 	if err != nil {
-		return nil, fmt.Errorf("listando engines: %w", err)
+		return nil, fmt.Errorf("listing engines: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 

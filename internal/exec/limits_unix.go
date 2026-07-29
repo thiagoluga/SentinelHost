@@ -8,14 +8,15 @@ import (
 	"syscall"
 )
 
-// wrap prefixa o comando com ionice e nice quando eles existem no ambiente.
+// wrap prefixes the command with ionice and nice when they exist in the
+// environment.
 //
-// Por que os binarios e nao uma syscall: sem root nao da para elevar
-// prioridade depois, e o Go nao expoe um jeito de ajustar a prioridade do
-// filho entre fork e exec. Envolver com `nice`/`ionice` e o caminho que
-// funciona em qualquer conta de hospedagem — e quando eles nao existem, o
-// scan roda mesmo assim, so que sem a rebaixada de prioridade. Recurso que
-// exige privilegio e oportunista, nunca obrigatorio (Principio III).
+// Why the binaries and not a syscall: without root you cannot raise priority
+// again afterwards, and Go exposes no way to adjust the child's priority between
+// fork and exec. Wrapping with `nice`/`ionice` is the path that works on any
+// hosting account — and when they do not exist the scan still runs, just without
+// the priority drop. A feature that needs privilege is opportunistic, never
+// mandatory (Principle III).
 func (r *Runner) wrap(bin string, args []string) (string, []string) {
 	name := bin
 	final := args
@@ -29,8 +30,8 @@ func (r *Runner) wrap(bin string, args []string) (string, []string) {
 
 	if r.limits.IoniceClass > 0 {
 		if ioPath, err := r.lookPath("ionice"); err == nil {
-			// -t: se o kernel ou a conta nao permitirem a classe pedida,
-			// ionice segue em frente em vez de abortar o scan inteiro.
+			// -t: if the kernel or the account does not allow the requested
+			// class, ionice carries on instead of aborting the whole scan.
 			final = append([]string{"-c", strconv.Itoa(r.limits.IoniceClass), "-t", name}, final...)
 			name = ioPath
 		}
@@ -39,11 +40,11 @@ func (r *Runner) wrap(bin string, args []string) (string, []string) {
 	return name, final
 }
 
-// setProcessGroup coloca o filho no proprio grupo de processo.
+// setProcessGroup puts the child in its own process group.
 //
-// Engines em PHP e shell criam filhos. Matar so o pai no timeout deixaria
-// orfaos queimando a CPU da conta do usuario justamente depois de a
-// ferramenta ter desistido — o cenario que faz a hospedagem suspender a conta.
+// PHP and shell engines spawn children. Killing only the parent on a timeout
+// would leave orphans burning the user's account CPU right after the tool gave
+// up — the scenario that gets a hosting account suspended.
 func setProcessGroup(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
@@ -51,7 +52,7 @@ func setProcessGroup(cmd *exec.Cmd) {
 	cmd.SysProcAttr.Setpgid = true
 }
 
-// maxRSSMB le o pico de memoria do subprocesso.
+// maxRSSMB reads the subprocess's peak memory.
 func maxRSSMB(cmd *exec.Cmd) int {
 	if cmd.ProcessState == nil {
 		return 0
@@ -60,6 +61,6 @@ func maxRSSMB(cmd *exec.Cmd) int {
 	if !ok || ru == nil {
 		return 0
 	}
-	// No Linux, Maxrss vem em kilobytes.
+	// On Linux, Maxrss comes in kilobytes.
 	return int(ru.Maxrss / 1024)
 }

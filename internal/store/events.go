@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// Categorias do log estruturado (FR-015). Fixas para que o filtro do painel
-// tenha um conjunto conhecido em vez de texto livre.
+// Structured log categories (FR-015). Fixed, so the panel's filter has a known
+// set instead of free text.
 const (
 	CatScan       = "scan"
 	CatVerdict    = "verdict"
@@ -21,7 +21,7 @@ const (
 	CatSystem     = "system"
 )
 
-// Event e uma linha do log estruturado.
+// Event is one line of the structured log.
 type Event struct {
 	ID        int64
 	TS        time.Time
@@ -33,17 +33,17 @@ type Event struct {
 	VerdictID string
 }
 
-// Log grava um evento.
+// Log writes an event.
 //
-// Toda acao relevante passa por aqui: scans, vereditos, quarentenas,
-// restauracoes, alertas e mudancas de configuracao. E o registro que permite
-// ao usuario reconstruir o que a ferramenta fez com o site dele.
+// Every relevant action goes through here: scans, verdicts, quarantines,
+// restores, alerts and configuration changes. It is the record that lets the user
+// reconstruct what the tool did to their site.
 func (s *Store) Log(ctx context.Context, e Event) error {
 	fields := "{}"
 	if len(e.Fields) > 0 {
 		b, err := json.Marshal(e.Fields)
 		if err != nil {
-			return fmt.Errorf("serializando campos do evento: %w", err)
+			return fmt.Errorf("serializing the event fields: %w", err)
 		}
 		fields = string(b)
 	}
@@ -56,12 +56,12 @@ func (s *Store) Log(ctx context.Context, e Event) error {
 		formatTime(orNow(e.TS)), e.Level, e.Category, e.Message, fields,
 		nullString(e.ScanID), nullString(e.VerdictID))
 	if err != nil {
-		return fmt.Errorf("gravando evento de log: %w", err)
+		return fmt.Errorf("writing a log event: %w", err)
 	}
 	return nil
 }
 
-// EventFilter parametriza a consulta do painel.
+// EventFilter parameterizes the panel's query.
 type EventFilter struct {
 	Category string
 	Level    string
@@ -71,7 +71,7 @@ type EventFilter struct {
 	Offset   int
 }
 
-// ListEvents consulta o log, mais recentes primeiro.
+// ListEvents queries the log, most recent first.
 func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) {
 	q := `SELECT id, ts, level, category, message, fields_json, scan_id, verdict_id
 	      FROM events WHERE 1=1`
@@ -101,7 +101,7 @@ func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) 
 
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("consultando log: %w", err)
+		return nil, fmt.Errorf("querying the log: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -126,14 +126,15 @@ func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) 
 	return out, rows.Err()
 }
 
-// PruneEvents apaga eventos mais antigos que a retencao configurada.
+// PruneEvents deletes events older than the configured retention.
 //
-// Apagar log nao e acao destrutiva no sentido do Principio I: nao e arquivo do
-// usuario, e sem poda o banco cresce sem limite numa conta com cota de disco.
+// Deleting log entries is not a destructive action in the sense of Principle I:
+// it is not the user's file, and without pruning the database grows without limit
+// on an account with a disk quota.
 func (s *Store) PruneEvents(ctx context.Context, olderThan time.Time) (int64, error) {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM events WHERE ts < ?`, formatTime(olderThan))
 	if err != nil {
-		return 0, fmt.Errorf("podando log: %w", err)
+		return 0, fmt.Errorf("pruning the log: %w", err)
 	}
 	return res.RowsAffected()
 }

@@ -25,15 +25,15 @@ func placeholders(n int) string {
 	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
 }
 
-// checkAffected transforma "nenhuma linha afetada" em erro explicito.
+// checkAffected turns "no rows affected" into an explicit error.
 //
-// Um UPDATE que nao encontra a linha e sucesso para o SQL e falha para o
-// usuario: a quarentena que ele mandou registrar simplesmente nao ficou
-// registrada, e ninguem avisou.
+// An UPDATE that finds no row is a success to SQL and a failure to the user: the
+// quarantine they asked to be recorded simply was not recorded, and nobody said
+// so.
 func checkAffected(res sql.Result, id string) error {
 	n, err := res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("verificando linhas afetadas: %w", err)
+		return fmt.Errorf("checking affected rows: %w", err)
 	}
 	if n == 0 {
 		return fmt.Errorf("%w: %s", ErrNotFound, id)

@@ -8,107 +8,108 @@ import (
 )
 
 func TestMatch(t *testing.T) {
-	casos := []struct {
-		padrao   string
-		caminho  string
-		esperado bool
-		porque   string
+	cases := []struct {
+		pattern  string
+		path     string
+		expected bool
+		why      string
 	}{
-		// ** em qualquer profundidade — o motivo de este pacote existir.
-		{"**/wp-content/cache/**", "/home/u/public_html/wp-content/cache/a/b/c.php", true, "cache em profundidade"},
-		{"**/wp-content/cache/**", "/home/u/wp-content/cache/x.php", true, "cache raso"},
-		{"**/wp-content/cache/**", "/home/u/wp-content/cache", true, "`**` no fim casa zero segmentos, entao o proprio diretorio tambem e excluido"},
-		{"**/node_modules/**", "/site/a/b/node_modules/pkg/index.js", true, "node_modules aninhado"},
+		// ** at any depth — the reason this package exists.
+		{"**/wp-content/cache/**", "/home/u/public_html/wp-content/cache/a/b/c.php", true, "cache at depth"},
+		{"**/wp-content/cache/**", "/home/u/wp-content/cache/x.php", true, "shallow cache"},
+		{"**/wp-content/cache/**", "/home/u/wp-content/cache", true, "a trailing `**` matches zero segments, so the directory itself is excluded too"},
+		{"**/node_modules/**", "/site/a/b/node_modules/pkg/index.js", true, "nested node_modules"},
 
-		// * nao atravessa separador.
-		{"/home/*/public_html/x.php", "/home/user/public_html/x.php", true, "um nivel"},
-		{"/home/*/public_html/x.php", "/home/a/b/public_html/x.php", false, "* nao atravessa separador"},
+		// * does not cross a separator.
+		{"/home/*/public_html/x.php", "/home/user/public_html/x.php", true, "one level"},
+		{"/home/*/public_html/x.php", "/home/a/b/public_html/x.php", false, "* does not cross a separator"},
 
-		// Extensoes.
-		{"**/uploads/**/*.jpg", "/site/wp-content/uploads/2026/07/foto.jpg", true, "extensao em profundidade"},
-		{"**/uploads/**/*.jpg", "/site/wp-content/uploads/2026/07/x.php", false, "extensao errada"},
+		// Extensions.
+		{"**/uploads/**/*.jpg", "/site/wp-content/uploads/2026/07/photo.jpg", true, "extension at depth"},
+		{"**/uploads/**/*.jpg", "/site/wp-content/uploads/2026/07/x.php", false, "wrong extension"},
 
-		// ? casa um caractere.
-		{"/site/x?.php", "/site/x1.php", true, "interrogacao"},
-		{"/site/x?.php", "/site/x12.php", false, "interrogacao casa so um"},
+		// ? matches one character.
+		{"/site/x?.php", "/site/x1.php", true, "question mark"},
+		{"/site/x?.php", "/site/x12.php", false, "question mark matches only one"},
 
-		// ** no fim casa com nada.
-		{"/site/**", "/site", true, "** casa vazio"},
-		{"/site/**", "/site/a/b/c", true, "** casa varios"},
+		// ** at the end matches nothing.
+		{"/site/**", "/site", true, "** matches empty"},
+		{"/site/**", "/site/a/b/c", true, "** matches several"},
 
-		// Caminho exato.
-		{"/site/wp-config.php", "/site/wp-config.php", true, "exato"},
-		{"/site/wp-config.php", "/site/wp-config.php.bak", false, "prefixo nao basta"},
+		// Exact path.
+		{"/site/wp-config.php", "/site/wp-config.php", true, "exact"},
+		{"/site/wp-config.php", "/site/wp-config.php.bak", false, "a prefix is not enough"},
 	}
 
-	for _, c := range casos {
-		if got := pathmatch.Match(c.padrao, c.caminho); got != c.esperado {
-			t.Errorf("Match(%q, %q) = %v, esperado %v (%s)", c.padrao, c.caminho, got, c.esperado, c.porque)
+	for _, c := range cases {
+		if got := pathmatch.Match(c.pattern, c.path); got != c.expected {
+			t.Errorf("Match(%q, %q) = %v, expected %v (%s)", c.pattern, c.path, got, c.expected, c.why)
 		}
 	}
 }
 
-func TestMatchECaseSensitive(t *testing.T) {
-	// Ignorar maiusculas faria uma whitelist de Config.php proteger tambem o
-	// config.php que o atacante plantou.
+func TestMatchIsCaseSensitive(t *testing.T) {
+	// Ignoring case would make a whitelist entry for Config.php also protect the
+	// config.php an attacker planted.
 	if pathmatch.Match("/site/Config.php", "/site/config.php") {
-		t.Error("a comparacao deveria ser sensivel a maiusculas")
+		t.Error("comparison should be case-sensitive")
 	}
 }
 
-func TestPadraoComBarraInvertidaENormalizado(t *testing.T) {
-	// Quem edita o TOML num editor Windows escreve `**\uploads\**` sem pensar.
+func TestPatternWithBackslashIsNormalized(t *testing.T) {
+	// Whoever edits the TOML in a Windows editor writes `**\uploads\**` without
+	// thinking.
 	if !pathmatch.Match(`**\uploads\**`, "/site/wp-content/uploads/2026/x.php") {
-		t.Error("padrao com barra invertida deveria ser normalizado")
+		t.Error("a pattern with backslashes should be normalized")
 	}
 }
 
-func TestCaminhoUsaOSeparadorDoSistema(t *testing.T) {
-	// O caminho segue a convencao do sistema operacional. No Windows, o
-	// walker produz barras invertidas e elas precisam casar; no Linux, barra
-	// invertida e um caractere valido em nome de arquivo e NAO pode ser
-	// reescrita — converter corromperia nomes legitimos.
+func TestPathUsesTheSystemSeparator(t *testing.T) {
+	// The path follows the operating system's convention. On Windows the walker
+	// produces backslashes and they have to match; on Linux a backslash is a
+	// valid character in a file name and must NOT be rewritten — converting
+	// would corrupt legitimate names.
 	if runtime.GOOS == "windows" {
 		if !pathmatch.Match("**/uploads/**", `C:\site\wp-content\uploads\2026\x.php`) {
-			t.Error("no Windows o caminho com barra invertida deveria casar")
+			t.Error("on Windows a path with backslashes should match")
 		}
 		return
 	}
-	// No Linux, este "caminho" e um unico nome de arquivo com barras
-	// invertidas dentro — e nao pode ser confundido com uma hierarquia.
-	if pathmatch.Match("**/uploads/**", `arquivo\estranho\uploads\x.php`) {
-		t.Error("no Linux a barra invertida nao pode ser tratada como separador")
+	// On Linux this "path" is a single file name with backslashes inside it, and
+	// must not be mistaken for a hierarchy.
+	if pathmatch.Match("**/uploads/**", `file\weird\uploads\x.php`) {
+		t.Error("on Linux a backslash must not be treated as a separator")
 	}
 }
 
-func TestWhichMatchesDizQualRegraProtegeu(t *testing.T) {
-	// O usuario precisa saber QUAL regra da whitelist protegeu um arquivo.
-	padroes := []string{
+func TestWhichMatchesNamesTheRuleThatProtected(t *testing.T) {
+	// The user needs to know WHICH whitelist rule protected a file.
+	patterns := []string{
 		"**/node_modules/**",
-		"**/wp-content/plugins/meu-plugin/**",
+		"**/wp-content/plugins/my-plugin/**",
 		"**/vendor/**",
 	}
-	got := pathmatch.WhichMatches(padroes, "/site/wp-content/plugins/meu-plugin/loader.php")
-	if got != "**/wp-content/plugins/meu-plugin/**" {
-		t.Errorf("esperava a regra do plugin, veio %q", got)
+	got := pathmatch.WhichMatches(patterns, "/site/wp-content/plugins/my-plugin/loader.php")
+	if got != "**/wp-content/plugins/my-plugin/**" {
+		t.Errorf("expected the plugin rule, got %q", got)
 	}
-	if pathmatch.WhichMatches(padroes, "/site/index.php") != "" {
-		t.Error("caminho sem regra deveria devolver vazio")
+	if pathmatch.WhichMatches(patterns, "/site/index.php") != "" {
+		t.Error("a path with no matching rule should return empty")
 	}
 }
 
 func TestMatchAny(t *testing.T) {
-	padroes := []string{"**/cache/**", "**/*.log"}
-	if !pathmatch.MatchAny(padroes, "/site/var/cache/x.php") {
-		t.Error("deveria casar com o primeiro padrao")
+	patterns := []string{"**/cache/**", "**/*.log"}
+	if !pathmatch.MatchAny(patterns, "/site/var/cache/x.php") {
+		t.Error("should match the first pattern")
 	}
-	if !pathmatch.MatchAny(padroes, "/site/debug.log") {
-		t.Error("deveria casar com o segundo padrao")
+	if !pathmatch.MatchAny(patterns, "/site/debug.log") {
+		t.Error("should match the second pattern")
 	}
-	if pathmatch.MatchAny(padroes, "/site/index.php") {
-		t.Error("nao deveria casar")
+	if pathmatch.MatchAny(patterns, "/site/index.php") {
+		t.Error("should not match")
 	}
 	if pathmatch.MatchAny(nil, "/site/index.php") {
-		t.Error("lista vazia nao casa com nada")
+		t.Error("an empty list matches nothing")
 	}
 }

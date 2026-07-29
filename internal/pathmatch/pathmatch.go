@@ -1,10 +1,10 @@
-// Package pathmatch casa caminhos contra padroes glob com suporte a `**`.
+// Package pathmatch matches paths against glob patterns with `**` support.
 //
-// O `filepath.Match` da biblioteca padrao nao entende `**`, e todo padrao util
-// numa arvore de site precisa disso: `**/wp-content/cache/**` e a forma natural
-// de escrever "cache em qualquer profundidade". Sem `**`, o usuario teria que
-// escrever exclusoes por nivel, erraria, e acabaria com o scanner varrendo o
-// que ele achou que tinha excluido.
+// The standard library's `filepath.Match` does not understand `**`, and every
+// useful pattern over a site tree needs it: `**/wp-content/cache/**` is the
+// natural way to say "cache at any depth". Without `**` the user would have to
+// write per-level exclusions, would get one wrong, and would end up with the
+// scanner walking what they thought they had excluded.
 package pathmatch
 
 import (
@@ -12,37 +12,37 @@ import (
 	"strings"
 )
 
-// Match responde se o caminho casa com o padrao.
+// Match answers whether the path matches the pattern.
 //
-// Regras:
-//   - `*`  casa qualquer sequencia sem separador
-//   - `?`  casa um caractere que nao seja separador
-//   - `**` casa qualquer sequencia, inclusive separadores e inclusive vazio
-//   - a comparacao usa `/` como separador em qualquer sistema operacional
+// Rules:
+//   - `*`  matches any sequence without a separator
+//   - `?`  matches one character that is not a separator
+//   - `**` matches any sequence, including separators and including nothing
+//   - comparison uses `/` as the separator on every operating system
 //
-// `**` casar vazio significa que `a/**` tambem casa com `a`. E o comportamento
-// util para exclusoes: quem escreve `**/cache/**` quer que o diretorio `cache`
-// saia inteiro, nao que ele sobre como entrada solta no relatorio.
+// `**` matching nothing means `a/**` also matches `a`. That is the useful
+// behaviour for exclusions: someone writing `**/cache/**` wants the `cache`
+// directory gone entirely, not left behind as a stray entry in the report.
 //
-// A comparacao e case-sensitive: sistemas de arquivos Linux, o alvo do
-// projeto, sao case-sensitive, e ignorar isso faria uma whitelist de
-// `Config.php` proteger tambem um `config.php` que o atacante plantou.
+// Comparison is case-sensitive: Linux filesystems — the project's target — are
+// case-sensitive, and ignoring that would make a whitelist entry for
+// `Config.php` also protect a `config.php` an attacker planted.
 func Match(pattern, path string) bool {
-	// O PADRAO e sempre normalizado: ele e escrito a mao no TOML, e quem
-	// edita num editor Windows escreve `**\uploads\**` sem pensar. Barra
-	// invertida nao tem uso legitimo como literal num glob deste projeto.
+	// The PATTERN is always normalized: it is hand-written in the TOML, and
+	// whoever edits it in a Windows editor writes `**\uploads\**` without
+	// thinking. A literal backslash has no legitimate use in a glob here.
 	pattern = strings.ReplaceAll(pattern, `\`, "/")
 
-	// O CAMINHO usa a conversao do sistema operacional, que no Linux e um
-	// no-op. Converter `\` em `/` no Linux corromperia nomes de arquivo
-	// legitimos — barra invertida e um caractere valido em nome de arquivo
-	// POSIX, e o alvo do projeto e justamente Linux.
+	// The PATH uses the operating system's conversion, which is a no-op on
+	// Linux. Converting `\` to `/` on Linux would corrupt legitimate file
+	// names — backslash is a valid character in a POSIX file name, and Linux is
+	// precisely the project's target.
 	path = filepath.ToSlash(path)
 
 	return matchSegments(splitPattern(pattern), strings.Split(strings.Trim(path, "/"), "/"))
 }
 
-// MatchAny responde se algum padrao casa.
+// MatchAny answers whether any pattern matches.
 func MatchAny(patterns []string, path string) bool {
 	for _, p := range patterns {
 		if Match(p, path) {
@@ -52,11 +52,11 @@ func MatchAny(patterns []string, path string) bool {
 	return false
 }
 
-// WhichMatches devolve o primeiro padrao que casa, ou "".
+// WhichMatches returns the first pattern that matches, or "".
 //
-// Existe porque o usuario precisa saber QUAL regra da whitelist protegeu um
-// arquivo — "por que este arquivo nao foi quarentenado?" e uma pergunta que a
-// ferramenta tem que responder com precisao (Principio V).
+// It exists because the user needs to know WHICH whitelist rule protected a
+// file — "why was this file not quarantined?" is a question the tool has to
+// answer precisely (Principle V).
 func WhichMatches(patterns []string, path string) string {
 	for _, p := range patterns {
 		if Match(p, path) {
@@ -70,19 +70,19 @@ func splitPattern(p string) []string {
 	return strings.Split(strings.Trim(p, "/"), "/")
 }
 
-// matchSegments casa segmento a segmento, com backtracking em `**`.
+// matchSegments matches segment by segment, backtracking on `**`.
 func matchSegments(pattern, path []string) bool {
-	// Sem padrao restante: casa se tambem nao sobrou caminho.
+	// No pattern left: it matches if no path is left either.
 	if len(pattern) == 0 {
 		return len(path) == 0
 	}
 
 	if pattern[0] == "**" {
-		// `**` no fim casa com todo o resto, inclusive nada.
+		// A trailing `**` matches everything that remains, including nothing.
 		if len(pattern) == 1 {
 			return true
 		}
-		// Tenta consumir 0, 1, 2... segmentos com o `**`.
+		// Try consuming 0, 1, 2... segments with the `**`.
 		for i := 0; i <= len(path); i++ {
 			if matchSegments(pattern[1:], path[i:]) {
 				return true

@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// QuarantineStatus e o estado de um item no cofre.
+// QuarantineStatus is the state of an item in the vault.
 type QuarantineStatus string
 
 const (
@@ -17,10 +17,11 @@ const (
 	QuarantinePurged   QuarantineStatus = "purged"
 )
 
-// QuarantineItem e o registro que torna a quarentena reversivel.
+// QuarantineItem is the record that makes quarantine reversible.
 //
-// Sem estes metadados o arquivo no cofre e lixo indecifravel: nao se sabe de
-// onde veio, com que permissao voltar nem se ele ainda e o mesmo arquivo.
+// Without this metadata the file in the vault is undecipherable garbage: there
+// is no way to know where it came from, what permissions to restore, or whether
+// it is still the same file.
 type QuarantineItem struct {
 	Ref           string
 	VerdictID     string
@@ -41,7 +42,7 @@ type QuarantineItem struct {
 	Note           string
 }
 
-// Expired responde se o item ja passou da retencao configurada.
+// Expired answers whether the item has passed its configured retention.
 func (q QuarantineItem) Expired(now time.Time) bool {
 	if q.Status != QuarantineActive || q.RetentionUntil.IsZero() {
 		return false
@@ -49,10 +50,10 @@ func (q QuarantineItem) Expired(now time.Time) bool {
 	return now.After(q.RetentionUntil)
 }
 
-// InsertQuarantineItem registra um item recem-movido para o cofre.
+// InsertQuarantineItem records an item just moved into the vault.
 func (s *Store) InsertQuarantineItem(ctx context.Context, it QuarantineItem) error {
 	if it.Ref == "" || it.VaultPath == "" || it.OriginalPath == "" || it.SHA256 == "" {
-		return errors.New("item de quarentena sem ref, caminhos ou hash nao e restauravel")
+		return errors.New("a quarantine item with no ref, paths or hash is not restorable")
 	}
 	if it.Status == "" {
 		it.Status = QuarantineActive
@@ -68,22 +69,22 @@ func (s *Store) InsertQuarantineItem(ctx context.Context, it QuarantineItem) err
 		formatTime(orNow(it.QuarantinedAt)), nullTime(it.RetentionUntil),
 		string(it.Status), nullString(it.Note))
 	if err != nil {
-		return fmt.Errorf("registrando item de quarentena %s: %w", it.Ref, err)
+		return fmt.Errorf("recording quarantine item %s: %w", it.Ref, err)
 	}
 	return nil
 }
 
-// GetQuarantineItem busca um item por referencia.
+// GetQuarantineItem looks an item up by reference.
 func (s *Store) GetQuarantineItem(ctx context.Context, ref string) (QuarantineItem, error) {
 	row := s.db.QueryRowContext(ctx, quarantineSelect+` WHERE ref = ?`, ref)
 	it, err := scanQuarantineItem(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return it, fmt.Errorf("%w: item de quarentena %s", ErrNotFound, ref)
+		return it, fmt.Errorf("%w: quarantine item %s", ErrNotFound, ref)
 	}
 	return it, err
 }
 
-// ListQuarantineItems lista o cofre. status vazio = todos.
+// ListQuarantineItems lists the vault. An empty status means all of them.
 func (s *Store) ListQuarantineItems(ctx context.Context, status QuarantineStatus, limit int) ([]QuarantineItem, error) {
 	q := quarantineSelect
 	var args []any
@@ -98,7 +99,7 @@ func (s *Store) ListQuarantineItems(ctx context.Context, status QuarantineStatus
 
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("listando quarentena: %w", err)
+		return nil, fmt.Errorf("listing the quarantine: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -113,17 +114,17 @@ func (s *Store) ListQuarantineItems(ctx context.Context, status QuarantineStatus
 	return out, rows.Err()
 }
 
-// ExpiredItems devolve os itens ativos cuja retencao ja venceu.
+// ExpiredItems returns the active items whose retention has already elapsed.
 //
-// Note que a consulta filtra por status ativo: item ja restaurado ou purgado
-// nunca reaparece como candidato a purga.
+// Note the query filters on the active status: an item already restored or
+// purged never reappears as a purge candidate.
 func (s *Store) ExpiredItems(ctx context.Context, now time.Time) ([]QuarantineItem, error) {
 	rows, err := s.db.QueryContext(ctx,
 		quarantineSelect+` WHERE status = ? AND retention_until IS NOT NULL AND retention_until < ?
 		ORDER BY retention_until`,
 		string(QuarantineActive), formatTime(now))
 	if err != nil {
-		return nil, fmt.Errorf("buscando itens expirados: %w", err)
+		return nil, fmt.Errorf("looking for expired items: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -138,60 +139,61 @@ func (s *Store) ExpiredItems(ctx context.Context, now time.Time) ([]QuarantineIt
 	return out, rows.Err()
 }
 
-// MarkRestored registra a devolucao do arquivo ao lugar de origem.
+// MarkRestored records the file's return to its original location.
 func (s *Store) MarkRestored(ctx context.Context, ref, restoredTo string) error {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE quarantine_items SET status = ?, restored_at = ?, restored_to = ?
 		WHERE ref = ? AND status = ?`,
 		string(QuarantineRestored), nowUTC(), restoredTo, ref, string(QuarantineActive))
 	if err != nil {
-		return fmt.Errorf("marcando %s como restaurado: %w", ref, err)
+		return fmt.Errorf("marking %s as restored: %w", ref, err)
 	}
 	return checkAffected(res, ref)
 }
 
-// MarkPurged registra a remocao definitiva.
+// MarkPurged records the permanent removal.
 //
-// So aceita itens ativos e expirados: e a ultima barreira do Principio I no
-// nivel do banco, para que uma chamada errada em outro pacote nao consiga
-// apagar o registro de um item ainda dentro da retencao.
+// It only accepts active and expired items: this is Principle I's last barrier
+// at the database level, so that a wrong call from another package cannot delete
+// the record of an item still inside its retention window.
 func (s *Store) MarkPurged(ctx context.Context, ref string, now time.Time) error {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE quarantine_items SET status = ?, purged_at = ?
 		WHERE ref = ? AND status = ? AND retention_until IS NOT NULL AND retention_until < ?`,
 		string(QuarantinePurged), nowUTC(), ref, string(QuarantineActive), formatTime(now))
 	if err != nil {
-		return fmt.Errorf("marcando %s como purgado: %w", ref, err)
+		return fmt.Errorf("marking %s as purged: %w", ref, err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
 		return err
 	}
 	if n == 0 {
-		return fmt.Errorf("%w: %s nao esta ativo ou ainda esta dentro do periodo de retencao", ErrNotFound, ref)
+		return fmt.Errorf("%w: %s is not active or is still inside its retention period", ErrNotFound, ref)
 	}
 	return nil
 }
 
-// ForcePurge registra remocao definitiva pedida explicitamente pelo usuario,
-// sem esperar a retencao. E o unico caminho que ignora o prazo, e existe
-// porque a constituicao permite "purga definitiva por acao manual do usuario".
+// ForcePurge records a permanent removal explicitly requested by the user,
+// without waiting for the retention period. It is the only path that ignores the
+// deadline, and it exists because the constitution allows "permanent purge by
+// manual user action".
 func (s *Store) ForcePurge(ctx context.Context, ref string) error {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE quarantine_items SET status = ?, purged_at = ?
 		WHERE ref = ? AND status = ?`,
 		string(QuarantinePurged), nowUTC(), ref, string(QuarantineActive))
 	if err != nil {
-		return fmt.Errorf("purgando %s: %w", ref, err)
+		return fmt.Errorf("purging %s: %w", ref, err)
 	}
 	return checkAffected(res, ref)
 }
 
-// CountQuarantine conta itens por status.
+// CountQuarantine counts items per status.
 func (s *Store) CountQuarantine(ctx context.Context) (map[QuarantineStatus]int, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT status, COUNT(*) FROM quarantine_items GROUP BY status`)
 	if err != nil {
-		return nil, fmt.Errorf("contando quarentena: %w", err)
+		return nil, fmt.Errorf("counting the quarantine: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 

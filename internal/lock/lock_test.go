@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/thiagoluga/SentinelHost/internal/lock"
 )
 
-func TestAcquireERelease(t *testing.T) {
+func TestAcquireAndRelease(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sentinelhost.lock")
 
 	l, err := lock.Acquire(path)
@@ -19,50 +20,50 @@ func TestAcquireERelease(t *testing.T) {
 		t.Fatalf("Acquire: %v", err)
 	}
 	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("o arquivo de lock deveria existir: %v", err)
+		t.Fatalf("the lock file should exist: %v", err)
 	}
 	if err := l.Release(); err != nil {
 		t.Fatalf("Release: %v", err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Error("o arquivo de lock deveria ter sido removido")
+		t.Error("the lock file should have been removed")
 	}
 }
 
-func TestSegundaInstanciaERecusadaComMensagemClara(t *testing.T) {
-	// O cenario real: o cron dispara enquanto o usuario clica em "escanear
-	// agora" no painel. O segundo processo tem que sair com mensagem clara.
+func TestSecondInstanceIsRefusedWithAClearMessage(t *testing.T) {
+	// The real scenario: cron fires while the user clicks "scan now" in the
+	// panel. The second process has to exit with a clear message.
 	path := filepath.Join(t.TempDir(), "sentinelhost.lock")
 
-	primeiro, err := lock.Acquire(path)
+	first, err := lock.Acquire(path)
 	if err != nil {
-		t.Fatalf("primeiro Acquire: %v", err)
+		t.Fatalf("first Acquire: %v", err)
 	}
-	defer func() { _ = primeiro.Release() }()
+	defer func() { _ = first.Release() }()
 
 	_, err = lock.Acquire(path)
 	if !errors.Is(err, lock.ErrLocked) {
-		t.Fatalf("esperava ErrLocked, veio %v", err)
+		t.Fatalf("expected ErrLocked, got %v", err)
 	}
-	if err == nil || !contains(err.Error(), fmt.Sprint(os.Getpid())) {
-		t.Errorf("a mensagem deveria dizer qual processo detem o lock: %v", err)
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprint(os.Getpid())) {
+		t.Errorf("the message should say which process holds the lock: %v", err)
 	}
 }
 
-func TestLockOrfaoERecuperado(t *testing.T) {
-	// A hospedagem mata processos longos. Um lock orfao nao pode deixar a
-	// ferramenta travada para sempre.
+func TestStaleLockIsRecovered(t *testing.T) {
+	// The host kills long-running processes. A stale lock must not leave the
+	// tool stuck forever.
 	path := filepath.Join(t.TempDir(), "sentinelhost.lock")
 
-	// PID absurdamente alto: nao existe.
-	conteudo := fmt.Sprintf("%d\n%s\nhost-antigo\n", 4194303, time.Now().Add(-time.Hour).UTC().Format(time.RFC3339))
-	if err := os.WriteFile(path, []byte(conteudo), 0o600); err != nil {
+	// An absurdly high PID: it does not exist.
+	content := fmt.Sprintf("%d\n%s\nold-host\n", 4194303, time.Now().Add(-time.Hour).UTC().Format(time.RFC3339))
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
 	l, err := lock.Acquire(path)
 	if err != nil {
-		t.Fatalf("lock orfao deveria ser recuperado: %v", err)
+		t.Fatalf("a stale lock should have been recovered: %v", err)
 	}
 	defer func() { _ = l.Release() }()
 
@@ -71,25 +72,25 @@ func TestLockOrfaoERecuperado(t *testing.T) {
 		t.Fatalf("Read: %v", err)
 	}
 	if info.PID != os.Getpid() {
-		t.Errorf("o lock deveria ter sido reescrito com o PID atual, veio %d", info.PID)
+		t.Errorf("the lock should have been rewritten with the current PID, got %d", info.PID)
 	}
 }
 
-func TestReleaseDuasVezesESeguro(t *testing.T) {
+func TestReleaseTwiceIsSafe(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sentinelhost.lock")
 	l, err := lock.Acquire(path)
 	if err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
 	if err := l.Release(); err != nil {
-		t.Fatalf("primeiro Release: %v", err)
+		t.Fatalf("first Release: %v", err)
 	}
 	if err := l.Release(); err != nil {
-		t.Errorf("segundo Release deveria ser no-op: %v", err)
+		t.Errorf("the second Release should be a no-op: %v", err)
 	}
 }
 
-func TestReadDevolveDono(t *testing.T) {
+func TestReadReturnsTheOwner(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sentinelhost.lock")
 	l, err := lock.Acquire(path)
 	if err != nil {
@@ -102,18 +103,9 @@ func TestReadDevolveDono(t *testing.T) {
 		t.Fatalf("Read: %v", err)
 	}
 	if info.PID != os.Getpid() {
-		t.Errorf("PID: esperado %d, veio %d", os.Getpid(), info.PID)
+		t.Errorf("PID: expected %d, got %d", os.Getpid(), info.PID)
 	}
 	if info.StartedAt.IsZero() {
-		t.Error("o horario de inicio deveria estar registrado")
+		t.Error("the start time should have been recorded")
 	}
-}
-
-func contains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }

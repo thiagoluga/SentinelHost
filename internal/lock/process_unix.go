@@ -7,11 +7,11 @@ import (
 	"syscall"
 )
 
-// processAlive responde se o processo ainda existe.
+// processAlive answers whether the process still exists.
 //
-// Sinal 0 nao entrega nada: so pergunta ao kernel se o processo existe e se
-// temos permissao de sinaliza-lo. E o jeito padrao de detectar lock orfao sem
-// depender de /proc, que nem toda hospedagem expoe.
+// Signal 0 delivers nothing: it only asks the kernel whether the process exists
+// and whether we are allowed to signal it. That is the standard way to detect a
+// stale lock without depending on /proc, which not every host exposes.
 func processAlive(pid int) bool {
 	if pid <= 0 {
 		return false
@@ -24,9 +24,9 @@ func processAlive(pid int) bool {
 	if err == nil {
 		return true
 	}
-	// EPERM significa que o processo existe mas pertence a outro usuario.
-	// Num servidor compartilhado o PID pode ter sido reciclado por outra
-	// conta; tratar como vivo e o lado seguro: no pior caso a ferramenta
-	// espera o proximo ciclo em vez de rodar duas vezes.
+	// EPERM means the process exists but belongs to another user. On a shared
+	// server the PID may have been recycled by another account; treating it as
+	// alive is the safe side: at worst the tool waits for the next cycle instead
+	// of running twice.
 	return os.IsPermission(err)
 }

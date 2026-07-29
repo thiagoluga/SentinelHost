@@ -5,18 +5,17 @@ import (
 	"time"
 )
 
-// Batcher divide uma lista de arquivos em lotes e pausa entre eles.
+// Batcher splits a file list into batches and pauses between them.
 //
-// A pausa e o que diferencia um scanner tolerado de um scanner que faz a
-// hospedagem suspender a conta: sem ela, um ciclo com 20 mil arquivos mantem
-// a CPU ocupada de ponta a ponta, e o painel de recursos da hospedagem so
-// enxerga uso continuo.
+// The pause is what separates a tolerated scanner from one that gets the account
+// suspended: without it, a cycle over 20,000 files keeps the CPU busy end to
+// end, and the host's resource dashboard only sees continuous usage.
 type Batcher struct {
 	Size  int
 	Pause time.Duration
 }
 
-// NewBatcher cria um Batcher com valores minimos seguros.
+// NewBatcher creates a Batcher with safe minimums.
 func NewBatcher(size int, pause time.Duration) *Batcher {
 	if size <= 0 {
 		size = 200
@@ -27,10 +26,10 @@ func NewBatcher(size int, pause time.Duration) *Batcher {
 	return &Batcher{Size: size, Pause: pause}
 }
 
-// Each chama fn para cada lote, pausando entre eles.
+// Each calls fn for every batch, pausing between them.
 //
-// A pausa acontece ENTRE lotes, nunca depois do ultimo: um ciclo nao deve
-// terminar dormindo a toa.
+// The pause happens BETWEEN batches, never after the last one: a cycle should
+// not end by sleeping for nothing.
 func (b *Batcher) Each(ctx context.Context, items []string, fn func(context.Context, []string) error) error {
 	for i := 0; i < len(items); i += b.Size {
 		if err := ctx.Err(); err != nil {
@@ -51,7 +50,8 @@ func (b *Batcher) Each(ctx context.Context, items []string, fn func(context.Cont
 	return nil
 }
 
-// Batches devolve os lotes sem executar nada (util para relatorio e teste).
+// Batches returns the batches without running anything (useful for reporting
+// and tests).
 func (b *Batcher) Batches(items []string) [][]string {
 	var out [][]string
 	for i := 0; i < len(items); i += b.Size {
@@ -60,8 +60,8 @@ func (b *Batcher) Batches(items []string) [][]string {
 	return out
 }
 
-// sleepCtx dorme respeitando o cancelamento. Uma pausa que ignora o contexto
-// faria o comando `scan` demorar a responder a um Ctrl-C.
+// sleepCtx sleeps while respecting cancellation. A pause that ignores the
+// context would make the `scan` command slow to answer a Ctrl-C.
 func sleepCtx(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)
 	defer t.Stop()
