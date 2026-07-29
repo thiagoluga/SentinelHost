@@ -1,0 +1,21 @@
+# Artefatos de build
+/dist/
+/bin/
+sentinelhost
+sentinelhost.exe
+
+# Dados de runtime (nunca versionados)
+/.sentinelhost/
+*.db
+*.db-wal
+*.db-shm
+
+# Ferramentas
+/tools/bin/
+
+# Sistema operacional / editores
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

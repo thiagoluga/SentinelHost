@@ -1,0 +1,41 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - gosec
+    - misspell
+    - revive
+    - unconvert
+    - nolintlint
+
+  settings:
+    gosec:
+      excludes:
+        # G204: o projeto INTEIRO existe para executar engines externos como
+        # subprocesso. Os argumentos sao montados em internal/exec, que valida
+        # o binario e nunca passa por shell.
+        - G204
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
