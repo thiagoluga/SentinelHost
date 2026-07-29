@@ -1,15 +1,16 @@
-// Package wpchecksums implementa o adaptador nativo de integridade do
-// WordPress: compara os arquivos do core com os checksums oficiais publicados
-// pelo WordPress.org.
+// Package wpchecksums implements the native WordPress integrity adapter: it
+// compares the core files against the official checksums published by
+// WordPress.org.
 //
-// E o unico engine do MVP que vota POSITIVAMENTE em legitimidade. Esse voto
-// vira veto no motor de veredito: arquivo identico ao checksum oficial nunca e
-// quarentenado, independente de quantos engines o apontem (DECISIONS.md D-005).
+// It is the only engine in the MVP that votes POSITIVELY for legitimacy. That
+// vote becomes a veto in the verdict engine: a file identical to the official
+// checksum is never quarantined, no matter how many engines flag it
+// (DECISIONS.md D-005).
 package wpchecksums
 
 import (
 	"bufio"
-	"crypto/md5" // a API do WordPress.org publica MD5; nao e uso criptografico
+	"crypto/md5" // the WordPress.org API publishes MD5; this is not cryptographic use
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -22,39 +23,39 @@ import (
 	"strings"
 )
 
-// Slug do engine.
+// Slug of the engine.
 const Slug = "wp-checksums"
 
-// ErrNotWordPress indica que a raiz nao e uma instalacao WordPress.
+// ErrNotWordPress means the root is not a WordPress installation.
 //
-// Site que nao e WordPress (Laravel, Joomla, estatico) e caso normal, nao
-// falha: o adaptador se abstem sem penalizar o score dos demais engines.
-var ErrNotWordPress = errors.New("nao parece uma instalacao WordPress")
+// A site that is not WordPress (Laravel, Joomla, static) is a normal case, not
+// a failure: the adapter abstains without penalizing the other engines' score.
+var ErrNotWordPress = errors.New("this does not look like a WordPress installation")
 
-// versionRe extrai a versao de wp-includes/version.php.
+// versionRe extracts the version from wp-includes/version.php.
 var versionRe = regexp.MustCompile(`\$wp_version\s*=\s*['"]([^'"]+)['"]`)
 
-// Install e o que foi detectado sobre a instalacao.
+// Install is what was detected about the installation.
 type Install struct {
 	Root    string
 	Version string
 	Locale  string
 }
 
-// Detect procura uma instalacao WordPress na raiz.
+// Detect looks for a WordPress installation under the root.
 func Detect(root string) (Install, error) {
 	versionFile := filepath.Join(root, "wp-includes", "version.php")
-	f, err := os.Open(versionFile) // caminho derivado da raiz configurada pelo usuario
+	f, err := os.Open(versionFile) // path derived from the root the user configured
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return Install{}, fmt.Errorf("%w: %s nao existe", ErrNotWordPress, versionFile)
+			return Install{}, fmt.Errorf("%w: %s does not exist", ErrNotWordPress, versionFile)
 		}
-		return Install{}, fmt.Errorf("%w: nao foi possivel ler %s: %v", ErrNotWordPress, versionFile, err)
+		return Install{}, fmt.Errorf("%w: could not read %s: %v", ErrNotWordPress, versionFile, err)
 	}
 	defer func() { _ = f.Close() }()
 
-	// version.php e pequeno; ler linha a linha evita carregar um arquivo
-	// gigante se alguem apontar a raiz para o lugar errado.
+	// version.php is small; reading it line by line avoids loading a huge file
+	// if someone points the root at the wrong place.
 	sc := bufio.NewScanner(io.LimitReader(f, 64<<10))
 	for sc.Scan() {
 		if m := versionRe.FindStringSubmatch(sc.Text()); m != nil {
@@ -62,15 +63,15 @@ func Detect(root string) (Install, error) {
 		}
 	}
 	if err := sc.Err(); err != nil {
-		return Install{}, fmt.Errorf("%w: lendo %s: %v", ErrNotWordPress, versionFile, err)
+		return Install{}, fmt.Errorf("%w: reading %s: %v", ErrNotWordPress, versionFile, err)
 	}
-	return Install{}, fmt.Errorf("%w: %s nao declara $wp_version", ErrNotWordPress, versionFile)
+	return Install{}, fmt.Errorf("%w: %s does not declare $wp_version", ErrNotWordPress, versionFile)
 }
 
-// LocalFile e o estado de um arquivo do core no disco.
+// LocalFile is the on-disk state of a core file.
 type LocalFile struct {
-	// RelPath e relativo a raiz, sempre com barra normal (o formato usado
-	// pela API do WordPress.org).
+	// RelPath is relative to the root, always with forward slashes (the format
+	// the WordPress.org API uses).
 	RelPath string `json:"rel_path"`
 	AbsPath string `json:"abs_path"`
 	MD5     string `json:"md5"`
@@ -80,11 +81,12 @@ type LocalFile struct {
 	MTime   int64  `json:"mtime"`
 }
 
-// inventory calcula MD5 e SHA-256 dos arquivos do core listados nos checksums.
+// inventory computes the MD5 and SHA-256 of the core files listed in the
+// checksums.
 //
-// So os arquivos que a API conhece sao lidos: varrer a instalacao inteira aqui
-// duplicaria o trabalho do walker do orquestrador e gastaria CPU da conta do
-// usuario a toa.
+// Only the files the API knows about are read: walking the whole installation
+// here would duplicate the orchestrator's walker and burn the user account's CPU
+// for nothing.
 func inventory(root string, checksums map[string]string) (map[string]LocalFile, []string) {
 	out := make(map[string]LocalFile, len(checksums))
 	var missing []string
@@ -93,16 +95,16 @@ func inventory(root string, checksums map[string]string) (map[string]LocalFile, 
 		abs := filepath.Join(root, filepath.FromSlash(rel))
 		info, err := os.Stat(abs)
 		if err != nil || info.IsDir() {
-			// Arquivo do core que deveria existir e nao existe e um achado,
-			// nao um erro de leitura.
+			// A core file that should exist and does not is a finding, not a read
+			// error.
 			missing = append(missing, rel)
 			continue
 		}
 		md5sum, sha, err := hashFile(abs)
 		if err != nil {
-			// Ilegivel nao e o mesmo que ausente nem que adulterado. Fica de
-			// fora do inventario e nao vira achado: afirmar qualquer coisa
-			// sobre um arquivo que nao conseguimos ler seria chute.
+			// Unreadable is not the same as missing, nor as tampered with. It
+			// stays out of the inventory and does not become a finding: asserting
+			// anything about a file we could not read would be a guess.
 			continue
 		}
 		out[rel] = LocalFile{
@@ -118,16 +120,16 @@ func inventory(root string, checksums map[string]string) (map[string]LocalFile, 
 	return out, missing
 }
 
-// hashFile calcula MD5 (para comparar com a API) e SHA-256 (chave do esquema)
-// numa unica leitura do arquivo.
+// hashFile computes the MD5 (to compare against the API) and the SHA-256 (the
+// schema's key) in a single read of the file.
 func hashFile(path string) (string, string, error) {
-	f, err := os.Open(path) // caminho derivado da raiz configurada
+	f, err := os.Open(path) // path derived from the configured root
 	if err != nil {
 		return "", "", err
 	}
 	defer func() { _ = f.Close() }()
 
-	m := md5.New() // formato imposto pela API do WordPress.org
+	m := md5.New() // format imposed by the WordPress.org API
 	s := sha256.New()
 	if _, err := io.Copy(io.MultiWriter(m, s), f); err != nil {
 		return "", "", err
@@ -135,9 +137,9 @@ func hashFile(path string) (string, string, error) {
 	return hex.EncodeToString(m.Sum(nil)), hex.EncodeToString(s.Sum(nil)), nil
 }
 
-// extraFiles procura arquivos dentro de wp-admin/ e wp-includes/ que a API nao
-// conhece. O core oficial nao tem arquivos a mais; um .php novo ali e um dos
-// sinais mais confiaveis de comprometimento.
+// extraFiles looks for files inside wp-admin/ and wp-includes/ that the API does
+// not know about. The official core has no extra files; a new .php in there is
+// one of the most reliable signs of compromise.
 func extraFiles(root string, checksums map[string]string, maxDepth int) []LocalFile {
 	var out []LocalFile
 	for _, dir := range []string{"wp-admin", "wp-includes"} {
@@ -147,7 +149,7 @@ func extraFiles(root string, checksums map[string]string, maxDepth int) []LocalF
 		}
 		_ = filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
-				return nil // diretorio ilegivel nao derruba a varredura
+				return nil // an unreadable directory does not take down the walk
 			}
 			if d.IsDir() {
 				if depthOf(root, path) > maxDepth {
@@ -155,8 +157,8 @@ func extraFiles(root string, checksums map[string]string, maxDepth int) []LocalF
 				}
 				return nil
 			}
-			// Symlink nunca e seguido: um link para fora da raiz faria o
-			// scanner sair do diretorio que o usuario autorizou.
+			// A symlink is never followed: a link pointing outside the root would
+			// take the scanner out of the directory the user authorized.
 			if d.Type()&fs.ModeSymlink != 0 {
 				return nil
 			}
@@ -168,8 +170,8 @@ func extraFiles(root string, checksums map[string]string, maxDepth int) []LocalF
 			if _, known := checksums[slashRel]; known {
 				return nil
 			}
-			// So codigo executavel interessa: um .txt extra em wp-includes e
-			// desleixo, um .php extra e porta dos fundos.
+			// Only executable code matters: an extra .txt in wp-includes is
+			// sloppiness, an extra .php is a back door.
 			if !isExecutableExt(slashRel) {
 				return nil
 			}

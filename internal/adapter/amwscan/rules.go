@@ -6,20 +6,20 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
 
-// Tabela regra->(categoria, severidade, confianca) do AMWScan.
+// AMWScan's rule->(category, severity, confidence) table.
 //
-// Versionada junto do adaptador, como manda a obrigacao 4 do contrato.
+// Versioned next to the adapter, as obligation 4 of the contract requires.
 //
-// PROCEDENCIA: os nomes abaixo vem do relatorio real do AMWScan 0.15.1,
-// capturado no container de validacao (docker/Dockerfile.validacao). Uma
-// versao anterior desta tabela usava nomes INVENTADOS (EVAL_POST,
-// OBFUSCATED_BLOB...) que o engine nunca emite — o resultado era um parser que
-// passava nos proprios testes e nao reconheceria nada em producao.
+// PROVENANCE: the names below come from the real AMWScan 0.15.1 report captured
+// in the validation container (docker/Dockerfile.validation). An earlier version
+// of this table used INVENTED names (EVAL_POST, OBFUSCATED_BLOB...) that the
+// engine never emits — the result was a parser that passed its own tests and
+// would recognize nothing in production.
 //
-// A tabela esta incompleta de proposito: o AMWScan tem centenas de definicoes
-// e so as vistas em execucao real entram aqui. Regra desconhecida NAO e
-// descartada — vira other/medium/heuristic, aparece no relatorio, e e
-// contabilizada em `regra_desconhecida` para que a tabela receba manutencao.
+// The table is deliberately incomplete: AMWScan has hundreds of definitions and
+// only the ones seen in a real run get in here. An unknown rule is NOT
+// discarded — it becomes other/medium/heuristic, shows up in the report, and is
+// counted under `unknown_rule` so the table gets maintained.
 
 type mapping struct {
 	category   schema.Category
@@ -28,12 +28,12 @@ type mapping struct {
 }
 
 var ruleTable = map[string]mapping{
-	// "Signature" e o casamento com a base de hashes do proprio AMWScan: e o
-	// unico caso em que ele afirma reconhecer a AMEACA, nao um padrao.
+	// "Signature" is a match against AMWScan's own hash database: the only case
+	// where it claims to recognize the THREAT, not a pattern.
 	"signature":         {schema.CategoryKnownMalware, schema.SeverityCritical, schema.ConfidenceSignature},
 	"malware signature": {schema.CategoryKnownMalware, schema.SeverityCritical, schema.ConfidenceSignature},
 
-	// Categorias que o AMWScan reporta na linha "=> <tag>" do relatorio.
+	// Categories AMWScan reports on the report's "=> <tag>" line.
 	"backdoor":    {schema.CategoryBackdoor, schema.SeverityCritical, schema.ConfidenceHeuristic},
 	"webshell":    {schema.CategoryWebshell, schema.SeverityCritical, schema.ConfidenceHeuristic},
 	"shell":       {schema.CategoryWebshell, schema.SeverityCritical, schema.ConfidenceHeuristic},
@@ -63,14 +63,14 @@ var ruleTable = map[string]mapping{
 	"permissions": {schema.CategorySuspiciousPerms, schema.SeverityMedium, schema.ConfidenceAnomaly},
 }
 
-// classify traduz o nome da regra do engine para o esquema normalizado.
+// classify translates the engine's rule name into the normalized schema.
 //
-// O segundo retorno diz se a regra era conhecida — o adaptador usa isso para
-// contabilizar quantas regras novas apareceram.
+// The second return value says whether the rule was known — the adapter uses it
+// to count how many new rules showed up.
 func classify(rule, tag string) (mapping, bool) {
-	// A tag (a linha "=> backdoor" do relatorio) e mais especifica que o nome
-	// da regra, entao tem prioridade: "Signature" com tag "backdoor" diz mais
-	// que "Signature" sozinho.
+	// The tag (the report's "=> backdoor" line) is more specific than the rule
+	// name, so it wins: "Signature" with tag "backdoor" says more than
+	// "Signature" alone.
 	if tag != "" {
 		if m, ok := ruleTable[strings.ToLower(strings.TrimSpace(tag))]; ok {
 			return m, true
@@ -79,8 +79,8 @@ func classify(rule, tag string) (mapping, bool) {
 	if m, ok := ruleTable[strings.ToLower(strings.TrimSpace(rule))]; ok {
 		return m, true
 	}
-	// Desconhecida nao e descartada. Entra com peso de heuristica media, forte
-	// o bastante para aparecer no relatorio e fraco o bastante para nao
-	// disparar quarentena automatica sozinha.
+	// Unknown is not discarded. It enters with medium heuristic weight: strong
+	// enough to show up in the report, weak enough not to trigger automatic
+	// quarantine on its own.
 	return mapping{schema.CategoryOther, schema.SeverityMedium, schema.ConfidenceHeuristic}, false
 }

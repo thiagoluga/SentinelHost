@@ -11,33 +11,33 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
 
-// maxMissingRatio e a fracao de arquivos do core que pode faltar antes de o
-// adaptador concluir que aquela raiz nao tem um WordPress completo.
+// maxMissingRatio is the fraction of core files that may be absent before the
+// adapter concludes that root does not hold a complete WordPress.
 //
-// 10% e folgado de proposito: um core intacto nao perde 300 arquivos. Acima
-// disso, a explicacao provavel e estrutural (core em subdiretorio, deploy
-// parcial, exclusao do walker), nunca "o site foi invadido de um jeito que
-// apagou meio WordPress".
+// 10% is generous on purpose: an intact core does not lose 300 files. Above that,
+// the likely explanation is structural (core in a subdirectory, partial deploy,
+// walker exclusion), never "the site was broken into in a way that deleted half of
+// WordPress".
 const maxMissingRatio = 0.10
 
-// Adapter e o adaptador nativo de integridade do WordPress.
+// Adapter is the native WordPress integrity adapter.
 type Adapter struct {
 	api *client
-	// maxDepth limita a busca por arquivos extras.
+	// maxDepth caps the search for extra files.
 	maxDepth int
 }
 
-// New cria o adaptador com a API oficial.
+// New creates the adapter against the official API.
 func New() *Adapter { return &Adapter{api: newClient(""), maxDepth: 12} }
 
-// NewWithBase cria o adaptador apontando para outra base de API (testes).
+// NewWithBase creates the adapter pointing at another API base (tests).
 func NewWithBase(base string) *Adapter { return &Adapter{api: newClient(base), maxDepth: 12} }
 
-// NewWithBases sobrepoe as bases do core E dos plugins.
+// NewWithBases overrides BOTH the core and the plugins bases.
 //
-// Existe para que nenhum teste bata na API publica do WordPress.org: um teste
-// que depende de rede falha em CI por motivos alheios ao codigo, e usaria de
-// graca a infraestrutura de um projeto que ja nos serve de graca.
+// It exists so no test hits the public WordPress.org API: a test that depends on
+// the network fails in CI for reasons unrelated to the code, and would spend, for
+// free, the infrastructure of a project that already serves us for free.
 func NewWithBases(coreBase, pluginsBase string) *Adapter {
 	c := newClient(coreBase)
 	c.pluginsBase = pluginsBase
@@ -47,8 +47,8 @@ func NewWithBases(coreBase, pluginsBase string) *Adapter {
 func (a *Adapter) Info() adapter.Info {
 	return adapter.Info{
 		Slug:     Slug,
-		Name:     "Integridade do core WordPress",
-		License:  "N/A (nativo; consulta a API publica do WordPress.org)",
+		Name:     "WordPress core integrity",
+		License:  "N/A (native; queries the public WordPress.org API)",
 		Homepage: "https://codex.wordpress.org/WordPress.org_API",
 		Kind:     schema.KindMalware,
 		Categories: []schema.Category{
@@ -56,33 +56,32 @@ func (a *Adapter) Info() adapter.Info {
 			schema.CategorySuspiciousLocation,
 		},
 		Cost: adapter.CostLight,
-		// A integridade e uma pergunta sobre o CORE inteiro; o adaptador
-		// inventaria todos os arquivos que a API conhece, nao a lista do
-		// ciclo.
+		// Integrity is a question about the WHOLE core; the adapter inventories
+		// every file the API knows about, not the cycle's list.
 		ScopeAware:      false,
 		RequiresNetwork: true,
 		DefaultWeight:   config.WeightWPChecksums,
 	}
 }
 
-// Probe verifica se ha WordPress na raiz.
+// Probe checks whether there is a WordPress under the root.
 //
-// A raiz vem em env.BinaryPath por convencao deste adaptador nativo: ele nao
-// tem binario, e o que ele precisa saber e onde procurar.
+// The root arrives in env.BinaryPath by this native adapter's convention: it has
+// no binary, and what it needs to know is where to look.
 func (a *Adapter) Probe(_ context.Context, env adapter.Environment) adapter.ProbeResult {
 	root := env.BinaryPath
 	if root == "" {
-		return adapter.Unavailable("raiz do site nao informada ao adaptador")
+		return adapter.Unavailable("the site root was not given to the adapter")
 	}
 	inst, err := Detect(root)
 	if err != nil {
-		// Nao e falha: e um site que nao e WordPress. O adaptador se abstem
-		// sem penalizar os demais engines.
+		// Not a failure: it is a site that is not WordPress. The adapter abstains
+		// without penalizing the other engines.
 		return adapter.Unavailable(err.Error())
 	}
 	if env.Offline {
 		return adapter.Unavailable(fmt.Sprintf(
-			"WordPress %s detectado, mas o modo offline impede consultar os checksums oficiais", inst.Version))
+			"WordPress %s detected, but offline mode prevents querying the official checksums", inst.Version))
 	}
 	return adapter.ProbeResult{
 		Available:  true,
@@ -91,23 +90,23 @@ func (a *Adapter) Probe(_ context.Context, env adapter.Environment) adapter.Prob
 	}
 }
 
-// Install nao se aplica: o adaptador e nativo.
+// Install does not apply: the adapter is native.
 func (a *Adapter) Install(context.Context, adapter.Environment) error {
 	return adapter.ErrNotInstallable
 }
 
-// UpdateSignatures nao se aplica: os checksums sao buscados a cada scan e
-// refletem sempre a versao instalada naquele momento.
+// UpdateSignatures does not apply: the checksums are fetched on every scan and
+// always reflect the version installed at that moment.
 func (a *Adapter) UpdateSignatures(context.Context, adapter.Environment) (time.Time, error) {
 	return time.Time{}, nil
 }
 
-// rawPayload e o que este adaptador arquiva como saida bruta.
+// rawPayload is what this adapter archives as its raw output.
 //
-// A resposta da API vai crua em APIResponse; o inventario local vai junto para
-// que o Parse consiga trabalhar sem reler o disco. Ao contrario dos outros
-// engines, reprocessar um scan antigo daqui tem valor limitado: integridade e
-// uma pergunta sobre o estado ATUAL dos arquivos.
+// The API response goes in raw in APIResponse; the local inventory rides along so
+// Parse can work without re-reading the disk. Unlike the other engines,
+// reprocessing an old scan from here has limited value: integrity is a question
+// about the CURRENT state of the files.
 type rawPayload struct {
 	WPVersion   string               `json:"wp_version"`
 	Root        string               `json:"root"`
@@ -117,29 +116,28 @@ type rawPayload struct {
 	Extra       []LocalFile          `json:"extra"`
 	FetchedAt   time.Time            `json:"fetched_at"`
 
-	// Plugins e a segunda metade do FR-005. Vazio quando a instalacao nao tem
-	// plugins ou nenhum deles tem checksum publicado.
+	// Plugins is the second half of FR-005. Empty when the installation has no
+	// plugins or none of them has a published checksum.
 	Plugins []pluginPayload `json:"plugins,omitempty"`
-	// PluginsSkipped explica, por slug, por que um plugin nao foi verificado.
-	// Existe para que "nao verificado" nunca se pareca com "verificado e
-	// limpo" no relatorio.
+	// PluginsSkipped explains, per slug, why a plugin was not verified. It exists
+	// so "not verified" never looks like "verified and clean" in the report.
 	PluginsSkipped map[string]string `json:"plugins_skipped,omitempty"`
 }
 
-// pluginPayload e o resultado da verificacao de UM plugin.
+// pluginPayload is the result of verifying ONE plugin.
 type pluginPayload struct {
 	Slug    string `json:"slug"`
 	Name    string `json:"name"`
 	Version string `json:"version"`
 	Dir     string `json:"dir"`
-	// APIResponse crua, para o Parse reprocessar sem rede.
+	// APIResponse raw, so Parse can reprocess without the network.
 	APIResponse json.RawMessage      `json:"api_response"`
 	Local       map[string]LocalFile `json:"local"`
 	Missing     []string             `json:"missing"`
 	Extra       []LocalFile          `json:"extra"`
 }
 
-// Scan consulta a API e monta o inventario local.
+// Scan queries the API and builds the local inventory.
 func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter.ScanRequest) (adapter.RawOutput, error) {
 	started := time.Now()
 	out := adapter.RawOutput{
@@ -162,16 +160,16 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 	if env.Offline {
 		out.Status = schema.StatusFailed
 		out.FinishedAt = time.Now()
-		return out, fmt.Errorf("modo offline: sem consulta a API de checksums")
+		return out, fmt.Errorf("offline mode: the checksums API will not be queried")
 	}
 
 	body, err := a.api.fetch(ctx, inst.Version, inst.Locale)
 	if err != nil {
 		out.Status = schema.StatusFailed
 		out.FinishedAt = time.Now()
-		// Sem rede o adaptador se abstem. Declarar o core limpo por nao ter
-		// conseguido perguntar seria o pior erro possivel deste engine.
-		return out, fmt.Errorf("sem checksums oficiais: %w", err)
+		// With no network the adapter abstains. Declaring the core clean because
+		// it could not ask would be this engine's worst possible mistake.
+		return out, fmt.Errorf("no official checksums: %w", err)
 	}
 
 	sums, err := parseChecksums(body)
@@ -183,7 +181,7 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 	}
 
 	local, missing := inventory(req.Root, sums)
-	plugins, pulados := a.scanPlugins(ctx, req.Root)
+	plugins, skipped := a.scanPlugins(ctx, req.Root)
 	payload := rawPayload{
 		WPVersion:      inst.Version,
 		Root:           req.Root,
@@ -193,13 +191,13 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 		Extra:          extraFiles(req.Root, sums, a.maxDepth),
 		FetchedAt:      time.Now(),
 		Plugins:        plugins,
-		PluginsSkipped: pulados,
+		PluginsSkipped: skipped,
 	}
 	blob, err := json.Marshal(payload)
 	if err != nil {
 		out.Status = schema.StatusFailed
 		out.FinishedAt = time.Now()
-		return out, fmt.Errorf("serializando inventario: %w", err)
+		return out, fmt.Errorf("serializing the inventory: %w", err)
 	}
 
 	out.Stdout = blob
@@ -208,7 +206,7 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 	return out, nil
 }
 
-// Parse compara o inventario com os checksums oficiais.
+// Parse compares the inventory against the official checksums.
 func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 	rep := schema.ScanReport{
 		SchemaVersion: schema.Version,
@@ -225,7 +223,7 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 
 	var payload rawPayload
 	if err := json.Unmarshal(raw.Stdout, &payload); err != nil {
-		return rep, fmt.Errorf("inventario ilegivel: %w", err)
+		return rep, fmt.Errorf("unreadable inventory: %w", err)
 	}
 	sums, err := parseChecksums(payload.APIResponse)
 	if err != nil {
@@ -237,51 +235,51 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 		detectedAt = time.Now()
 	}
 
-	// Arquivos que BATEM viram clean_files: o voto positivo de legitimidade.
+	// Files that MATCH become clean_files: the positive vote for legitimacy.
 	clean := make([]string, 0, len(payload.Local))
 	for rel, lf := range payload.Local {
-		oficial, ok := sums[rel]
+		official, ok := sums[rel]
 		if !ok {
 			continue
 		}
-		if lf.MD5 == oficial {
+		if lf.MD5 == official {
 			clean = append(clean, lf.SHA256)
 			continue
 		}
 		rep.Findings = append(rep.Findings, finding(
 			raw, lf, detectedAt,
 			"core_file_modified",
-			fmt.Sprintf("arquivo do core alterado: %s", rel),
+			fmt.Sprintf("core file altered: %s", rel),
 		))
 	}
 	rep.CleanFiles = clean
 
-	// Arquivo do core ausente exige muito mais cuidado que arquivo alterado.
+	// A missing core file needs far more care than an altered one.
 	//
-	// Um WordPress "incompleto" quase nunca e um ataque: e o core morando num
-	// subdiretorio, um deploy parcial, um symlink, ou a raiz configurada
-	// apontando para o lugar errado. Sem as duas travas abaixo, este adaptador
-	// emite MILHARES de achados `likely` de uma vez — foi exatamente o que ele
-	// fez na primeira execucao real, com 2998 achados num site de teste.
+	// An "incomplete" WordPress is almost never an attack: it is the core living
+	// in a subdirectory, a partial deploy, a symlink, or the configured root
+	// pointing at the wrong place. Without the two guards below this adapter emits
+	// THOUSANDS of `likely` findings at once — which is exactly what it did on its
+	// first real run, with 2998 findings on a test site.
 	//
-	// Trava 1: proporcao. Se falta core demais, a comparacao inteira perdeu o
-	// sentido — inclusive para os arquivos alterados, que foram conferidos
-	// contra quase nada. O adaptador se abstem com motivo, que e a resposta
-	// honesta (Principio VI).
+	// Guard 1: the ratio. If too much of the core is missing, the whole comparison
+	// lost its meaning — including for the altered files, which were checked
+	// against almost nothing. The adapter abstains with a reason, which is the
+	// honest answer (Principle VI).
 	if len(sums) > 0 {
-		ausentes := float64(len(payload.Missing)) / float64(len(sums))
-		if ausentes > maxMissingRatio {
+		missingRatio := float64(len(payload.Missing)) / float64(len(sums))
+		if missingRatio > maxMissingRatio {
 			return rep, fmt.Errorf(
-				"%.0f%% dos arquivos do core (%d de %d) nao existem em %s: "+
-					"isto nao parece um WordPress completo nesta raiz, e comparar "+
-					"checksums aqui produziria milhares de achados sem sentido",
-				ausentes*100, len(payload.Missing), len(sums), payload.Root)
+				"%.0f%% of the core files (%d of %d) do not exist in %s: "+
+					"this does not look like a complete WordPress at this root, and comparing "+
+					"checksums here would produce thousands of meaningless findings",
+				missingRatio*100, len(payload.Missing), len(sums), payload.Root)
 		}
 	}
 
-	// Trava 2: so codigo executavel. Uma fonte .woff2 ou um .png que sumiu nao
-	// e um evento de seguranca — nao da para esconder backdoor num arquivo que
-	// nao existe, e o ruido afogaria os achados que importam.
+	// Guard 2: executable code only. A .woff2 font or a .png that went missing is
+	// not a security event — you cannot hide a backdoor in a file that does not
+	// exist, and the noise would drown the findings that matter.
 	for _, rel := range payload.Missing {
 		if !isExecutableExt(rel) {
 			continue
@@ -295,41 +293,40 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 			RuleRef:       "https://codex.wordpress.org/WordPress.org_API",
 			File: schema.FileRef{
 				Path: payload.Root + "/" + rel,
-				// Arquivo ausente nao tem hash. O motor de veredito deduplica
-				// por sha256, entao usamos o hash do CAMINHO para que o achado
-				// tenha uma chave estavel entre ciclos sem fingir ser um
-				// arquivo que existe.
+				// A missing file has no hash. The verdict engine deduplicates by
+				// sha256, so we use the hash of the PATH so the finding has a
+				// stable key across cycles without pretending to be a file that
+				// exists.
 				SHA256: pathHash(payload.Root + "/" + rel),
 			},
 			Category: schema.CategoryCoreIntegrity,
-			// Ausencia NAO e assinatura de nada. Um arquivo que sumiu nao
-			// contem codigo malicioso e nao pode ser quarentenado; tratar isto
-			// como `signature` faria o peso 1.5 empurrar sozinho o achado para
-			// perto de `confirmed`, autorizando acao sobre um arquivo que nem
-			// existe.
+			// Absence is NOT a signature of anything. A file that vanished holds no
+			// malicious code and cannot be quarantined; treating this as
+			// `signature` would let weight 1.5 push the finding on its own close to
+			// `confirmed`, authorizing action on a file that does not even exist.
 			Severity:       schema.SeverityMedium,
 			Confidence:     schema.ConfidenceAnomaly,
-			MatchedContent: schema.SanitizeSnippet("arquivo oficial do core ausente: " + rel),
+			MatchedContent: schema.SanitizeSnippet("official core file missing: " + rel),
 			ScanID:         raw.ScanID,
 			DetectedAt:     detectedAt,
 		})
 	}
 
-	// Arquivo executavel a mais dentro de wp-admin/ ou wp-includes/.
+	// An extra executable file inside wp-admin/ or wp-includes/.
 	for _, lf := range payload.Extra {
 		rep.Findings = append(rep.Findings, finding(
 			raw, lf, detectedAt,
 			"core_file_unexpected",
-			fmt.Sprintf("arquivo executavel que nao pertence ao core: %s", lf.RelPath),
+			fmt.Sprintf("executable file that does not belong to the core: %s", lf.RelPath),
 		))
 	}
 
-	// Plugins: a segunda metade do FR-005.
-	achadosPlugin, limposPlugin := a.parsePlugins(
+	// Plugins: the second half of FR-005.
+	pluginFindings, pluginClean := a.parsePlugins(
 		rawOutputInfo{ScanID: raw.ScanID, EngineVersion: raw.EngineVersion},
 		payload, detectedAt)
-	rep.Findings = append(rep.Findings, achadosPlugin...)
-	rep.CleanFiles = append(rep.CleanFiles, limposPlugin...)
+	rep.Findings = append(rep.Findings, pluginFindings...)
+	rep.CleanFiles = append(rep.CleanFiles, pluginClean...)
 
 	rep.Scope.FilesConsidered = len(sums)
 	rep.Scope.FilesScanned = len(payload.Local) + len(payload.Extra)
@@ -338,20 +335,20 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 		rep.Scope.FilesScanned += len(p.Local) + len(p.Extra)
 	}
 
-	// Plugin nao verificado NUNCA pode se parecer com plugin verificado e
-	// limpo. Cada motivo entra na contabilidade do relatorio, que o painel e o
-	// `scan` exibem.
+	// A plugin that was not verified must NEVER look like a plugin that was
+	// verified and found clean. Each reason enters the report's accounting, which
+	// the panel and `scan` display.
 	if len(payload.PluginsSkipped) > 0 {
 		if rep.Scope.SkippedReasonCounts == nil {
 			rep.Scope.SkippedReasonCounts = map[string]int{}
 		}
-		rep.Scope.SkippedReasonCounts["plugin_sem_checksum"] = len(payload.PluginsSkipped)
+		rep.Scope.SkippedReasonCounts["plugin_without_checksum"] = len(payload.PluginsSkipped)
 	}
 	if n := len(payload.Plugins); n > 0 {
 		if rep.Scope.SkippedReasonCounts == nil {
 			rep.Scope.SkippedReasonCounts = map[string]int{}
 		}
-		rep.Scope.SkippedReasonCounts["plugin_verificado"] = n
+		rep.Scope.SkippedReasonCounts["plugin_verified"] = n
 	}
 
 	return rep, nil
@@ -374,9 +371,9 @@ func finding(raw adapter.RawOutput, lf LocalFile, detectedAt time.Time, rule, ms
 			Perms:     lf.Perms,
 		},
 		Category: schema.CategoryCoreIntegrity,
-		// Divergencia de checksum oficial e prova, nao suspeita: o arquivo
-		// nao e o que o WordPress.org publicou. Por isso confidence=signature
-		// e severity=critical — e o que sustenta o peso 1.5 no consenso.
+		// Divergence from the official checksum is proof, not suspicion: the file
+		// is not what WordPress.org published. Hence confidence=signature and
+		// severity=critical — that is what justifies weight 1.5 in the consensus.
 		Severity:       schema.SeverityCritical,
 		Confidence:     schema.ConfidenceSignature,
 		MatchedContent: schema.SanitizeSnippet(msg),

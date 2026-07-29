@@ -6,11 +6,11 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
 
-// Tabela regra->(categoria, severidade, confianca) do php-malware-finder.
+// php-malware-finder's rule->(category, severity, confidence) table.
 //
-// Os nomes sao os das regras YARA publicadas em `php.yar`. Versionada junto do
-// adaptador (obrigacao 4 do contrato). Regra desconhecida vira
-// other/medium/heuristic — nunca e descartada.
+// The names are those of the YARA rules published in `php.yar`. Versioned next
+// to the adapter (obligation 4 of the contract). An unknown rule becomes
+// other/medium/heuristic — it is never discarded.
 
 type mapping struct {
 	category   schema.Category

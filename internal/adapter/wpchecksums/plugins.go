@@ -13,128 +13,128 @@ import (
 	"strings"
 )
 
-// Integridade de PLUGINS, a segunda metade do FR-005 ("core e, quando
-// disponível, plugins").
+// PLUGIN integrity, the second half of FR-005 ("core and, when available,
+// plugins").
 //
-// Plugin abandonado é o vetor de invasão mais comum em WordPress, e um plugin
-// legítimo com um arquivo alterado é o esconderijo preferido de backdoor: ele
-// não aparece na verificação do core e o usuário nunca suspeita de um plugin
-// que ele mesmo instalou.
+// An abandoned plugin is the most common intrusion vector in WordPress, and a
+// legitimate plugin with one altered file is a backdoor's favourite hiding place:
+// it does not show up in the core verification and the user never suspects a
+// plugin they installed themselves.
 //
-// A API é diferente da do core, e a diferença importa:
-//   - o core tem UMA lista para a instalação inteira;
-//   - cada plugin tem a sua, publicada por versão, e **só se ele veio do
-//     diretório oficial**. Plugin comercial ou próprio não tem checksum
-//     nenhum — e nesse caso o adaptador se abstém sobre ele em vez de tratar
-//     ausência de dado como ausência de problema.
+// The API differs from the core's, and the difference matters:
+//   - the core has ONE list for the whole installation;
+//   - each plugin has its own, published per version, and **only if it came from
+//     the official directory**. A commercial or in-house plugin has no checksum
+//     at all — and in that case the adapter abstains about it instead of treating
+//     absence of data as absence of a problem.
 
-// PluginsAPIBase publica checksums por plugin e versão.
+// PluginsAPIBase publishes checksums per plugin and version.
 const PluginsAPIBase = "https://downloads.wordpress.org/plugin-checksums/"
 
-// maxPlugins limita quantos plugins são verificados num ciclo.
+// maxPlugins caps how many plugins are verified in one cycle.
 //
-// Cada plugin custa uma requisição HTTP. Um site com 80 plugins geraria 80
-// requisições por ciclo — carga desnecessária na API pública de um projeto
-// que nos serve de graça, e tempo de ciclo que o Princípio IV não autoriza.
+// Each plugin costs one HTTP request. A site with 80 plugins would generate 80
+// requests per cycle — needless load on the public API of a project that serves
+// us for free, and cycle time Principle IV does not authorize.
 const maxPlugins = 40
 
-// maxMissingRatioPlugin é o teto de arquivos ausentes antes de o adaptador
-// concluir que aquele diretório não é a versão que ele pensa que é.
+// maxMissingRatioPlugin is the ceiling of missing files before the adapter
+// concludes that directory is not the version it thinks it is.
 //
-// Mais frouxo que o do core (10%) de propósito: plugin costuma ter poucos
-// arquivos, e um único ausente em cinco já daria 20% sem significar nada.
+// Looser than the core's (10%) on purpose: a plugin usually has few files, and a
+// single missing one out of five would already be 20% without meaning anything.
 const maxMissingRatioPlugin = 0.34
 
 var (
-	// Cabeçalhos de plugin do WordPress. `(?i)` porque o padrão do WordPress é
-	// tolerante a maiúsculas e plugins reais abusam disso.
+	// WordPress plugin headers. `(?i)` because the WordPress standard is
+	// case-tolerant and real plugins abuse it.
 	pluginNameRe    = regexp.MustCompile(`(?i)^[ \t/*#@]*Plugin Name:\s*(.+)$`)
 	pluginVersionRe = regexp.MustCompile(`(?i)^[ \t/*#@]*Version:\s*(.+)$`)
 )
 
-// PluginInstall é um plugin encontrado no disco.
+// PluginInstall is a plugin found on disk.
 type PluginInstall struct {
-	// Slug é o nome do diretório, que é o que a API indexa.
+	// Slug is the directory name, which is what the API indexes.
 	Slug string `json:"slug"`
-	// Dir é o caminho absoluto do diretório do plugin.
+	// Dir is the absolute path of the plugin's directory.
 	Dir string `json:"dir"`
-	// Name é o cabeçalho "Plugin Name", só para exibição.
+	// Name is the "Plugin Name" header, for display only.
 	Name string `json:"name"`
-	// Version é o cabeçalho "Version". Vazio impede a verificação: sem versão
-	// não há checksum a consultar.
+	// Version is the "Version" header. Empty blocks verification: with no version
+	// there is no checksum to look up.
 	Version string `json:"version"`
 }
 
-// DetectPlugins lista os plugins instalados na raiz.
+// DetectPlugins lists the plugins installed under the root.
 //
-// O slug é o nome do DIRETÓRIO, não o do cabeçalho: é assim que a API indexa,
-// e é o que o WordPress usa para identificar o plugin.
+// The slug is the DIRECTORY name, not the header's: that is how the API indexes
+// them, and what WordPress uses to identify the plugin.
 func DetectPlugins(root string) ([]PluginInstall, error) {
 	base := filepath.Join(root, "wp-content", "plugins")
-	entradas, err := os.ReadDir(base)
+	entries, err := os.ReadDir(base)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			// Site sem wp-content/plugins não é erro: pode ser uma instalação
-			// com diretório de conteúdo customizado.
+			// A site with no wp-content/plugins is not an error: it may be an
+			// installation with a custom content directory.
 			return nil, nil
 		}
-		return nil, fmt.Errorf("lendo %s: %w", base, err)
+		return nil, fmt.Errorf("reading %s: %w", base, err)
 	}
 
 	var out []PluginInstall
-	for _, e := range entradas {
+	for _, e := range entries {
 		if !e.IsDir() {
-			// Plugin de arquivo único (hello.php) não tem checksum publicado.
+			// A single-file plugin (hello.php) has no published checksum.
 			continue
 		}
-		// Symlink nunca é seguido, aqui como no walker: um link em
-		// wp-content/plugins poderia apontar para fora da raiz autorizada.
+		// A symlink is never followed, here as in the walker: a link inside
+		// wp-content/plugins could point outside the authorized root.
 		if e.Type()&fs.ModeSymlink != 0 {
 			continue
 		}
 		dir := filepath.Join(base, e.Name())
 		p := PluginInstall{Slug: e.Name(), Dir: dir}
-		if nome, versao := lerCabecalhoPlugin(dir); versao != "" {
-			p.Name, p.Version = nome, versao
+		if name, version := readPluginHeader(dir); version != "" {
+			p.Name, p.Version = name, version
 		}
 		out = append(out, p)
 	}
 
-	// Ordem estável: o relatório de dois ciclos não pode divergir por ordem de
-	// leitura de diretório.
+	// Stable order: two cycles' reports must not diverge because of directory
+	// read order.
 	sort.Slice(out, func(i, j int) bool { return out[i].Slug < out[j].Slug })
 	return out, nil
 }
 
-// lerCabecalhoPlugin procura "Plugin Name" e "Version" nos arquivos PHP do
-// primeiro nível do diretório.
+// readPluginHeader looks for "Plugin Name" and "Version" in the PHP files at the
+// directory's first level.
 //
-// O WordPress lê só os 8 KiB iniciais do arquivo principal, e o cabeçalho fica
-// sempre no topo — ler o arquivo inteiro seria desperdício num diretório que
-// pode ter megabytes de código.
-func lerCabecalhoPlugin(dir string) (nome, versao string) {
-	entradas, err := os.ReadDir(dir)
+// WordPress reads only the first 8 KiB of the main file, and the header is always
+// at the top — reading the whole file would be a waste in a directory that may
+// hold megabytes of code.
+func readPluginHeader(dir string) (name, version string) {
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", ""
 	}
 
-	// O arquivo principal costuma ter o nome do diretório; tenta esse antes de
-	// varrer os demais, porque é o caso esmagadoramente comum.
-	candidatos := make([]string, 0, len(entradas))
-	principal := filepath.Base(dir) + ".php"
-	for _, e := range entradas {
+	// The main file usually carries the directory's name; try that one before
+	// sweeping the rest, because it is the overwhelmingly common case.
+	candidates := make([]string, 0, len(entries))
+	main := filepath.Base(dir) + ".php"
+	for _, e := range entries {
 		if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".php") {
 			continue
 		}
-		if e.Name() == principal {
-			candidatos = append([]string{e.Name()}, candidatos...)
+		if e.Name() == main {
+			candidates = append([]string{e.Name()}, candidates...)
 			continue
 		}
-		candidatos = append(candidatos, e.Name())
+		candidates = append(candidates, e.Name())
 	}
 
-	for _, arq := range candidatos {
-		n, v := cabecalhoDe(filepath.Join(dir, arq))
+	for _, file := range candidates {
+		n, v := headerOf(filepath.Join(dir, file))
 		if v != "" {
 			return n, v
 		}
@@ -142,8 +142,8 @@ func lerCabecalhoPlugin(dir string) (nome, versao string) {
 	return "", ""
 }
 
-func cabecalhoDe(path string) (nome, versao string) {
-	f, err := os.Open(path) // caminho derivado da raiz configurada
+func headerOf(path string) (name, version string) {
+	f, err := os.Open(path) // path derived from the configured root
 	if err != nil {
 		return "", ""
 	}
@@ -151,52 +151,53 @@ func cabecalhoDe(path string) (nome, versao string) {
 
 	sc := bufio.NewScanner(io.LimitReader(f, 8<<10))
 	for sc.Scan() {
-		linha := sc.Text()
-		if nome == "" {
-			if m := pluginNameRe.FindStringSubmatch(linha); m != nil {
-				nome = strings.TrimSpace(m[1])
+		line := sc.Text()
+		if name == "" {
+			if m := pluginNameRe.FindStringSubmatch(line); m != nil {
+				name = strings.TrimSpace(m[1])
 			}
 		}
-		if versao == "" {
-			if m := pluginVersionRe.FindStringSubmatch(linha); m != nil {
-				versao = strings.TrimSpace(m[1])
+		if version == "" {
+			if m := pluginVersionRe.FindStringSubmatch(line); m != nil {
+				version = strings.TrimSpace(m[1])
 			}
 		}
-		if nome != "" && versao != "" {
+		if name != "" && version != "" {
 			break
 		}
 	}
-	// Nome sem versão é inútil para checksum, e versão sem nome é suspeita de
-	// falso positivo do regex (um `Version:` solto em comentário de código).
-	if versao == "" || nome == "" {
+	// A name with no version is useless for a checksum, and a version with no
+	// name smells like a regex false positive (a stray `Version:` in a code
+	// comment).
+	if version == "" || name == "" {
 		return "", ""
 	}
-	return nome, versao
+	return name, version
 }
 
-// pluginInventory calcula os hashes dos arquivos de um plugin.
+// pluginInventory computes the hashes of a plugin's files.
 //
-// Diferente do core, aqui o inventário parte da lista da API e não da varredura
-// do diretório: o que interessa é comparar o que a API conhece com o que está
-// no disco.
+// Unlike the core, here the inventory starts from the API's list rather than from
+// walking the directory: what matters is comparing what the API knows with what
+// is on disk.
 func pluginInventory(dir string, checksums map[string]pluginFileSums) (map[string]LocalFile, []string) {
-	locais := make(map[string]LocalFile, len(checksums))
-	var ausentes []string
+	local := make(map[string]LocalFile, len(checksums))
+	var missing []string
 
 	for rel := range checksums {
 		abs := filepath.Join(dir, filepath.FromSlash(rel))
 		info, err := os.Stat(abs)
 		if err != nil || info.IsDir() {
-			ausentes = append(ausentes, rel)
+			missing = append(missing, rel)
 			continue
 		}
 		md5sum, sha, err := hashFile(abs)
 		if err != nil {
-			// Ilegível não é ausente nem alterado. Afirmar qualquer coisa
-			// sobre um arquivo que não conseguimos ler seria chute.
+			// Unreadable is neither missing nor altered. Asserting anything about
+			// a file we could not read would be a guess.
 			continue
 		}
-		locais[rel] = LocalFile{
+		local[rel] = LocalFile{
 			RelPath: rel,
 			AbsPath: abs,
 			MD5:     md5sum,
@@ -206,15 +207,15 @@ func pluginInventory(dir string, checksums map[string]pluginFileSums) (map[strin
 			MTime:   info.ModTime().Unix(),
 		}
 	}
-	sort.Strings(ausentes)
-	return locais, ausentes
+	sort.Strings(missing)
+	return local, missing
 }
 
-// extraPluginFiles procura arquivos executáveis que a API não conhece.
+// extraPluginFiles looks for executable files the API does not know about.
 //
-// É o achado mais valioso deste verificador: um `.php` a mais dentro de um
-// plugin oficial não tem explicação inocente. Diferente do core, aqui a
-// tolerância é zero — plugin não ganha arquivo por conta própria.
+// It is this verifier's most valuable finding: one extra `.php` inside an
+// official plugin has no innocent explanation. Unlike the core, tolerance here is
+// zero — a plugin does not grow files on its own.
 func extraPluginFiles(dir string, checksums map[string]pluginFileSums, maxDepth int) []LocalFile {
 	var out []LocalFile
 
@@ -236,7 +237,7 @@ func extraPluginFiles(dir string, checksums map[string]pluginFileSums, maxDepth 
 			return nil
 		}
 		slashRel := filepath.ToSlash(rel)
-		if _, conhecido := checksums[slashRel]; conhecido {
+		if _, known := checksums[slashRel]; known {
 			return nil
 		}
 		if !isExecutableExt(slashRel) {

@@ -13,7 +13,7 @@ import (
 
 const sha = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
-// fake e um adaptador controlavel para exercitar a blindagem.
+// fake is a controllable adapter used to exercise the shielding.
 type fake struct {
 	slug        string
 	panicOn     string
@@ -26,42 +26,42 @@ type fake struct {
 
 func (f *fake) Info() adapter.Info {
 	if f.panicOn == "info" {
-		panic("boom no Info")
+		panic("boom in Info")
 	}
-	return adapter.Info{Slug: f.slug, Kind: schema.KindMalware, DefaultWeight: 0.8}
+	return adapter.Info{Slug: f.slug, Kind: schema.KindMalware, DefaultWeight: 0.8, ScopeAware: true}
 }
 
 func (f *fake) Probe(context.Context, adapter.Environment) adapter.ProbeResult {
 	if f.panicOn == "probe" {
-		panic("boom no Probe")
+		panic("boom in Probe")
 	}
 	return f.probeResult
 }
 
 func (f *fake) Install(context.Context, adapter.Environment) error {
 	if f.panicOn == "install" {
-		panic("boom no Install")
+		panic("boom in Install")
 	}
 	return adapter.ErrNotInstallable
 }
 
 func (f *fake) UpdateSignatures(context.Context, adapter.Environment) (time.Time, error) {
 	if f.panicOn == "update" {
-		panic("boom no UpdateSignatures")
+		panic("boom in UpdateSignatures")
 	}
 	return time.Now(), nil
 }
 
 func (f *fake) Scan(context.Context, adapter.Environment, adapter.ScanRequest) (adapter.RawOutput, error) {
 	if f.panicOn == "scan" {
-		panic("boom no Scan")
+		panic("boom in Scan")
 	}
 	return adapter.RawOutput{Engine: f.slug, Status: f.scanStatus}, f.scanErr
 }
 
 func (f *fake) Parse(adapter.RawOutput) (schema.ScanReport, error) {
 	if f.panicOn == "parse" {
-		panic("boom no Parse")
+		panic("boom in Parse")
 	}
 	return f.report, f.parseErr
 }
@@ -73,70 +73,71 @@ func req() adapter.ScanRequest {
 	}
 }
 
-func TestPanicoNoScanViraAbstencao(t *testing.T) {
-	// Um adaptador de terceiro com um bug de indice nao pode derrubar a
-	// protecao do site inteiro (obrigacao 5 do contrato).
-	a := &fake{slug: "quebrado", panicOn: "scan"}
+func TestPanicInScanBecomesAnAbstention(t *testing.T) {
+	// A third-party adapter with an off-by-one bug must not take down protection
+	// for the whole site (obligation 5 of the contract).
+	a := &fake{slug: "broken", panicOn: "scan"}
 
 	rep := adapter.SafeScanAndParse(context.Background(), a, adapter.Environment{}, req())
 
 	if !rep.Abstains() {
-		t.Fatalf("panico deveria virar abstencao, veio status %q", rep.Status)
+		t.Fatalf("a panic should become an abstention, got status %q", rep.Status)
 	}
-	if rep.Engine != "quebrado" {
-		t.Errorf("o engine culpado deveria estar no relatorio, veio %q", rep.Engine)
+	if rep.Engine != "broken" {
+		t.Errorf("the guilty engine should be named in the report, got %q", rep.Engine)
 	}
-	if !strings.Contains(rep.Error, "panico") {
-		t.Errorf("o relatorio deveria dizer que houve panico, veio: %q", rep.Error)
+	if !strings.Contains(rep.Error, "panic") {
+		t.Errorf("the report should say a panic happened, got: %q", rep.Error)
 	}
 	if len(rep.Findings) != 0 {
-		t.Error("relatorio de falha nao pode carregar achados")
+		t.Error("a failure report must not carry findings")
 	}
 }
 
-func TestPanicoNoParseViraAbstencao(t *testing.T) {
-	a := &fake{slug: "quebrado", panicOn: "parse", scanStatus: schema.StatusCompleted}
+func TestPanicInParseBecomesAnAbstention(t *testing.T) {
+	a := &fake{slug: "broken", panicOn: "parse", scanStatus: schema.StatusCompleted}
 	rep := adapter.SafeScanAndParse(context.Background(), a, adapter.Environment{}, req())
 	if !rep.Abstains() {
-		t.Fatalf("panico no Parse deveria virar abstencao, veio %q", rep.Status)
+		t.Fatalf("a panic in Parse should become an abstention, got %q", rep.Status)
 	}
 }
 
-func TestErroDeScanViraAbstencao(t *testing.T) {
-	a := &fake{slug: "eng", scanErr: errors.New("engine morreu")}
+func TestScanErrorBecomesAnAbstention(t *testing.T) {
+	a := &fake{slug: "eng", scanErr: errors.New("engine died")}
 	rep := adapter.SafeScanAndParse(context.Background(), a, adapter.Environment{}, req())
 	if !rep.Abstains() {
-		t.Fatalf("erro de scan deveria virar abstencao, veio %q", rep.Status)
+		t.Fatalf("a scan error should become an abstention, got %q", rep.Status)
 	}
-	if !strings.Contains(rep.Error, "engine morreu") {
-		t.Errorf("motivo real perdido: %q", rep.Error)
+	if !strings.Contains(rep.Error, "engine died") {
+		t.Errorf("the real reason was lost: %q", rep.Error)
 	}
 }
 
-func TestStatusDeFalhaDoExecutorViraAbstencao(t *testing.T) {
-	// O executor ja traduziu timeout/kill para o vocabulario do esquema; um
-	// Scan que devolve erro nil mas status de timeout continua sendo falha.
+func TestAFailureStatusFromTheExecutorBecomesAnAbstention(t *testing.T) {
+	// The executor has already translated timeout/kill into the schema's
+	// vocabulary; a Scan returning a nil error but a timeout status is still a
+	// failure.
 	a := &fake{slug: "eng", scanStatus: schema.StatusTimeout}
 	rep := adapter.SafeScanAndParse(context.Background(), a, adapter.Environment{}, req())
 	if !rep.Abstains() {
-		t.Fatalf("status de timeout deveria virar abstencao, veio %q", rep.Status)
+		t.Fatalf("a timeout status should become an abstention, got %q", rep.Status)
 	}
 	if rep.Status != schema.StatusTimeout {
-		t.Errorf("o status original deveria ser preservado, veio %q", rep.Status)
+		t.Errorf("the original status should be preserved, got %q", rep.Status)
 	}
 }
 
-func TestRelatorioInvalidoViraAbstencao(t *testing.T) {
-	// Um relatorio invalido e pior que nenhum: entraria no consenso com dados
-	// que o resto do sistema nao sabe interpretar.
+func TestAnInvalidReportBecomesAnAbstention(t *testing.T) {
+	// An invalid report is worse than none: it would enter the consensus with
+	// data the rest of the system cannot interpret.
 	a := &fake{
 		slug:       "eng",
 		scanStatus: schema.StatusCompleted,
 		report: schema.ScanReport{
 			Status: schema.StatusCompleted,
 			Findings: []schema.Finding{{
-				Engine: "eng", Rule: "regra",
-				File:       schema.FileRef{Path: "/x.php", SHA256: "hash-invalido"},
+				Engine: "eng", Rule: "rule",
+				File:       schema.FileRef{Path: "/x.php", SHA256: "invalid-hash"},
 				Category:   schema.CategoryWebshell,
 				Severity:   schema.SeverityHigh,
 				Confidence: schema.ConfidenceSignature,
@@ -148,21 +149,21 @@ func TestRelatorioInvalidoViraAbstencao(t *testing.T) {
 	rep := adapter.SafeScanAndParse(context.Background(), a, adapter.Environment{}, req())
 
 	if !rep.Abstains() {
-		t.Fatalf("relatorio invalido deveria virar abstencao, veio %q", rep.Status)
+		t.Fatalf("an invalid report should become an abstention, got %q", rep.Status)
 	}
-	if !strings.Contains(rep.Error, "esquema") {
-		t.Errorf("o motivo deveria citar o esquema, veio: %q", rep.Error)
+	if !strings.Contains(rep.Error, "schema") {
+		t.Errorf("the reason should mention the schema, got: %q", rep.Error)
 	}
 }
 
-func TestRelatorioValidoPassaEGanhaCamposFaltantes(t *testing.T) {
+func TestAValidReportPassesAndGetsMissingFieldsFilledIn(t *testing.T) {
 	a := &fake{
 		slug:       "eng",
 		scanStatus: schema.StatusCompleted,
 		report: schema.ScanReport{
 			Status: schema.StatusCompleted,
 			Findings: []schema.Finding{{
-				Engine: "eng", Rule: "webshell_generico",
+				Engine: "eng", Rule: "generic_webshell",
 				File:       schema.FileRef{Path: "/x.php", SHA256: sha},
 				Category:   schema.CategoryWebshell,
 				Severity:   schema.SeverityCritical,
@@ -175,82 +176,82 @@ func TestRelatorioValidoPassaEGanhaCamposFaltantes(t *testing.T) {
 	rep := adapter.SafeScanAndParse(context.Background(), a, adapter.Environment{}, req())
 
 	if rep.Abstains() {
-		t.Fatalf("relatorio valido nao deveria abster-se: %q / %q", rep.Status, rep.Error)
+		t.Fatalf("a valid report should not abstain: %q / %q", rep.Status, rep.Error)
 	}
-	// O orquestrador completa o que o adaptador esqueceu, para que um
-	// adaptador simples nao precise repetir metadados que ele ja recebeu.
+	// The orchestrator fills in what the adapter forgot, so a simple adapter does
+	// not have to repeat metadata it was already handed.
 	if rep.ScanID != "s_1" {
-		t.Errorf("scan_id nao foi preenchido: %q", rep.ScanID)
+		t.Errorf("scan_id was not filled in: %q", rep.ScanID)
 	}
 	if rep.SchemaVersion != schema.Version {
-		t.Errorf("schema_version nao foi preenchida: %q", rep.SchemaVersion)
+		t.Errorf("schema_version was not filled in: %q", rep.SchemaVersion)
 	}
 	if rep.Scope.Root != "/home/user/public_html" {
-		t.Errorf("root nao foi preenchida: %q", rep.Scope.Root)
+		t.Errorf("root was not filled in: %q", rep.Scope.Root)
 	}
 	if rep.Scope.Mode != schema.ModeIncremental {
-		t.Errorf("mode nao foi preenchido: %q", rep.Scope.Mode)
+		t.Errorf("mode was not filled in: %q", rep.Scope.Mode)
 	}
 	if len(rep.Findings) != 1 {
-		t.Errorf("achado perdido: %d", len(rep.Findings))
+		t.Errorf("finding lost: %d", len(rep.Findings))
 	}
 }
 
-func TestSafeProbeSobreviveAPanico(t *testing.T) {
-	a := &fake{slug: "quebrado", panicOn: "probe"}
+func TestSafeProbeSurvivesAPanic(t *testing.T) {
+	a := &fake{slug: "broken", panicOn: "probe"}
 	res := adapter.SafeProbe(context.Background(), a, adapter.Environment{})
 	if res.Available {
-		t.Fatal("adaptador que entra em panico nao pode ser reportado como disponivel")
+		t.Fatal("an adapter that panics must not be reported as available")
 	}
-	if !strings.Contains(res.Reason, "panico") {
-		t.Errorf("motivo deveria citar o panico, veio: %q", res.Reason)
+	if !strings.Contains(res.Reason, "panic") {
+		t.Errorf("the reason should mention the panic, got: %q", res.Reason)
 	}
 }
 
-func TestProbeIndisponivelSemMotivoGanhaMotivo(t *testing.T) {
-	// FR-001: o usuario tem que ver POR QUE o engine nao esta disponivel.
-	a := &fake{slug: "mudo", probeResult: adapter.ProbeResult{Available: false}}
+func TestAnUnavailableProbeWithNoReasonGetsOne(t *testing.T) {
+	// FR-001: the user has to see WHY the engine is unavailable.
+	a := &fake{slug: "silent", probeResult: adapter.ProbeResult{Available: false}}
 	res := adapter.SafeProbe(context.Background(), a, adapter.Environment{})
 	if res.Reason == "" {
-		t.Fatal("indisponibilidade sem motivo deveria ganhar um motivo generico")
+		t.Fatal("an unavailability with no reason should have been given a generic one")
 	}
 }
 
-func TestSafeInstallESafeUpdateSobrevivemAPanico(t *testing.T) {
-	a := &fake{slug: "quebrado", panicOn: "install"}
+func TestSafeInstallAndSafeUpdateSurviveAPanic(t *testing.T) {
+	a := &fake{slug: "broken", panicOn: "install"}
 	if err := adapter.SafeInstall(context.Background(), a, adapter.Environment{}); err == nil {
-		t.Error("panico no Install deveria virar erro")
+		t.Error("a panic in Install should become an error")
 	}
 
-	b := &fake{slug: "quebrado", panicOn: "update"}
+	b := &fake{slug: "broken", panicOn: "update"}
 	if _, err := adapter.SafeUpdateSignatures(context.Background(), b, adapter.Environment{}); err == nil {
-		t.Error("panico no UpdateSignatures deveria virar erro")
+		t.Error("a panic in UpdateSignatures should become an error")
 	}
 }
 
-// Registro -------------------------------------------------------------------
+// Registry -------------------------------------------------------------------
 
-func TestRegistroRecusaSlugDuplicado(t *testing.T) {
-	// Dois adaptadores com o mesmo slug votariam duas vezes no mesmo veredito.
+func TestRegistryRejectsADuplicateSlug(t *testing.T) {
+	// Two adapters with the same slug would vote twice on the same verdict.
 	r := adapter.NewRegistry()
 	if err := r.Register(&fake{slug: "amwscan"}); err != nil {
-		t.Fatalf("primeiro registro: %v", err)
+		t.Fatalf("first registration: %v", err)
 	}
 	if err := r.Register(&fake{slug: "amwscan"}); err == nil {
-		t.Fatal("slug duplicado deveria ser recusado")
+		t.Fatal("a duplicate slug should have been rejected")
 	}
 }
 
-func TestRegistroRecusaSlugVazio(t *testing.T) {
+func TestRegistryRejectsAnEmptySlug(t *testing.T) {
 	r := adapter.NewRegistry()
 	if err := r.Register(&fake{slug: ""}); err == nil {
-		t.Fatal("slug vazio deveria ser recusado")
+		t.Fatal("an empty slug should have been rejected")
 	}
 }
 
-func TestRegistroTemOrdemEstavel(t *testing.T) {
-	// Comparar dois relatorios de ciclos diferentes nao pode virar exercicio
-	// de paciencia por causa de ordem aleatoria de mapa.
+func TestRegistryHasAStableOrder(t *testing.T) {
+	// Comparing two cycles' reports must not become an exercise in patience
+	// because of random map ordering.
 	r := adapter.NewRegistry()
 	for _, s := range []string{"maldet", "amwscan", "wp-checksums", "php-malware-finder"} {
 		if err := r.Register(&fake{slug: s}); err != nil {
@@ -258,27 +259,27 @@ func TestRegistroTemOrdemEstavel(t *testing.T) {
 		}
 	}
 
-	primeira := r.Slugs()
+	first := r.Slugs()
 	for i := 0; i < 20; i++ {
-		if got := r.Slugs(); !equal(got, primeira) {
-			t.Fatalf("ordem instavel: %v vs %v", got, primeira)
+		if got := r.Slugs(); !equal(got, first) {
+			t.Fatalf("unstable order: %v vs %v", got, first)
 		}
 	}
-	esperado := []string{"amwscan", "maldet", "php-malware-finder", "wp-checksums"}
-	if !equal(primeira, esperado) {
-		t.Errorf("esperava ordem alfabetica %v, veio %v", esperado, primeira)
+	expected := []string{"amwscan", "maldet", "php-malware-finder", "wp-checksums"}
+	if !equal(first, expected) {
+		t.Errorf("expected alphabetical order %v, got %v", expected, first)
 	}
 }
 
-func TestRegistroGet(t *testing.T) {
+func TestRegistryGet(t *testing.T) {
 	r := adapter.NewRegistry()
 	_ = r.Register(&fake{slug: "amwscan"})
 
 	if _, ok := r.Get("amwscan"); !ok {
-		t.Error("adaptador registrado nao foi encontrado")
+		t.Error("a registered adapter was not found")
 	}
-	if _, ok := r.Get("inexistente"); ok {
-		t.Error("adaptador inexistente foi encontrado")
+	if _, ok := r.Get("nonexistent"); ok {
+		t.Error("a non-existent adapter was found")
 	}
 	if r.Len() != 1 {
 		t.Errorf("Len: %d", r.Len())

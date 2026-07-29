@@ -1,11 +1,11 @@
-// Package adapter define o contrato que todo engine precisa cumprir para ser
-// plugado no SentinelHost.
+// Package adapter defines the contract every engine has to satisfy to be
+// plugged into SentinelHost.
 //
-// O motor de veredito so conhece o esquema normalizado, nunca um engine
-// especifico (Principio VI). O adaptador e a unica peca que sabe como um
-// engine fala — e a unica que precisa mudar quando um engine muda de formato.
+// The verdict engine only knows the normalized schema, never a specific engine
+// (Principle VI). The adapter is the only piece that knows how one engine
+// speaks — and the only one that has to change when that engine changes format.
 //
-// Contrato completo: docs/esquema-e-adaptadores.md secao 2.
+// Full contract: docs/schema-and-adapters.md section 2.
 package adapter
 
 import (
@@ -16,8 +16,9 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
 
-// Cost e o custo relativo declarado pelo adaptador, para o agendador
-// intercalar engines pesados com leves em vez de enfileirar todos os caros.
+// Cost is the relative cost declared by the adapter, so the scheduler can
+// interleave heavy engines with light ones instead of queueing all the expensive
+// ones together.
 type Cost string
 
 const (
@@ -26,109 +27,111 @@ const (
 	CostHeavy  Cost = "heavy"
 )
 
-// Info sao a identidade e os metadados do adaptador.
+// Info is the adapter's identity and metadata.
 type Info struct {
 	Slug string
 	Name string
-	// License do ENGINE, nao do adaptador. Engines GPL sao invocados
-	// exclusivamente como processos externos, nunca linkados, para que o
-	// orquestrador mantenha MIT (Principio II).
+	// License of the ENGINE, not of the adapter. GPL engines are invoked
+	// exclusively as external processes, never linked, so the orchestrator can
+	// keep MIT (Principle II).
 	License  string
 	Homepage string
-	// Categories que este engine consegue reportar.
+	// Categories this engine is able to report.
 	Categories []schema.Category
-	// Kind que este engine produz. O MVP so tem adaptadores de malware.
+	// Kind this engine produces. The MVP only has malware adapters.
 	Kind schema.Kind
 	Cost Cost
-	// RequiresNetwork marca engines que dependem de rede (wp-checksums
-	// consulta a API do WordPress.org). Numa hospedagem com saida bloqueada,
-	// eles se abstem em vez de travar o ciclo.
+	// RequiresNetwork marks engines that depend on the network (wp-checksums
+	// queries the WordPress.org API). On hosting with outbound traffic blocked
+	// they abstain instead of stalling the cycle.
 	RequiresNetwork bool
 
-	// ScopeAware diz se o engine consegue limitar a VARREDURA a uma lista de
-	// arquivos, em vez de so filtrar o relatorio no fim.
+	// ScopeAware says whether the engine can restrict its SCAN to a file list,
+	// rather than only filtering the report at the end.
 	//
-	// Isto nao e detalhe de otimizacao: o orquestrador executa cada engine uma
-	// vez por LOTE, e um engine que ignora a lista varre a raiz inteira a cada
-	// lote. Num WordPress de 3 mil arquivos com lotes de 200, isso multiplica
-	// o trabalho por 16 — medido no container de validacao: 13m54s do AMWScan
-	// e 7m02s do wp-checksums num ciclo que deveria levar minutos.
+	// This is not an optimization detail: the orchestrator runs each engine once
+	// per BATCH, and an engine that ignores the list walks the whole root on
+	// every batch. On a 3,000-file WordPress with batches of 200, that multiplies
+	// the work by 16 — measured in the validation container: 13m54s for AMWScan
+	// and 7m02s for wp-checksums in a cycle that should take minutes.
 	//
-	// Engines assim sao executados UMA vez por ciclo, com a lista inteira. O
-	// custo continua sendo o de varrer tudo, porque e o que o engine sabe
-	// fazer — mas uma vez, nao dezesseis.
+	// Engines like that are run ONCE per cycle, with the whole list. The cost is
+	// still that of walking everything, because that is what the engine knows how
+	// to do — but once, not sixteen times.
 	ScopeAware bool
-	// DefaultWeight e o peso sugerido no consenso. A configuracao do usuario
-	// sempre vence.
+
+	// DefaultWeight is the suggested consensus weight. The user's configuration
+	// always wins.
 	DefaultWeight float64
 }
 
-// Environment e o que o orquestrador oferece ao adaptador.
+// Environment is what the orchestrator offers the adapter.
 type Environment struct {
-	// DataDir e onde o adaptador pode instalar o engine e guardar regras.
-	// Nenhum adaptador escreve fora daqui (obrigacao 1 do contrato).
+	// DataDir is where the adapter may install the engine and keep rules. No
+	// adapter writes outside it (obligation 1 of the contract).
 	DataDir string
-	// Runner e o unico caminho para executar processo. Um adaptador que
-	// chamasse os/exec direto escaparia dos limites de recursos.
+	// Runner is the only way to execute a process. An adapter calling os/exec
+	// directly would escape the resource limits.
 	Runner *exec.Runner
-	// BinaryPath forcado pela configuracao do usuario, quando o probe
-	// automatico nao acha o engine.
+	// BinaryPath forced by the user's configuration, when the automatic probe
+	// cannot find the engine.
 	BinaryPath string
-	// ExtraArgs da configuracao.
+	// ExtraArgs from the configuration.
 	ExtraArgs []string
-	// Offline desliga qualquer acesso a rede (probe, install, checksums).
+	// Offline disables any network access (probe, install, checksums).
 	Offline bool
 }
 
-// ProbeResult diz se o engine roda NESTE ambiente.
+// ProbeResult says whether the engine runs IN THIS environment.
 //
-// Reason e obrigatorio quando Available e falso: FR-001 exige que o usuario
-// veja o motivo da indisponibilidade de cada engine. "Nao disponivel" sem
-// motivo transforma um problema resolvivel (instalar o PHP CLI) em mistério.
+// Reason is mandatory when Available is false: FR-001 requires the user to see
+// why each engine is unavailable. "Not available" with no reason turns a solvable
+// problem (install the PHP CLI) into a mystery.
 type ProbeResult struct {
 	Available bool
 	Reason    string
 	Version   string
-	// BinaryPath resolvido, para o painel e o comando doctor.
+	// BinaryPath as resolved, for the panel and the doctor command.
 	BinaryPath string
-	// SignaturesUpdatedAt quando o engine separa assinaturas da instalacao.
+	// SignaturesUpdatedAt when the engine separates signatures from its
+	// installation.
 	SignaturesUpdatedAt time.Time
-	// Installable indica que Install() pode resolver a indisponibilidade sem
-	// root. E o que permite ao painel oferecer o botao "instalar".
+	// Installable indicates Install() can resolve the unavailability without
+	// root. It is what lets the panel offer an "install" button.
 	Installable bool
 }
 
-// Unavailable monta um ProbeResult indisponivel com motivo.
+// Unavailable builds an unavailable ProbeResult with a reason.
 func Unavailable(reason string) ProbeResult {
 	return ProbeResult{Available: false, Reason: reason}
 }
 
-// UnavailableInstallable monta um ProbeResult indisponivel que Install()
-// consegue resolver.
+// UnavailableInstallable builds an unavailable ProbeResult that Install() can
+// resolve.
 func UnavailableInstallable(reason string) ProbeResult {
 	return ProbeResult{Available: false, Reason: reason, Installable: true}
 }
 
-// ScanRequest e o trabalho que o orquestrador manda o adaptador fazer.
+// ScanRequest is the work the orchestrator asks the adapter to do.
 //
-// A lista de caminhos vem pronta: quem decide o escopo (incremental por
-// mtime/baseline, exclusoes, limite de tamanho) e o ORQUESTRADOR. O adaptador
-// nunca escolhe o que escanear, senao dois engines varreriam conjuntos
-// diferentes e o consenso compararia coisas incomparaveis.
+// The path list arrives ready: the ORCHESTRATOR decides the scope (incremental
+// by mtime/baseline, exclusions, size limit). The adapter never picks what to
+// scan, otherwise two engines would walk different sets and the consensus would
+// be comparing incomparable things.
 type ScanRequest struct {
 	ScanID string
 	Root   string
 	Paths  []string
 	Mode   schema.ScanMode
-	// Timeout desta execucao.
+	// Timeout of this execution.
 	Timeout time.Duration
-	// MaxFileSizeBytes: arquivos maiores devem ser pulados pelo engine
-	// quando ele suportar a opcao.
+	// MaxFileSizeBytes: larger files should be skipped by the engine when it
+	// supports the option.
 	MaxFileSizeBytes int64
 }
 
-// RawOutput e a saida bruta do engine, preservada para auditoria e para
-// reprocessamento por Parse() quando o mapeamento regra->categoria melhorar.
+// RawOutput is the engine's raw output, preserved for auditing and for
+// reprocessing through Parse() when the rule→category mapping improves.
 type RawOutput struct {
 	Engine        string
 	EngineVersion string
@@ -143,23 +146,24 @@ type RawOutput struct {
 	StartedAt  time.Time
 	FinishedAt time.Time
 
-	// Status e Err vem do executor: e o que decide voto ou abstencao.
+	// Status and Err come from the executor: they are what decides vote or
+	// abstention.
 	Status schema.ScanStatus
 	Err    error
 
-	// RawRef aponta para a copia arquivada em disco.
+	// RawRef points at the copy archived on disk.
 	RawRef string
-	// PathsRequested e quantos caminhos o orquestrador mandou escanear.
+	// PathsRequested is how many paths the orchestrator asked to be scanned.
 	PathsRequested int
-	// Truncated indica que a captura bateu no teto.
+	// Truncated indicates the capture hit its ceiling.
 	Truncated bool
 
-	// Extra permite ao adaptador levar dados do Scan para o Parse sem
-	// reexecutar nada (ex.: o wp-checksums leva a lista de arquivos oficiais).
+	// Extra lets the adapter carry data from Scan to Parse without re-running
+	// anything (e.g. wp-checksums carries the list of official files).
 	Extra map[string]any
 }
 
-// FromExecResult converte o resultado do executor em RawOutput.
+// FromExecResult converts the executor's result into a RawOutput.
 func FromExecResult(req ScanRequest, engine string, res exec.Result) RawOutput {
 	return RawOutput{
 		Engine:         engine,
@@ -179,28 +183,28 @@ func FromExecResult(req ScanRequest, engine string, res exec.Result) RawOutput {
 	}
 }
 
-// Adapter e o contrato de integracao de um engine.
+// Adapter is the integration contract for an engine.
 //
-// Scan e Parse sao separados de proposito: permite reprocessar saidas antigas
-// quando o mapeamento regra->categoria melhorar, sem rodar o engine de novo.
+// Scan and Parse are separate on purpose: it allows reprocessing old output when
+// the rule→category mapping improves, without running the engine again.
 type Adapter interface {
-	// Info devolve identidade e metadados.
+	// Info returns identity and metadata.
 	Info() Info
 
-	// Probe detecta se o engine roda neste ambiente.
+	// Probe detects whether the engine runs in this environment.
 	Probe(ctx context.Context, env Environment) ProbeResult
 
-	// Install instala ou atualiza o engine no espaco do usuario, sem root,
-	// quando suportado. Adaptadores que nao instalam devolvem ErrNotInstallable.
+	// Install installs or updates the engine in user space, without root, where
+	// supported. Adapters that do not install return ErrNotInstallable.
 	Install(ctx context.Context, env Environment) error
 
-	// UpdateSignatures atualiza regras/assinaturas quando o engine separa
-	// isso da instalacao.
+	// UpdateSignatures updates rules/signatures when the engine keeps them
+	// separate from its installation.
 	UpdateSignatures(ctx context.Context, env Environment) (time.Time, error)
 
-	// Scan executa o engine sobre a lista de caminhos recebida.
+	// Scan runs the engine over the path list it receives.
 	Scan(ctx context.Context, env Environment, req ScanRequest) (RawOutput, error)
 
-	// Parse converte a saida bruta para o esquema normalizado.
+	// Parse converts the raw output into the normalized schema.
 	Parse(raw RawOutput) (schema.ScanReport, error)
 }

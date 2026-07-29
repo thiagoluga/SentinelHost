@@ -7,48 +7,47 @@ import (
 	"sync"
 )
 
-// ErrNotInstallable e devolvido por adaptadores de engines que o usuario
-// precisa instalar por fora (maldet, por exemplo, depende do que a hospedagem
-// oferece).
-var ErrNotInstallable = errors.New("este engine nao pode ser instalado pelo SentinelHost neste ambiente")
+// ErrNotInstallable is returned by adapters for engines the user has to install
+// separately (maldet, for instance, depends on what the host provides).
+var ErrNotInstallable = errors.New("SentinelHost cannot install this engine in this environment")
 
-// Registry guarda os adaptadores conhecidos.
+// Registry holds the known adapters.
 type Registry struct {
 	mu       sync.RWMutex
 	adapters map[string]Adapter
 }
 
-// NewRegistry cria um registro vazio.
+// NewRegistry creates an empty registry.
 func NewRegistry() *Registry {
 	return &Registry{adapters: map[string]Adapter{}}
 }
 
-// Register adiciona um adaptador. Slug duplicado e erro de programacao, nao
-// de configuracao: dois adaptadores com o mesmo slug votariam duas vezes no
-// mesmo veredito.
+// Register adds an adapter. A duplicate slug is a programming error, not a
+// configuration one: two adapters with the same slug would vote twice on the
+// same verdict.
 func (r *Registry) Register(a Adapter) error {
 	info := a.Info()
 	if info.Slug == "" {
-		return errors.New("adaptador sem slug")
+		return errors.New("adapter with no slug")
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, dup := r.adapters[info.Slug]; dup {
-		return fmt.Errorf("adaptador %q ja registrado", info.Slug)
+		return fmt.Errorf("adapter %q is already registered", info.Slug)
 	}
 	r.adapters[info.Slug] = a
 	return nil
 }
 
-// MustRegister registra e entra em panico em caso de erro. Usado so na
-// inicializacao, onde a falha e sempre um bug do proprio projeto.
+// MustRegister registers and panics on error. Used only during initialization,
+// where a failure is always a bug in the project itself.
 func (r *Registry) MustRegister(a Adapter) {
 	if err := r.Register(a); err != nil {
 		panic(err)
 	}
 }
 
-// Get busca um adaptador pelo slug.
+// Get looks an adapter up by slug.
 func (r *Registry) Get(slug string) (Adapter, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -56,11 +55,11 @@ func (r *Registry) Get(slug string) (Adapter, bool) {
 	return a, ok
 }
 
-// Slugs devolve os slugs registrados, em ordem estavel.
+// Slugs returns the registered slugs in a stable order.
 //
-// Ordem estavel importa: o relatorio de um ciclo nao pode listar os engines
-// numa ordem diferente a cada execucao, senao comparar dois relatorios vira
-// exercicio de paciencia.
+// Stable order matters: a cycle's report must not list the engines in a different
+// order every run, otherwise comparing two reports becomes an exercise in
+// patience.
 func (r *Registry) Slugs() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -72,7 +71,7 @@ func (r *Registry) Slugs() []string {
 	return out
 }
 
-// All devolve os adaptadores em ordem de slug.
+// All returns the adapters ordered by slug.
 func (r *Registry) All() []Adapter {
 	slugs := r.Slugs()
 	r.mu.RLock()
@@ -84,7 +83,7 @@ func (r *Registry) All() []Adapter {
 	return out
 }
 
-// Len devolve quantos adaptadores estao registrados.
+// Len returns how many adapters are registered.
 func (r *Registry) Len() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

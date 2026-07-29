@@ -16,24 +16,24 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
 
-// Nenhum teste aqui toca a rede: o `apiFalsa` serve tanto os checksums do core
-// quanto os de plugin. Um teste que batesse na API pública do WordPress.org
-// falharia em CI por motivos alheios ao código — e usaria de graça a
-// infraestrutura de um projeto que já nos serve de graça.
+// No test here touches the network: `fakeAPI` serves both the core checksums and
+// the plugin ones. A test that hit the public WordPress.org API would fail in CI
+// for reasons unrelated to the code — and would spend, for free, the
+// infrastructure of a project that already serves us for free.
 
-type apiFalsa struct {
+type fakeAPI struct {
 	srv *httptest.Server
-	// coreSums e o mapa caminho->md5 do core.
+	// coreSums is the core's path->md5 map.
 	coreSums map[string]string
-	// pluginSums e slug/versao -> caminho -> hashes.
+	// pluginSums is slug/version -> path -> hashes.
 	pluginSums map[string]map[string]map[string][]string
-	// vistos registra quais URLs de plugin foram pedidas.
-	vistos []string
+	// seen records which plugin URLs were requested.
+	seen []string
 }
 
-func novaAPI(t *testing.T) *apiFalsa {
+func newAPI(t *testing.T) *fakeAPI {
 	t.Helper()
-	a := &apiFalsa{
+	a := &fakeAPI{
 		coreSums:   map[string]string{},
 		pluginSums: map[string]map[string]map[string][]string{},
 	}
@@ -44,27 +44,27 @@ func novaAPI(t *testing.T) *apiFalsa {
 	})
 
 	mux.HandleFunc("/plugin-checksums/", func(w http.ResponseWriter, r *http.Request) {
-		a.vistos = append(a.vistos, r.URL.Path)
-		partes := strings.Split(strings.TrimPrefix(r.URL.Path, "/plugin-checksums/"), "/")
-		if len(partes) != 2 {
+		a.seen = append(a.seen, r.URL.Path)
+		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/plugin-checksums/"), "/")
+		if len(parts) != 2 {
 			http.NotFound(w, r)
 			return
 		}
-		slug := partes[0]
-		versao := strings.TrimSuffix(partes[1], ".json")
+		slug := parts[0]
+		version := strings.TrimSuffix(parts[1], ".json")
 
-		arquivos, ok := a.pluginSums[slug][versao]
+		files, ok := a.pluginSums[slug][version]
 		if !ok {
-			// 404 e a resposta real para plugin fora do diretorio oficial.
+			// 404 is the real answer for a plugin outside the official directory.
 			http.NotFound(w, r)
 			return
 		}
-		files := map[string]any{}
-		for caminho, hashes := range arquivos {
-			files[caminho] = map[string]any{"sha256": hashes}
+		payload := map[string]any{}
+		for path, hashes := range files {
+			payload[path] = map[string]any{"sha256": hashes}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"plugin": slug, "version": versao, "files": files,
+			"plugin": slug, "version": version, "files": payload,
 		})
 	})
 
@@ -73,42 +73,43 @@ func novaAPI(t *testing.T) *apiFalsa {
 	return a
 }
 
-func (a *apiFalsa) adaptador() *wpchecksums.Adapter {
+func (a *fakeAPI) adapter() *wpchecksums.Adapter {
 	return wpchecksums.NewWithBases(
 		a.srv.URL+"/core/checksums/1.0/",
 		a.srv.URL+"/plugin-checksums/",
 	)
 }
 
-// site monta uma instalacao WordPress minima e registra o core na API falsa.
+// site builds a minimal WordPress installation and registers the core in the fake
+// API.
 //
-// Registrar o core e obrigatorio: com a lista vazia, o adaptador trata a versao
-// como desconhecida e se abstem — comportamento correto do produto, que
-// mascararia o que estes testes querem exercitar (os plugins).
-func site(t *testing.T, api *apiFalsa) string {
+// Registering the core is mandatory: with an empty list the adapter treats the
+// version as unknown and abstains — correct product behaviour, which would mask
+// what these tests want to exercise (the plugins).
+func site(t *testing.T, api *fakeAPI) string {
 	t.Helper()
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "wp-includes"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	versao := filepath.Join(root, "wp-includes", "version.php")
-	escrever(t, versao, "<?php\n$wp_version = '6.5.2';\n")
-	api.coreSums["wp-includes/version.php"] = md5De(t, versao)
+	versionFile := filepath.Join(root, "wp-includes", "version.php")
+	write(t, versionFile, "<?php\n$wp_version = '6.5.2';\n")
+	api.coreSums["wp-includes/version.php"] = md5Of(t, versionFile)
 	return root
 }
 
-func escrever(t *testing.T, path, conteudo string) string {
+func write(t *testing.T, path, content string) string {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(path, []byte(conteudo), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
-	return sha256De(t, path)
+	return sha256Of(t, path)
 }
 
-func sha256De(t *testing.T, path string) string {
+func sha256Of(t *testing.T, path string) string {
 	t.Helper()
 	h, err := wpchecksums.HashFileSHA256(path)
 	if err != nil {
@@ -117,19 +118,19 @@ func sha256De(t *testing.T, path string) string {
 	return h
 }
 
-// plugin cria um plugin no disco e devolve o diretorio.
-func plugin(t *testing.T, root, slug, versao string, arquivos map[string]string) string {
+// plugin creates a plugin on disk and returns its directory.
+func plugin(t *testing.T, root, slug, version string, files map[string]string) string {
 	t.Helper()
 	dir := filepath.Join(root, "wp-content", "plugins", slug)
-	cabecalho := fmt.Sprintf("<?php\n/**\n * Plugin Name: Plugin %s\n * Version: %s\n */\n", slug, versao)
-	escrever(t, filepath.Join(dir, slug+".php"), cabecalho)
-	for rel, conteudo := range arquivos {
-		escrever(t, filepath.Join(dir, filepath.FromSlash(rel)), conteudo)
+	header := fmt.Sprintf("<?php\n/**\n * Plugin Name: Plugin %s\n * Version: %s\n */\n", slug, version)
+	write(t, filepath.Join(dir, slug+".php"), header)
+	for rel, content := range files {
+		write(t, filepath.Join(dir, filepath.FromSlash(rel)), content)
 	}
 	return dir
 }
 
-func rodar(t *testing.T, a *wpchecksums.Adapter, root string) schema.ScanReport {
+func run(t *testing.T, a *wpchecksums.Adapter, root string) schema.ScanReport {
 	t.Helper()
 	req := adapter.ScanRequest{ScanID: "s_1", Root: root, Mode: schema.ModeFull}
 	raw, err := a.Scan(context.Background(), adapter.Environment{}, req)
@@ -141,28 +142,28 @@ func rodar(t *testing.T, a *wpchecksums.Adapter, root string) schema.ScanReport 
 		t.Fatalf("Parse: %v", err)
 	}
 	if err := rep.Validate(); err != nil {
-		t.Fatalf("relatorio fora do esquema: %v", err)
+		t.Fatalf("report violates the schema: %v", err)
 	}
 	return rep
 }
 
-func acharRegra(rep schema.ScanReport, regra string) []schema.Finding {
+func findRule(rep schema.ScanReport, rule string) []schema.Finding {
 	var out []schema.Finding
 	for _, f := range rep.Findings {
-		if f.Rule == regra {
+		if f.Rule == rule {
 			out = append(out, f)
 		}
 	}
 	return out
 }
 
-// Deteccao de plugins ----------------------------------------------------------
+// Plugin detection -------------------------------------------------------------
 
-func TestDetectPluginsLeSlugDoDiretorioENaoDoCabecalho(t *testing.T) {
-	// A API indexa pelo nome do DIRETORIO. Usar o "Plugin Name" faria toda
-	// consulta dar 404 e o verificador de plugins nunca acharia nada — falhando
-	// em silencio, que e o modo de falha que este projeto mais teme.
-	root := site(t, novaAPI(t))
+func TestDetectPluginsReadsTheSlugFromTheDirectoryNotTheHeader(t *testing.T) {
+	// The API indexes by DIRECTORY name. Using the "Plugin Name" would make every
+	// query 404 and the plugin verifier would never find anything — failing
+	// silently, which is the failure mode this project fears most.
+	root := site(t, newAPI(t))
 	plugin(t, root, "contact-form-7", "5.9.3", nil)
 
 	ps, err := wpchecksums.DetectPlugins(root)
@@ -170,24 +171,24 @@ func TestDetectPluginsLeSlugDoDiretorioENaoDoCabecalho(t *testing.T) {
 		t.Fatalf("DetectPlugins: %v", err)
 	}
 	if len(ps) != 1 {
-		t.Fatalf("esperava 1 plugin, veio %d", len(ps))
+		t.Fatalf("expected 1 plugin, got %d", len(ps))
 	}
 	if ps[0].Slug != "contact-form-7" {
-		t.Errorf("slug: %q (deveria ser o nome do diretorio)", ps[0].Slug)
+		t.Errorf("slug: %q (should be the directory name)", ps[0].Slug)
 	}
 	if ps[0].Version != "5.9.3" {
-		t.Errorf("versao: %q", ps[0].Version)
+		t.Errorf("version: %q", ps[0].Version)
 	}
 	if ps[0].Name != "Plugin contact-form-7" {
-		t.Errorf("nome: %q", ps[0].Name)
+		t.Errorf("name: %q", ps[0].Name)
 	}
 }
 
-func TestDetectPluginsIgnoraArquivoSoltoENaoSegueSymlink(t *testing.T) {
-	root := site(t, novaAPI(t))
-	plugin(t, root, "bom", "1.0", nil)
-	// hello.php: plugin de arquivo unico, sem checksum publicado.
-	escrever(t, filepath.Join(root, "wp-content", "plugins", "hello.php"), "<?php\n")
+func TestDetectPluginsIgnoresALooseFileAndDoesNotFollowSymlinks(t *testing.T) {
+	root := site(t, newAPI(t))
+	plugin(t, root, "good", "1.0", nil)
+	// hello.php: a single-file plugin, with no published checksum.
+	write(t, filepath.Join(root, "wp-content", "plugins", "hello.php"), "<?php\n")
 
 	ps, err := wpchecksums.DetectPlugins(root)
 	if err != nil {
@@ -195,325 +196,325 @@ func TestDetectPluginsIgnoraArquivoSoltoENaoSegueSymlink(t *testing.T) {
 	}
 	for _, p := range ps {
 		if p.Slug == "hello.php" {
-			t.Error("plugin de arquivo unico nao deveria entrar na lista")
+			t.Error("a single-file plugin should not enter the list")
 		}
 	}
 }
 
-func TestDetectPluginsSemDiretorioDePluginsNaoEErro(t *testing.T) {
-	// Instalacao com diretorio de conteudo customizado e caso legitimo.
-	root := site(t, novaAPI(t))
+func TestNoPluginsDirectoryIsNotAnError(t *testing.T) {
+	// An installation with a custom content directory is a legitimate case.
+	root := site(t, newAPI(t))
 	ps, err := wpchecksums.DetectPlugins(root)
 	if err != nil {
-		t.Fatalf("ausencia de wp-content/plugins nao deveria ser erro: %v", err)
+		t.Fatalf("the absence of wp-content/plugins should not be an error: %v", err)
 	}
 	if len(ps) != 0 {
-		t.Errorf("esperava lista vazia, veio %d", len(ps))
+		t.Errorf("expected an empty list, got %d", len(ps))
 	}
 }
 
-// Verificacao ------------------------------------------------------------------
+// Verification -----------------------------------------------------------------
 
-func TestPluginIntactoViraCleanFileENaoAchado(t *testing.T) {
-	// Plugin legitimo tem JS minificado e base64 — exatamente o que gera falso
-	// positivo em heuristica. Sem entrar em clean_files, ele nao ganha a
-	// protecao de veto e um outro engine poderia derrubar o site do usuario.
-	api := novaAPI(t)
+func TestAnIntactPluginBecomesACleanFileAndNotAFinding(t *testing.T) {
+	// A legitimate plugin carries minified JS and base64 — exactly what produces
+	// heuristic false positives. Without entering clean_files it does not get the
+	// veto's protection and another engine could take the user's site down.
+	api := newAPI(t)
 	root := site(t, api)
-	dir := plugin(t, root, "meu-plugin", "2.0", map[string]string{
-		"inc/util.php": "<?php // legitimo\n",
+	dir := plugin(t, root, "my-plugin", "2.0", map[string]string{
+		"inc/util.php": "<?php // legitimate\n",
 	})
 
-	api.pluginSums["meu-plugin"] = map[string]map[string][]string{
+	api.pluginSums["my-plugin"] = map[string]map[string][]string{
 		"2.0": {
-			"meu-plugin.php": {sha256De(t, filepath.Join(dir, "meu-plugin.php"))},
-			"inc/util.php":   {sha256De(t, filepath.Join(dir, "inc/util.php"))},
+			"my-plugin.php": {sha256Of(t, filepath.Join(dir, "my-plugin.php"))},
+			"inc/util.php":  {sha256Of(t, filepath.Join(dir, "inc/util.php"))},
 		},
 	}
 
-	rep := rodar(t, api.adaptador(), root)
+	rep := run(t, api.adapter(), root)
 
-	if n := len(acharRegra(rep, "plugin_file_modified")); n != 0 {
-		t.Errorf("plugin intacto gerou %d achado(s) de alteracao", n)
+	if n := len(findRule(rep, "plugin_file_modified")); n != 0 {
+		t.Errorf("an intact plugin produced %d alteration finding(s)", n)
 	}
-	esperado := sha256De(t, filepath.Join(dir, "inc/util.php"))
-	encontrou := false
+	expected := sha256Of(t, filepath.Join(dir, "inc/util.php"))
+	found := false
 	for _, h := range rep.CleanFiles {
-		if h == esperado {
-			encontrou = true
+		if h == expected {
+			found = true
 		}
 	}
-	if !encontrou {
-		t.Error("arquivo intacto de plugin deveria entrar em clean_files (veto anti-falso-positivo)")
+	if !found {
+		t.Error("an intact plugin file should enter clean_files (the anti-false-positive veto)")
 	}
 }
 
-func TestArquivoAlteradoEmPluginEhAchadoDeAssinatura(t *testing.T) {
-	api := novaAPI(t)
+func TestAnAlteredPluginFileIsASignatureFinding(t *testing.T) {
+	api := newAPI(t)
 	root := site(t, api)
-	dir := plugin(t, root, "meu-plugin", "2.0", map[string]string{
-		"inc/util.php": "<?php // ADULTERADO\n",
+	dir := plugin(t, root, "my-plugin", "2.0", map[string]string{
+		"inc/util.php": "<?php // TAMPERED WITH\n",
 	})
 
-	api.pluginSums["meu-plugin"] = map[string]map[string][]string{
+	api.pluginSums["my-plugin"] = map[string]map[string][]string{
 		"2.0": {
-			"meu-plugin.php": {sha256De(t, filepath.Join(dir, "meu-plugin.php"))},
-			// hash de um conteudo diferente do que esta no disco
+			"my-plugin.php": {sha256Of(t, filepath.Join(dir, "my-plugin.php"))},
+			// the hash of content different from what is on disk
 			"inc/util.php": {strings.Repeat("a", 64)},
 		},
 	}
 
-	rep := rodar(t, api.adaptador(), root)
+	rep := run(t, api.adapter(), root)
 
-	achados := acharRegra(rep, "plugin_file_modified")
-	if len(achados) != 1 {
-		t.Fatalf("esperava 1 achado de alteracao, veio %d", len(achados))
+	findings := findRule(rep, "plugin_file_modified")
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 alteration finding, got %d", len(findings))
 	}
-	f := achados[0]
-	// Divergencia de checksum oficial e PROVA, nao suspeita: e o que sustenta
-	// o peso 1.5 deste engine no consenso.
+	f := findings[0]
+	// Divergence from the official checksum is PROOF, not suspicion: it is what
+	// justifies this engine's weight of 1.5 in the consensus.
 	if f.Confidence != schema.ConfidenceSignature {
-		t.Errorf("confianca: %q, esperada signature", f.Confidence)
+		t.Errorf("confidence: %q, expected signature", f.Confidence)
 	}
 	if f.Severity != schema.SeverityCritical {
-		t.Errorf("severidade: %q", f.Severity)
+		t.Errorf("severity: %q", f.Severity)
 	}
 	if !strings.Contains(f.File.Path, "inc") {
-		t.Errorf("caminho do achado: %q", f.File.Path)
+		t.Errorf("finding path: %q", f.File.Path)
 	}
 }
 
-func TestArquivoExtraEmPluginEhAchado(t *testing.T) {
-	// O achado mais valioso deste verificador: backdoor dentro de um plugin
-	// legitimo nao aparece na conferencia do core, e o usuario nunca suspeita
-	// do plugin que ele mesmo instalou.
-	api := novaAPI(t)
+func TestAnExtraFileInAPluginIsAFinding(t *testing.T) {
+	// This verifier's most valuable finding: a backdoor inside a legitimate plugin
+	// does not show up in the core check, and the user never suspects the plugin
+	// they installed themselves.
+	api := newAPI(t)
 	root := site(t, api)
-	dir := plugin(t, root, "meu-plugin", "2.0", map[string]string{
-		"inc/backdoor.php": "<?php // nao pertence ao plugin\n",
+	dir := plugin(t, root, "my-plugin", "2.0", map[string]string{
+		"inc/backdoor.php": "<?php // does not belong to the plugin\n",
 	})
 
-	api.pluginSums["meu-plugin"] = map[string]map[string][]string{
-		"2.0": {"meu-plugin.php": {sha256De(t, filepath.Join(dir, "meu-plugin.php"))}},
+	api.pluginSums["my-plugin"] = map[string]map[string][]string{
+		"2.0": {"my-plugin.php": {sha256Of(t, filepath.Join(dir, "my-plugin.php"))}},
 	}
 
-	rep := rodar(t, api.adaptador(), root)
+	rep := run(t, api.adapter(), root)
 
-	achados := acharRegra(rep, "plugin_file_unexpected")
-	if len(achados) != 1 {
-		t.Fatalf("esperava 1 achado de arquivo extra, veio %d", len(achados))
+	findings := findRule(rep, "plugin_file_unexpected")
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 extra-file finding, got %d", len(findings))
 	}
-	if achados[0].Confidence != schema.ConfidenceSignature {
-		t.Errorf("confianca: %q — plugin oficial nao ganha .php por conta propria", achados[0].Confidence)
+	if findings[0].Confidence != schema.ConfidenceSignature {
+		t.Errorf("confidence: %q — an official plugin does not grow a .php on its own", findings[0].Confidence)
 	}
 }
 
-func TestArquivoAusenteEmPluginEhAnomaliaNaoAssinatura(t *testing.T) {
-	// Mesma razao do core: ausencia nao contem codigo malicioso e nao pode ser
-	// quarentenada. Como `signature`, o peso 1.5 empurraria sozinho o achado
-	// para perto de `confirmed`, autorizando acao sobre arquivo que nem existe.
-	api := novaAPI(t)
+func TestAMissingPluginFileIsAnAnomalyNotASignature(t *testing.T) {
+	// Same reason as the core's: absence holds no malicious code and cannot be
+	// quarantined. As `signature`, weight 1.5 would push the finding on its own
+	// close to `confirmed`, authorizing action on a file that does not even exist.
+	api := newAPI(t)
 	root := site(t, api)
-	// Plugin com vários arquivos presentes: 1 ausente em 5 fica sob o teto de
-	// 34% que dispara a abstenção. Um plugin de dois arquivos daria 50% e o
-	// adaptador se absteria — corretamente, mas mascarando o que se testa aqui.
-	dir := plugin(t, root, "meu-plugin", "2.0", map[string]string{
+	// A plugin with several files present: 1 missing out of 5 stays under the 34%
+	// ceiling that triggers the abstention. A two-file plugin would give 50% and the
+	// adapter would abstain — correctly, but masking what is under test here.
+	dir := plugin(t, root, "my-plugin", "2.0", map[string]string{
 		"inc/a.php": "<?php // a\n",
 		"inc/b.php": "<?php // b\n",
 		"inc/c.php": "<?php // c\n",
 	})
 
-	api.pluginSums["meu-plugin"] = map[string]map[string][]string{
+	api.pluginSums["my-plugin"] = map[string]map[string][]string{
 		"2.0": {
-			"meu-plugin.php": {sha256De(t, filepath.Join(dir, "meu-plugin.php"))},
-			"inc/a.php":      {sha256De(t, filepath.Join(dir, "inc/a.php"))},
-			"inc/b.php":      {sha256De(t, filepath.Join(dir, "inc/b.php"))},
-			"inc/c.php":      {sha256De(t, filepath.Join(dir, "inc/c.php"))},
-			"inc/sumiu.php":  {strings.Repeat("b", 64)},
+			"my-plugin.php":    {sha256Of(t, filepath.Join(dir, "my-plugin.php"))},
+			"inc/a.php":        {sha256Of(t, filepath.Join(dir, "inc/a.php"))},
+			"inc/b.php":        {sha256Of(t, filepath.Join(dir, "inc/b.php"))},
+			"inc/c.php":        {sha256Of(t, filepath.Join(dir, "inc/c.php"))},
+			"inc/vanished.php": {strings.Repeat("b", 64)},
 		},
 	}
 
-	rep := rodar(t, api.adaptador(), root)
+	rep := run(t, api.adapter(), root)
 
-	achados := acharRegra(rep, "plugin_file_missing")
-	if len(achados) != 1 {
-		t.Fatalf("esperava 1 achado de ausencia, veio %d", len(achados))
+	findings := findRule(rep, "plugin_file_missing")
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 missing-file finding, got %d", len(findings))
 	}
-	if achados[0].Confidence != schema.ConfidenceAnomaly {
-		t.Errorf("confianca: %q, esperada anomaly", achados[0].Confidence)
+	if findings[0].Confidence != schema.ConfidenceAnomaly {
+		t.Errorf("confidence: %q, expected anomaly", findings[0].Confidence)
 	}
-	if achados[0].Severity == schema.SeverityCritical {
-		t.Error("ausencia nao pode ser critica: nao da para esconder backdoor num arquivo que nao existe")
+	if findings[0].Severity == schema.SeverityCritical {
+		t.Error("absence cannot be critical: you cannot hide a backdoor in a file that does not exist")
 	}
 }
 
-// Abstencoes -------------------------------------------------------------------
+// Abstentions ------------------------------------------------------------------
 
-func TestPluginSemChecksumPublicadoAbstemComMotivo(t *testing.T) {
-	// Plugin comercial ou proprio nao tem checksum. Tratar ausencia de DADO
-	// como ausencia de PROBLEMA declararia limpo o que ninguem conferiu.
-	api := novaAPI(t)
+func TestAPluginWithNoPublishedChecksumAbstainsWithAReason(t *testing.T) {
+	// A commercial or in-house plugin has no checksum. Treating absence of DATA as
+	// absence of a PROBLEM would declare clean what nobody checked.
+	api := newAPI(t)
 	root := site(t, api)
-	plugin(t, root, "plugin-comercial", "3.1", map[string]string{
+	plugin(t, root, "commercial-plugin", "3.1", map[string]string{
 		"inc/x.php": "<?php\n",
 	})
 
-	rep := rodar(t, api.adaptador(), root)
+	rep := run(t, api.adapter(), root)
 
 	if len(rep.Findings) != 0 {
-		t.Errorf("plugin sem checksum nao deveria gerar achado: %d", len(rep.Findings))
+		t.Errorf("a plugin with no checksum should not produce findings: %d", len(rep.Findings))
 	}
-	// E o mais importante: o relatorio registra que ele NAO foi verificado.
-	if rep.Scope.SkippedReasonCounts["plugin_sem_checksum"] == 0 {
-		t.Error("o plugin nao verificado precisa aparecer na contabilidade do relatorio")
+	// And most importantly: the report records that it was NOT verified.
+	if rep.Scope.SkippedReasonCounts["plugin_without_checksum"] == 0 {
+		t.Error("an unverified plugin has to appear in the report's accounting")
 	}
 }
 
-func TestPluginSemVersaoNoCabecalhoAbstem(t *testing.T) {
-	api := novaAPI(t)
+func TestAPluginWithNoVersionInItsHeaderAbstains(t *testing.T) {
+	api := newAPI(t)
 	root := site(t, api)
-	dir := filepath.Join(root, "wp-content", "plugins", "sem-versao")
-	escrever(t, filepath.Join(dir, "sem-versao.php"), "<?php\n/**\n * Plugin Name: Sem Versao\n */\n")
+	dir := filepath.Join(root, "wp-content", "plugins", "no-version")
+	write(t, filepath.Join(dir, "no-version.php"), "<?php\n/**\n * Plugin Name: No Version\n */\n")
 
-	rep := rodar(t, api.adaptador(), root)
+	rep := run(t, api.adapter(), root)
 
 	if len(rep.Findings) != 0 {
-		t.Errorf("plugin sem versao nao deveria gerar achado: %d", len(rep.Findings))
+		t.Errorf("a plugin with no version should not produce findings: %d", len(rep.Findings))
 	}
-	if rep.Scope.SkippedReasonCounts["plugin_sem_checksum"] == 0 {
-		t.Error("plugin sem versao precisa constar como nao verificado")
+	if rep.Scope.SkippedReasonCounts["plugin_without_checksum"] == 0 {
+		t.Error("a plugin with no version has to show up as unverified")
 	}
 }
 
-func TestMuitosArquivosAusentesAbstemEmVezDeAfogarORelatorio(t *testing.T) {
-	// A mesma licao dos 2998 achados do core, aplicada a plugin: se falta a
-	// maioria dos arquivos, o diretorio nao e a versao que o cabecalho declara,
-	// e emitir um achado por arquivo enterraria o que importa.
-	api := novaAPI(t)
+func TestTooManyMissingFilesAbstainsInsteadOfDrowningTheReport(t *testing.T) {
+	// The same lesson as the core's 2998 findings, applied to a plugin: if most of
+	// the files are missing, the directory is not the version the header declares,
+	// and emitting one finding per file would bury what matters.
+	api := newAPI(t)
 	root := site(t, api)
-	dir := plugin(t, root, "meu-plugin", "2.0", nil)
+	dir := plugin(t, root, "my-plugin", "2.0", nil)
 
-	arquivos := map[string][]string{
-		"meu-plugin.php": {sha256De(t, filepath.Join(dir, "meu-plugin.php"))},
+	files := map[string][]string{
+		"my-plugin.php": {sha256Of(t, filepath.Join(dir, "my-plugin.php"))},
 	}
 	for i := 0; i < 20; i++ {
-		arquivos[fmt.Sprintf("inc/f%02d.php", i)] = []string{strings.Repeat("c", 64)}
+		files[fmt.Sprintf("inc/f%02d.php", i)] = []string{strings.Repeat("c", 64)}
 	}
-	api.pluginSums["meu-plugin"] = map[string]map[string][]string{"2.0": arquivos}
+	api.pluginSums["my-plugin"] = map[string]map[string][]string{"2.0": files}
 
-	rep := rodar(t, api.adaptador(), root)
+	rep := run(t, api.adapter(), root)
 
-	if n := len(acharRegra(rep, "plugin_file_missing")); n > 0 {
-		t.Errorf("esperava abstencao sobre o plugin, veio %d achado(s) de ausencia", n)
+	if n := len(findRule(rep, "plugin_file_missing")); n > 0 {
+		t.Errorf("expected an abstention about the plugin, got %d missing-file finding(s)", n)
 	}
-	if rep.Scope.SkippedReasonCounts["plugin_sem_checksum"] == 0 {
-		t.Error("a abstencao precisa constar no relatorio com motivo")
+	if rep.Scope.SkippedReasonCounts["plugin_without_checksum"] == 0 {
+		t.Error("the abstention has to show up in the report with a reason")
 	}
 }
 
-func TestFalhaDePluginNaoDerrubaAVerificacaoDoCore(t *testing.T) {
-	// O core e o sinal de maior peso do projeto. Ele nao pode ficar sem
-	// verificacao porque um plugin de terceiro nao tem checksum publicado.
-	api := novaAPI(t)
+func TestAPluginFailureDoesNotTakeDownTheCoreVerification(t *testing.T) {
+	// The core is the project's highest-weight signal. It must not be left
+	// unverified because a third-party plugin has no published checksum.
+	api := newAPI(t)
 	root := site(t, api)
-	plugin(t, root, "plugin-sem-checksum", "1.0", nil)
+	plugin(t, root, "plugin-without-checksum", "1.0", nil)
 
-	// Core com um arquivo adulterado.
-	escrever(t, filepath.Join(root, "wp-includes", "pluggable.php"), "<?php // ADULTERADO\n")
-	api.coreSums["wp-includes/pluggable.php"] = "md5-que-nao-bate"
+	// Core with one tampered file.
+	write(t, filepath.Join(root, "wp-includes", "pluggable.php"), "<?php // TAMPERED WITH\n")
+	api.coreSums["wp-includes/pluggable.php"] = "md5-that-does-not-match"
 
-	rep := rodar(t, api.adaptador(), root)
+	rep := run(t, api.adapter(), root)
 
-	if n := len(acharRegra(rep, "core_file_modified")); n != 1 {
-		t.Fatalf("o core deveria ter sido verificado: %d achado(s)", n)
+	if n := len(findRule(rep, "core_file_modified")); n != 1 {
+		t.Fatalf("the core should have been verified: %d finding(s)", n)
 	}
 	if rep.Abstains() {
-		t.Error("falha de plugin nao pode fazer o engine inteiro se abster")
+		t.Error("a plugin failure must not make the whole engine abstain")
 	}
 }
 
-func TestSlugComTravessiaDeCaminhoNaoEscapaDaAPI(t *testing.T) {
-	// O slug vem de um nome de diretorio no disco do usuario. Um diretorio
-	// chamado `../algo` nao pode montar uma URL para outro lugar da API.
-	api := novaAPI(t)
+func TestASlugWithPathTraversalDoesNotEscapeTheAPI(t *testing.T) {
+	// The slug comes from a directory name on the user's disk. A directory called
+	// `../something` must not be able to build a URL to somewhere else in the API.
+	api := newAPI(t)
 	root := site(t, api)
-	dir := filepath.Join(root, "wp-content", "plugins", "..estranho")
-	escrever(t, filepath.Join(dir, "x.php"), "<?php\n/**\n * Plugin Name: X\n * Version: 1.0\n */\n")
+	dir := filepath.Join(root, "wp-content", "plugins", "..strange")
+	write(t, filepath.Join(dir, "x.php"), "<?php\n/**\n * Plugin Name: X\n * Version: 1.0\n */\n")
 
-	_ = rodar(t, api.adaptador(), root)
+	_ = run(t, api.adapter(), root)
 
-	for _, u := range api.vistos {
+	for _, u := range api.seen {
 		if strings.Contains(u, "/../") {
-			t.Errorf("a URL escapou do prefixo da API: %q", u)
+			t.Errorf("the URL escaped the API prefix: %q", u)
 		}
 		if !strings.HasPrefix(u, "/plugin-checksums/") {
-			t.Errorf("URL fora do prefixo esperado: %q", u)
+			t.Errorf("URL outside the expected prefix: %q", u)
 		}
 	}
 }
 
-func TestLimiteDePluginsPorCicloEhRegistrado(t *testing.T) {
-	// Cortar em silencio faria o relatorio parecer completo. O usuario precisa
-	// saber que parte dos plugins dele nao foi olhada neste ciclo.
-	api := novaAPI(t)
+func TestThePerCyclePluginLimitIsRecorded(t *testing.T) {
+	// Truncating silently would make the report look complete. The user needs to
+	// know that some of their plugins were not looked at in this cycle.
+	api := newAPI(t)
 	root := site(t, api)
 	for i := 0; i < 45; i++ {
 		plugin(t, root, fmt.Sprintf("plugin-%02d", i), "1.0", nil)
 	}
 
-	rep := rodar(t, api.adaptador(), root)
+	rep := run(t, api.adapter(), root)
 
-	if rep.Scope.SkippedReasonCounts["plugin_sem_checksum"] < 5 {
-		t.Errorf("os plugins alem do limite precisam constar como nao verificados: %v",
+	if rep.Scope.SkippedReasonCounts["plugin_without_checksum"] < 5 {
+		t.Errorf("the plugins beyond the limit have to show up as unverified: %v",
 			rep.Scope.SkippedReasonCounts)
 	}
 }
 
-func TestVariantesDeHashSaoAceitas(t *testing.T) {
-	// A API publica ARRAYS de hash por arquivo, porque um mesmo caminho pode
-	// ter variantes aceitas (CRLF e LF, por exemplo). Bater com uma basta;
-	// exigir a primeira produziria falso positivo em site legitimo.
-	api := novaAPI(t)
+func TestHashVariantsAreAccepted(t *testing.T) {
+	// The API publishes ARRAYS of hashes per file, because one path may have
+	// accepted variants (CRLF and LF, for instance). Matching one is enough;
+	// requiring the first would produce false positives on a legitimate site.
+	api := newAPI(t)
 	root := site(t, api)
-	dir := plugin(t, root, "meu-plugin", "2.0", map[string]string{
-		"inc/util.php": "<?php // legitimo\n",
+	dir := plugin(t, root, "my-plugin", "2.0", map[string]string{
+		"inc/util.php": "<?php // legitimate\n",
 	})
 
-	real := sha256De(t, filepath.Join(dir, "inc/util.php"))
-	api.pluginSums["meu-plugin"] = map[string]map[string][]string{
+	real := sha256Of(t, filepath.Join(dir, "inc/util.php"))
+	api.pluginSums["my-plugin"] = map[string]map[string][]string{
 		"2.0": {
-			"meu-plugin.php": {sha256De(t, filepath.Join(dir, "meu-plugin.php"))},
-			// a variante correta e a SEGUNDA da lista
+			"my-plugin.php": {sha256Of(t, filepath.Join(dir, "my-plugin.php"))},
+			// the correct variant is the SECOND in the list
 			"inc/util.php": {strings.Repeat("d", 64), real},
 		},
 	}
 
-	rep := rodar(t, api.adaptador(), root)
+	rep := run(t, api.adapter(), root)
 
-	if n := len(acharRegra(rep, "plugin_file_modified")); n != 0 {
-		t.Errorf("a segunda variante de hash deveria ter sido aceita: %d achado(s)", n)
+	if n := len(findRule(rep, "plugin_file_modified")); n != 0 {
+		t.Errorf("the second hash variant should have been accepted: %d finding(s)", n)
 	}
 }
 
-func TestModoOfflineNaoConsultaNadaDePlugin(t *testing.T) {
-	api := novaAPI(t)
+func TestOfflineModeQueriesNothingAboutPlugins(t *testing.T) {
+	api := newAPI(t)
 	root := site(t, api)
-	plugin(t, root, "meu-plugin", "2.0", nil)
+	plugin(t, root, "my-plugin", "2.0", nil)
 
-	a := api.adaptador()
+	a := api.adapter()
 	_, err := a.Scan(context.Background(),
 		adapter.Environment{Offline: true},
 		adapter.ScanRequest{ScanID: "s_1", Root: root, Mode: schema.ModeFull})
 	if err == nil {
-		t.Fatal("modo offline deveria impedir o scan")
+		t.Fatal("offline mode should have prevented the scan")
 	}
-	if len(api.vistos) != 0 {
-		t.Errorf("o modo offline consultou a API: %v", api.vistos)
+	if len(api.seen) != 0 {
+		t.Errorf("offline mode queried the API: %v", api.seen)
 	}
 }
 
-func TestCancelamentoInterrompeAVerificacaoDePlugins(t *testing.T) {
-	api := novaAPI(t)
+func TestCancellationInterruptsThePluginVerification(t *testing.T) {
+	api := newAPI(t)
 	root := site(t, api)
 	for i := 0; i < 5; i++ {
 		plugin(t, root, fmt.Sprintf("p%02d", i), "1.0", nil)
@@ -522,17 +523,17 @@ func TestCancelamentoInterrompeAVerificacaoDePlugins(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	a := api.adaptador()
+	a := api.adapter()
 	raw, err := a.Scan(ctx, adapter.Environment{},
 		adapter.ScanRequest{ScanID: "s_1", Root: root, Mode: schema.ModeFull})
-	// O core falha primeiro (contexto cancelado), o que ja e o desfecho certo:
-	// abstencao com motivo.
+	// The core fails first (cancelled context), which is already the right
+	// outcome: an abstention with a reason.
 	if err == nil && raw.Status == schema.StatusCompleted {
-		t.Error("contexto cancelado deveria interromper o scan")
+		t.Error("a cancelled context should have interrupted the scan")
 	}
 }
 
-func md5De(t *testing.T, path string) string {
+func md5Of(t *testing.T, path string) string {
 	t.Helper()
 	h, err := wpchecksums.HashFileMD5(path)
 	if err != nil {

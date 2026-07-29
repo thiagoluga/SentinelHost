@@ -10,76 +10,76 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
 
-// scanPlugins verifica a integridade de cada plugin instalado.
+// scanPlugins verifies the integrity of each installed plugin.
 //
-// Nenhuma falha aqui derruba a verificação do core: um plugin que a API não
-// conhece, ou uma requisição que falhou, entra em `pulados` com o motivo. O
-// core é o sinal de maior peso do projeto e não pode ficar sem verificação
-// porque um plugin de terceiro não tem checksum publicado.
+// No failure here takes down the core verification: a plugin the API does not
+// know, or a request that failed, goes into `skipped` with the reason. The core is
+// the project's highest-weight signal and must not be left unverified because a
+// third-party plugin has no published checksum.
 func (a *Adapter) scanPlugins(ctx context.Context, root string) ([]pluginPayload, map[string]string) {
-	pulados := map[string]string{}
+	skipped := map[string]string{}
 
-	instalados, err := DetectPlugins(root)
+	installed, err := DetectPlugins(root)
 	if err != nil {
-		pulados["*"] = "nao foi possivel listar os plugins: " + err.Error()
-		return nil, pulados
+		skipped["*"] = "could not list the plugins: " + err.Error()
+		return nil, skipped
 	}
-	if len(instalados) == 0 {
+	if len(installed) == 0 {
 		return nil, nil
 	}
 
-	if len(instalados) > maxPlugins {
-		// Cortar em silêncio faria o relatório parecer completo. O usuário
-		// precisa saber que 30 dos 70 plugins dele não foram olhados.
-		for _, p := range instalados[maxPlugins:] {
-			pulados[p.Slug] = fmt.Sprintf(
-				"limite de %d plugins por ciclo atingido; sera verificado num proximo ciclo", maxPlugins)
+	if len(installed) > maxPlugins {
+		// Truncating silently would make the report look complete. The user needs
+		// to know that 30 of their 70 plugins were not looked at.
+		for _, p := range installed[maxPlugins:] {
+			skipped[p.Slug] = fmt.Sprintf(
+				"the limit of %d plugins per cycle was reached; it will be verified in a later cycle", maxPlugins)
 		}
-		instalados = instalados[:maxPlugins]
+		installed = installed[:maxPlugins]
 	}
 
 	var out []pluginPayload
-	for _, p := range instalados {
+	for _, p := range installed {
 		if ctx.Err() != nil {
-			pulados[p.Slug] = "ciclo cancelado antes de verificar este plugin"
+			skipped[p.Slug] = "the cycle was cancelled before verifying this plugin"
 			continue
 		}
 		if p.Version == "" {
-			pulados[p.Slug] = "o plugin nao declara Version no cabecalho; sem versao nao ha checksum a consultar"
+			skipped[p.Slug] = "the plugin does not declare Version in its header; with no version there is no checksum to look up"
 			continue
 		}
 
 		body, err := a.api.fetchPlugin(ctx, p.Slug, p.Version)
 		if err != nil {
-			if errors.Is(err, ErrPluginSemChecksum) {
-				// Caso normal: plugin comercial, próprio, ou versão que saiu
-				// do diretório oficial.
-				pulados[p.Slug] = fmt.Sprintf(
-					"a API nao publica checksums para %s %s (plugin comercial ou proprio?)", p.Slug, p.Version)
+			if errors.Is(err, ErrPluginNoChecksum) {
+				// Normal case: a commercial or in-house plugin, or a version that
+				// left the official directory.
+				skipped[p.Slug] = fmt.Sprintf(
+					"the API does not publish checksums for %s %s (commercial or in-house plugin?)", p.Slug, p.Version)
 			} else {
-				pulados[p.Slug] = "consulta a API falhou: " + err.Error()
+				skipped[p.Slug] = "the API query failed: " + err.Error()
 			}
 			continue
 		}
 
 		resp, err := parsePluginChecksums(body)
 		if err != nil {
-			pulados[p.Slug] = "resposta da API ilegivel: " + err.Error()
+			skipped[p.Slug] = "unreadable API response: " + err.Error()
 			continue
 		}
 
-		locais, ausentes := pluginInventory(p.Dir, resp.Files)
+		local, missing := pluginInventory(p.Dir, resp.Files)
 
-		// Mesma trava do core, calibrada para plugin: se falta muita coisa, o
-		// diretório provavelmente não é a versão que o cabeçalho declara — e
-		// emitir um achado por arquivo afogaria o relatório.
+		// The same guard as the core's, calibrated for a plugin: if too much is
+		// missing, the directory is probably not the version the header declares —
+		// and emitting one finding per file would drown the report.
 		if len(resp.Files) > 0 {
-			fracao := float64(len(ausentes)) / float64(len(resp.Files))
-			if fracao > maxMissingRatioPlugin {
-				pulados[p.Slug] = fmt.Sprintf(
-					"%d de %d arquivos de %s %s nao existem no disco (%.0f%%): "+
-						"o diretorio provavelmente nao e a versao que o cabecalho declara",
-					len(ausentes), len(resp.Files), p.Slug, p.Version, fracao*100)
+			ratio := float64(len(missing)) / float64(len(resp.Files))
+			if ratio > maxMissingRatioPlugin {
+				skipped[p.Slug] = fmt.Sprintf(
+					"%d of %d files of %s %s do not exist on disk (%.0f%%): "+
+						"the directory is probably not the version the header declares",
+					len(missing), len(resp.Files), p.Slug, p.Version, ratio*100)
 				continue
 			}
 		}
@@ -90,50 +90,50 @@ func (a *Adapter) scanPlugins(ctx context.Context, root string) ([]pluginPayload
 			Version:     p.Version,
 			Dir:         p.Dir,
 			APIResponse: body,
-			Local:       locais,
-			Missing:     ausentes,
+			Local:       local,
+			Missing:     missing,
 			Extra:       extraPluginFiles(p.Dir, resp.Files, a.maxDepth),
 		})
 	}
 
-	if len(pulados) == 0 {
-		pulados = nil
+	if len(skipped) == 0 {
+		skipped = nil
 	}
-	return out, pulados
+	return out, skipped
 }
 
-// parsePlugins transforma o payload de plugins em achados normalizados.
+// parsePlugins turns the plugins payload into normalized findings.
 //
-// Devolve também os sha256 que batem com o oficial: eles entram em
-// `clean_files` junto com os do core, e viram veto no motor de veredito. Um
-// arquivo legítimo de plugin apontado por heurística de outro engine precisa
-// dessa mesma proteção — plugin costuma ter JS minificado e base64, que é
-// exatamente o que gera falso positivo.
+// It also returns the sha256s that match the official ones: they go into
+// `clean_files` alongside the core's and become a veto in the verdict engine. A
+// legitimate plugin file flagged by another engine's heuristic needs that same
+// protection — plugins tend to carry minified JS and base64, which is exactly what
+// produces false positives.
 func (a *Adapter) parsePlugins(raw rawOutputInfo, payload rawPayload, detectedAt time.Time) ([]schema.Finding, []string) {
-	var achados []schema.Finding
-	var limpos []string
+	var findings []schema.Finding
+	var clean []string
 
 	for _, p := range payload.Plugins {
 		resp, err := parsePluginChecksums(p.APIResponse)
 		if err != nil {
-			// O payload foi gravado com a resposta que já tinha sido validada;
-			// chegar aqui significa arquivo bruto corrompido. Não inventa
-			// achado a partir de dado que não dá para interpretar.
+			// The payload was written with a response that had already been
+			// validated; getting here means the raw file is corrupted. Do not
+			// invent a finding out of data that cannot be interpreted.
 			continue
 		}
 
 		for rel, lf := range p.Local {
-			oficial, ok := resp.Files[rel]
-			if !ok || !oficial.temHash() {
+			official, ok := resp.Files[rel]
+			if !ok || !official.hasHash() {
 				continue
 			}
-			if oficial.bate(lf.MD5, lf.SHA256) {
-				limpos = append(limpos, lf.SHA256)
+			if official.matches(lf.MD5, lf.SHA256) {
+				clean = append(clean, lf.SHA256)
 				continue
 			}
-			achados = append(achados, pluginFinding(raw, p, lf, detectedAt,
+			findings = append(findings, pluginFinding(raw, p, lf, detectedAt,
 				"plugin_file_modified", schema.SeverityCritical, schema.ConfidenceSignature,
-				fmt.Sprintf("arquivo alterado no plugin %s %s: %s", p.Slug, p.Version, rel)))
+				fmt.Sprintf("altered file in plugin %s %s: %s", p.Slug, p.Version, rel)))
 		}
 
 		for _, rel := range p.Missing {
@@ -142,28 +142,28 @@ func (a *Adapter) parsePlugins(raw rawOutputInfo, payload rawPayload, detectedAt
 				AbsPath: p.Dir + "/" + rel,
 				SHA256:  pathHash(p.Dir + "/" + rel),
 			}
-			achados = append(achados, pluginFinding(raw, p, lf, detectedAt,
+			findings = append(findings, pluginFinding(raw, p, lf, detectedAt,
 				"plugin_file_missing", schema.SeverityMedium, schema.ConfidenceAnomaly,
-				fmt.Sprintf("arquivo oficial ausente no plugin %s %s: %s", p.Slug, p.Version, rel)))
+				fmt.Sprintf("official file missing from plugin %s %s: %s", p.Slug, p.Version, rel)))
 		}
 
 		for _, lf := range p.Extra {
-			// Tolerância zero: plugin oficial não ganha `.php` por conta
-			// própria. É o achado mais valioso deste verificador, porque um
-			// backdoor dentro de um plugin legítimo não aparece na conferência
-			// do core e o usuário nunca suspeita do que ele mesmo instalou.
-			achados = append(achados, pluginFinding(raw, p, lf, detectedAt,
+			// Zero tolerance: an official plugin does not grow a `.php` on its
+			// own. It is this verifier's most valuable finding, because a backdoor
+			// inside a legitimate plugin does not show up in the core check and the
+			// user never suspects what they installed themselves.
+			findings = append(findings, pluginFinding(raw, p, lf, detectedAt,
 				"plugin_file_unexpected", schema.SeverityCritical, schema.ConfidenceSignature,
-				fmt.Sprintf("arquivo executavel que nao pertence ao plugin %s %s: %s",
+				fmt.Sprintf("executable file that does not belong to plugin %s %s: %s",
 					p.Slug, p.Version, lf.RelPath)))
 		}
 	}
 
-	sort.Strings(limpos)
-	return achados, limpos
+	sort.Strings(clean)
+	return findings, clean
 }
 
-// rawOutputInfo e o mínimo que os construtores de Finding precisam do RawOutput.
+// rawOutputInfo is the minimum the Finding builders need from the RawOutput.
 type rawOutputInfo struct {
 	ScanID        string
 	EngineVersion string

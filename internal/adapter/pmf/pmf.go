@@ -1,10 +1,11 @@
-// Package pmf integra o php-malware-finder, um conjunto de regras YARA para
-// PHP malicioso.
+// Package pmf integrates php-malware-finder, a set of YARA rules for malicious
+// PHP.
 //
-// O engine e executado pelo binario `yara` externo, nunca por libyara: linkar
-// a biblioteca exigiria CGO e quebraria o binario estatico exigido pelo
-// Principio VII. Sem o `yara` no ambiente, o engine fica indisponivel com
-// motivo claro e o consenso segue com os demais (plan.md, decisao tecnica 1).
+// The engine is run through the external `yara` binary, never through libyara:
+// linking the library would require CGO and break the static binary Principle
+// VII demands. Without `yara` in the environment the engine is unavailable with
+// a clear reason and the consensus proceeds with the others (plan.md, technical
+// decision 1).
 package pmf
 
 import (
@@ -28,22 +29,22 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
 
-// Slug do engine.
+// Slug of the engine.
 const Slug = "php-malware-finder"
 
-// RulesURL e de onde as regras YARA sao baixadas na instalacao.
+// RulesURL is where the YARA rules are downloaded from at install time.
 //
-// O caminho e data/php.yar: o repositorio foi reescrito em Go e o diretorio
-// php-malware-finder/ deixou de existir no ramo principal (o caminho antigo
-// responde 404).
+// The path is data/php.yar: the repository was rewritten in Go and the
+// php-malware-finder/ directory no longer exists on the main branch (the old
+// path answers 404).
 const RulesURL = "https://raw.githubusercontent.com/jvoisin/php-malware-finder/master/data/php.yar"
 
-// WhitelistURL acompanha as regras. O php-malware-finder usa uma whitelist
-// propria para nao apontar codigo legitimo conhecido; sem ela o engine gera
-// bem mais ruido.
+// WhitelistURL ships alongside the rules. php-malware-finder uses its own
+// whitelist to avoid flagging known-legitimate code; without it the engine
+// produces considerably more noise.
 const WhitelistURL = "https://raw.githubusercontent.com/jvoisin/php-malware-finder/master/data/whitelist.yar"
 
-// FileStat sao os metadados calculados pelo orquestrador.
+// FileStat is the metadata computed by the orchestrator.
 type FileStat struct {
 	SHA256 string
 	Size   int64
@@ -51,20 +52,20 @@ type FileStat struct {
 	MTime  time.Time
 }
 
-// Adapter integra o php-malware-finder via binario yara.
+// Adapter integrates php-malware-finder through the yara binary.
 type Adapter struct {
 	rulesURL string
 	stat     func(string) (FileStat, bool)
-	// download e injetavel nos testes.
+	// download is injectable in tests.
 	download func(ctx context.Context, url, dest string) error
 }
 
-// New cria o adaptador.
+// New creates the adapter.
 func New() *Adapter {
 	return &Adapter{rulesURL: RulesURL, stat: statFile, download: downloadFile}
 }
 
-// WithStat troca a funcao de metadados. Uso restrito a testes.
+// WithStat swaps the metadata function. Tests only.
 func (a *Adapter) WithStat(fn func(string) (FileStat, bool)) *Adapter {
 	a.stat = fn
 	return a
@@ -73,8 +74,8 @@ func (a *Adapter) WithStat(fn func(string) (FileStat, bool)) *Adapter {
 func (a *Adapter) Info() adapter.Info {
 	return adapter.Info{
 		Slug:     Slug,
-		Name:     "php-malware-finder (regras YARA)",
-		License:  "GPL-3.0 (regras e binario yara usados como processo externo, nunca linkados)",
+		Name:     "php-malware-finder (YARA rules)",
+		License:  "GPL-3.0 (rules and the yara binary used as an external process, never linked)",
 		Homepage: "https://github.com/jvoisin/php-malware-finder",
 		Kind:     schema.KindMalware,
 		Categories: []schema.Category{
@@ -84,7 +85,7 @@ func (a *Adapter) Info() adapter.Info {
 			schema.CategorySuspiciousPerms, schema.CategoryKnownMalware, schema.CategoryOther,
 		},
 		Cost: adapter.CostMedium,
-		// O yara honra --scan-list: ele varre exatamente a lista recebida.
+		// yara honours --scan-list: it walks exactly the list it is handed.
 		ScopeAware:    true,
 		DefaultWeight: config.WeightPMF,
 	}
@@ -96,10 +97,10 @@ func rulesPath(dataDir string) string {
 
 var yaraVersionRe = regexp.MustCompile(`(\d+\.\d+(?:\.\d+)?)`)
 
-// Probe checa o binario yara e as regras.
+// Probe checks the yara binary and the rules.
 func (a *Adapter) Probe(ctx context.Context, env adapter.Environment) adapter.ProbeResult {
 	if env.Runner == nil {
-		return adapter.Unavailable("executor nao disponivel")
+		return adapter.Unavailable("no executor available")
 	}
 	yara := env.BinaryPath
 	if yara == "" {
@@ -113,42 +114,42 @@ func (a *Adapter) Probe(ctx context.Context, env adapter.Environment) adapter.Pr
 	})
 	if res.Status != schema.StatusCompleted || res.ExitCode != 0 {
 		return adapter.Unavailable(
-			"binario `yara` nao encontrado no PATH. O php-malware-finder e um conjunto de regras YARA e precisa do yara para rodar; " +
-				"sem ele este engine se abstem e o consenso segue com os demais")
+			"the `yara` binary was not found on PATH. php-malware-finder is a set of YARA rules and needs yara to run; " +
+				"without it this engine abstains and the consensus proceeds with the others")
 	}
-	versao := "desconhecida"
+	version := "unknown"
 	if m := yaraVersionRe.FindStringSubmatch(string(res.Stdout)); m != nil {
-		versao = m[1]
+		version = m[1]
 	}
 
 	rules := rulesPath(env.DataDir)
 	info, err := os.Stat(rules)
 	if err != nil {
 		return adapter.UnavailableInstallable(fmt.Sprintf(
-			"yara %s disponivel, mas as regras do php-malware-finder ainda nao foram instaladas em %s", versao, rules))
+			"yara %s is available, but the php-malware-finder rules are not installed at %s yet", version, rules))
 	}
 
 	return adapter.ProbeResult{
 		Available:           true,
-		Version:             "yara " + versao,
+		Version:             "yara " + version,
 		BinaryPath:          rules,
 		SignaturesUpdatedAt: info.ModTime(),
 	}
 }
 
-// Install baixa as regras para o espaco do usuario.
+// Install downloads the rules into the user's space.
 func (a *Adapter) Install(ctx context.Context, env adapter.Environment) error {
 	if env.Offline {
-		return errors.New("modo offline: nao e possivel baixar as regras YARA")
+		return errors.New("offline mode: the YARA rules cannot be downloaded")
 	}
 	dest := rulesPath(env.DataDir)
 	if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
-		return fmt.Errorf("criando diretorio das regras: %w", err)
+		return fmt.Errorf("creating the rules directory: %w", err)
 	}
 	return a.download(ctx, a.rulesURL, dest)
 }
 
-// UpdateSignatures rebaixa as regras.
+// UpdateSignatures downloads the rules again.
 func (a *Adapter) UpdateSignatures(ctx context.Context, env adapter.Environment) (time.Time, error) {
 	if err := a.Install(ctx, env); err != nil {
 		return time.Time{}, err
@@ -160,10 +161,10 @@ func (a *Adapter) UpdateSignatures(ctx context.Context, env adapter.Environment)
 	return info.ModTime(), nil
 }
 
-// Scan roda o yara sobre a lista de caminhos.
+// Scan runs yara over the path list.
 func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter.ScanRequest) (adapter.RawOutput, error) {
 	if env.Runner == nil {
-		return adapter.RawOutput{Engine: Slug, Status: schema.StatusFailed}, errors.New("executor nao disponivel")
+		return adapter.RawOutput{Engine: Slug, Status: schema.StatusFailed}, errors.New("no executor available")
 	}
 	yara := env.BinaryPath
 	if yara == "" {
@@ -172,23 +173,23 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 	rules := rulesPath(env.DataDir)
 	if _, err := os.Stat(rules); err != nil {
 		return adapter.RawOutput{Engine: Slug, Status: schema.StatusFailed},
-			fmt.Errorf("regras YARA nao instaladas em %s: %w", rules, err)
+			fmt.Errorf("the YARA rules are not installed at %s: %w", rules, err)
 	}
 
 	args := []string{
 		"--no-warnings",
-		"-s", // imprime as strings casadas, que viram matched_content
+		"-s", // print the matched strings, which become matched_content
 		"-w",
-		// Um arquivo ofuscado pode casar milhares de vezes na mesma regra.
-		// Sem teto, a saida de UM arquivo domina o relatorio inteiro — e o
-		// matched_content e truncado a 512 bytes de qualquer jeito.
+		// An obfuscated file can match the same rule thousands of times.
+		// Without a ceiling, ONE file's output dominates the whole report — and
+		// matched_content is truncated to 512 bytes anyway.
 		"--max-strings-per-rule", "20",
 	}
-	// O limite de tamanho de arquivo e aplicado pelo walker do orquestrador,
-	// nao aqui: quem decide o escopo e o orquestrador (contrato de adaptadores).
-	// A lista de alvos vai por --scan-list. NAO existe sintaxe "@arquivo" no
-	// yara — essa suposicao esteve no codigo e so caiu quando o engine real
-	// foi executado num container Linux.
+	// The file size limit is applied by the orchestrator's walker, not here: the
+	// orchestrator decides the scope (adapter contract).
+	// The target list goes through --scan-list. There is NO "@file" syntax in
+	// yara — that assumption was in the code and only fell when the real engine
+	// was run in a Linux container.
 	listFile, cleanup, err := writeTargetList(env.DataDir, req)
 	if err != nil {
 		return adapter.RawOutput{Engine: Slug, Status: schema.StatusFailed}, err
@@ -197,7 +198,7 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 	args = append(args, "--scan-list")
 
 	args = append(args, env.ExtraArgs...)
-	// Ordem obrigatoria do yara: REGRAS por ultimo, depois o alvo.
+	// yara's mandatory order: RULES last, then the target.
 	args = append(args, rules, listFile)
 
 	res := env.Runner.Run(ctx, sexec.Command{
@@ -219,35 +220,35 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 func writeTargetList(dataDir string, req adapter.ScanRequest) (string, func(), error) {
 	dir := filepath.Join(dataDir, "engines", "pmf")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", func() {}, fmt.Errorf("criando diretorio de trabalho: %w", err)
+		return "", func() {}, fmt.Errorf("creating the working directory: %w", err)
 	}
-	f, err := os.CreateTemp(dir, "alvos-*.txt")
+	f, err := os.CreateTemp(dir, "targets-*.txt")
 	if err != nil {
-		return "", func() {}, fmt.Errorf("criando lista de alvos: %w", err)
+		return "", func() {}, fmt.Errorf("creating the target list: %w", err)
 	}
 	name := f.Name()
 	cleanup := func() { _ = os.Remove(name) }
 	if _, err := f.WriteString(strings.Join(req.Paths, "\n") + "\n"); err != nil {
 		_ = f.Close()
 		cleanup()
-		return "", func() {}, fmt.Errorf("gravando lista de alvos: %w", err)
+		return "", func() {}, fmt.Errorf("writing the target list: %w", err)
 	}
 	if err := f.Close(); err != nil {
 		cleanup()
-		return "", func() {}, fmt.Errorf("fechando lista de alvos: %w", err)
+		return "", func() {}, fmt.Errorf("closing the target list: %w", err)
 	}
 	return name, cleanup, nil
 }
 
-// stringLineRe casa as linhas de string do yara -s: "0x1f2:$nome: trecho".
-// Grupos: offset em hexadecimal, nome da string, trecho casado.
+// stringLineRe matches the string lines of yara -s: "0x1f2:$name: snippet".
+// Groups: hexadecimal offset, string name, matched snippet.
 var stringLineRe = regexp.MustCompile(`^0x([0-9a-fA-F]+):\$?([^:]*):\s?(.*)$`)
 
-// Parse converte a saida de texto do yara para o esquema normalizado.
+// Parse converts yara's text output into the normalized schema.
 //
-// O formato tem hierarquia: uma linha "REGRA CAMINHO" sem indentacao, seguida
-// das linhas de string que pertencem a ela. Tratar cada linha isoladamente
-// produziria achados sem arquivo.
+// The format is hierarchical: an unindented "RULE PATH" line, followed by the
+// string lines belonging to it. Treating each line in isolation would produce
+// findings with no file.
 func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 	rep := schema.ScanReport{
 		SchemaVersion: schema.Version,
@@ -266,43 +267,43 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 		RawRef:   raw.RawRef,
 	}
 
-	// Saida vazia com processo COMPLETO significa "nenhuma regra bateu" — o
-	// caminho normal e feliz. Saida vazia com processo que falhou ja foi
-	// convertida em abstencao antes de chegar aqui, pelo SafeScanAndParse.
-	// Por isso este Parse nao pode inventar erro para stdout vazio: seria
-	// transformar um site limpo em falha de engine.
+	// Empty output from a process that COMPLETED means "no rule matched" — the
+	// normal, happy path. Empty output from a process that failed has already
+	// been turned into an abstention before reaching here, by SafeScanAndParse.
+	// That is why this Parse must not invent an error for empty stdout: it would
+	// turn a clean site into an engine failure.
 	detectedAt := raw.FinishedAt
 	if detectedAt.IsZero() {
 		detectedAt = time.Now()
 	}
 
-	type pendente struct {
+	type pending struct {
 		rule    string
 		path    string
 		strings []string
-		// offset da primeira string casada, para que o usuario saiba onde
-		// olhar no arquivo.
+		// offset of the first matched string, so the user knows where to look in
+		// the file.
 		offset int64
 	}
-	var atual *pendente
-	desconhecidas := 0
+	var current *pending
+	unknown := 0
 
 	flush := func() {
-		if atual == nil {
+		if current == nil {
 			return
 		}
-		defer func() { atual = nil }()
+		defer func() { current = nil }()
 
-		m, conhecida := classify(atual.rule)
-		if !conhecida {
-			desconhecidas++
+		m, known := classify(current.rule)
+		if !known {
+			unknown++
 		}
-		st, ok := a.stat(atual.path)
+		st, ok := a.stat(current.path)
 		if !ok || st.SHA256 == "" {
 			if rep.Scope.SkippedReasonCounts == nil {
 				rep.Scope.SkippedReasonCounts = map[string]int{}
 			}
-			rep.Scope.SkippedReasonCounts["sumiu_antes_do_hash"]++
+			rep.Scope.SkippedReasonCounts["vanished_before_hashing"]++
 			return
 		}
 		rep.Findings = append(rep.Findings, schema.Finding{
@@ -310,10 +311,10 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 			Kind:          schema.KindMalware,
 			Engine:        Slug,
 			EngineVersion: raw.EngineVersion,
-			Rule:          atual.rule,
+			Rule:          current.rule,
 			RuleRef:       "https://github.com/jvoisin/php-malware-finder",
 			File: schema.FileRef{
-				Path:      atual.path,
+				Path:      current.path,
 				SizeBytes: st.Size,
 				SHA256:    st.SHA256,
 				MTime:     st.MTime,
@@ -322,56 +323,56 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 			Category:   m.category,
 			Severity:   m.severity,
 			Confidence: m.confidence,
-			// O trecho casado e truncado e sanitizado: conteudo malicioso
-			// nunca e re-servido pela UI.
-			MatchedContent: schema.SanitizeSnippet(strings.Join(atual.strings, " | ")),
-			MatchedOffset:  atual.offset,
+			// The matched snippet is truncated and sanitized: malicious content
+			// is never served back by the UI.
+			MatchedContent: schema.SanitizeSnippet(strings.Join(current.strings, " | ")),
+			MatchedOffset:  current.offset,
 			ScanID:         raw.ScanID,
 			DetectedAt:     detectedAt,
 		})
 	}
 
 	sc := bufio.NewScanner(strings.NewReader(string(raw.Stdout)))
-	// Linhas de yara -s podem ser longas; o default de 64 KiB nao basta.
+	// yara -s lines can be long; the 64 KiB default is not enough.
 	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)
 
 	for sc.Scan() {
-		linha := sc.Text()
-		if strings.TrimSpace(linha) == "" {
+		line := sc.Text()
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		if m := stringLineRe.FindStringSubmatch(linha); m != nil {
-			if atual != nil {
-				if len(atual.strings) == 0 {
+		if m := stringLineRe.FindStringSubmatch(line); m != nil {
+			if current != nil {
+				if len(current.strings) == 0 {
 					if off, err := strconv.ParseInt(m[1], 16, 64); err == nil {
-						atual.offset = off
+						current.offset = off
 					}
 				}
-				atual.strings = append(atual.strings, m[3])
+				current.strings = append(current.strings, m[3])
 			}
-			// String sem regra anterior e lixo de saida truncada; ignorar e
-			// melhor que criar um achado sem arquivo.
+			// A string with no preceding rule is debris from truncated output;
+			// ignoring it beats creating a finding with no file.
 			continue
 		}
 
-		rule, path, ok := strings.Cut(linha, " ")
+		rule, path, ok := strings.Cut(line, " ")
 		if !ok || rule == "" || path == "" {
 			continue
 		}
 		flush()
-		atual = &pendente{rule: rule, path: strings.TrimSpace(path)}
+		current = &pending{rule: rule, path: strings.TrimSpace(path)}
 	}
 	flush()
 
 	if err := sc.Err(); err != nil {
-		return rep, fmt.Errorf("lendo saida do yara: %w", err)
+		return rep, fmt.Errorf("reading yara's output: %w", err)
 	}
 
-	if desconhecidas > 0 {
+	if unknown > 0 {
 		if rep.Scope.SkippedReasonCounts == nil {
 			rep.Scope.SkippedReasonCounts = map[string]int{}
 		}
-		rep.Scope.SkippedReasonCounts["regra_desconhecida"] = desconhecidas
+		rep.Scope.SkippedReasonCounts["unknown_rule"] = unknown
 	}
 	return rep, nil
 }
@@ -381,7 +382,7 @@ func statFile(path string) (FileStat, bool) {
 	if err != nil || info.IsDir() {
 		return FileStat{}, false
 	}
-	f, err := os.Open(path) // caminho vem da saida do engine sobre a raiz configurada
+	f, err := os.Open(path) // path comes from the engine's output over the configured root
 	if err != nil {
 		return FileStat{}, false
 	}

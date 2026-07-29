@@ -1,9 +1,9 @@
-// Package amwscan integra o AMWScan (PHP Antimalware Scanner), um scanner em
-// PHP puro que roda em qualquer hospedagem com PHP CLI.
+// Package amwscan integrates AMWScan (PHP Antimalware Scanner), a scanner
+// written in pure PHP that runs on any hosting with a PHP CLI.
 //
-// E o engine mais portatil do MVP: nao precisa de binario compilado, so de
-// `php` na linha de comando — e das extensoes que ele usa, o que NAO e o
-// mesmo que "so precisa de PHP" (ver Probe).
+// It is the most portable engine in the MVP: it needs no compiled binary, only
+// `php` on the command line — and the extensions it uses, which is NOT the same
+// as "it only needs PHP" (see Probe).
 package amwscan
 
 import (
@@ -28,45 +28,45 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
 
-// Slug do engine.
+// Slug of the engine.
 const Slug = "amwscan"
 
-// PharURL e de onde o executavel PHP do AMWScan e baixado.
+// PharURL is where AMWScan's PHP executable is downloaded from.
 //
-// Aponta para dist/ no repositorio, e nao para o asset de um release: o
-// projeto publica releases SEM asset (a v0.15.2 nao tem nenhum), e o
-// .../releases/latest/download/scanner.phar responde 404. O dist/scanner do
-// ramo principal e o unico caminho estavel.
+// It points at dist/ in the repository rather than at a release asset: the
+// project publishes releases WITHOUT assets (v0.15.2 has none), and
+// .../releases/latest/download/scanner.phar answers 404. dist/scanner on the
+// main branch is the only stable path.
 const PharURL = "https://raw.githubusercontent.com/marcocesarato/PHP-Antimalware-Scanner/master/dist/scanner"
 
-// MinPHPVersion exigida pelo engine.
+// MinPHPVersion required by the engine.
 const MinPHPVersion = "7.1"
 
-// O escopo incremental do AMWScan é aplicado pelo ADAPTADOR, não pelo engine.
+// AMWScan's incremental scope is applied by the ADAPTER, not by the engine.
 //
-// Duas limitações reais, ambas medidas no container de validação, levam a essa
-// escolha:
+// Two real limitations, both measured in the validation container, force that
+// choice:
 //
-//  1. `--filter-paths` tem semântica de **E**, não de OU. Com um caminho ele
-//     funciona; com dois ou mais o engine roda, sai com código 0, escreve o
-//     relatório e não aponta NADA — nem os arquivos que casariam sozinhos.
-//     Esse é o pior modo de falha possível para este projeto: engine verde,
-//     relatório limpo, site infectado.
-//  2. `--filter-paths` filtra o RELATÓRIO, não o conjunto varrido. Uma
-//     execução por arquivo custou 1m37s para 11 arquivos, porque cada uma
-//     varreu a raiz inteira de novo.
+//  1. `--filter-paths` has AND semantics, not OR. With one path it works; with
+//     two or more the engine runs, exits 0, writes the report and flags
+//     NOTHING — not even the files that would match on their own. That is the
+//     worst possible failure mode for this project: green engine, clean report,
+//     infected site.
+//  2. `--filter-paths` filters the REPORT, not the set that gets walked. One
+//     execution per file cost 1m37s for 11 files, because each one walked the
+//     whole root again.
 //
-// Conclusão: uma execução por ciclo, sobre a raiz, e o Parse descarta o que o
-// orquestrador não pediu. É mais CPU do que o ideal — o AMWScan simplesmente
-// não sabe escanear uma lista de arquivos — mas é correto, e correto vem
-// primeiro.
+// Conclusion: one execution per cycle, over the root, and Parse discards what
+// the orchestrator did not ask for. It is more CPU than ideal — AMWScan simply
+// does not know how to scan a file list — but it is correct, and correct comes
+// first.
 
-// chaveAlvos é onde o Scan guarda, no RawOutput, o conjunto de caminhos que o
-// orquestrador pediu, para o Parse descartar o excedente.
-const chaveAlvos = "alvos"
+// targetsKey is where Scan stores, in RawOutput, the set of paths the
+// orchestrator asked for, so Parse can discard the surplus.
+const targetsKey = "targets"
 
-// FileStat sao os metadados que o orquestrador calcula sobre um arquivo
-// apontado por um engine que nao reporta hash.
+// FileStat is the metadata the orchestrator computes about a file flagged by an
+// engine that does not report a hash.
 type FileStat struct {
 	SHA256 string
 	Size   int64
@@ -74,16 +74,16 @@ type FileStat struct {
 	MTime  time.Time
 }
 
-// Adapter integra o AMWScan.
+// Adapter integrates AMWScan.
 type Adapter struct {
 	pharURL string
 	http    *http.Client
-	// stat e injetavel para que o teste de contrato exercite o parser com
-	// fixtures que citam caminhos de um servidor real.
+	// stat is injectable so the contract test can exercise the parser with
+	// fixtures that cite paths from a real server.
 	stat func(string) (FileStat, bool)
 }
 
-// New cria o adaptador.
+// New creates the adapter.
 func New() *Adapter {
 	return &Adapter{
 		pharURL: PharURL,
@@ -92,7 +92,7 @@ func New() *Adapter {
 	}
 }
 
-// WithStat troca a funcao de metadados. Uso restrito a testes.
+// WithStat swaps the metadata function. Tests only.
 func (a *Adapter) WithStat(fn func(string) (FileStat, bool)) *Adapter {
 	a.stat = fn
 	return a
@@ -102,7 +102,7 @@ func (a *Adapter) Info() adapter.Info {
 	return adapter.Info{
 		Slug:     Slug,
 		Name:     "AMWScan (PHP Antimalware Scanner)",
-		License:  "GPL-3.0 (invocado como processo externo, nunca linkado)",
+		License:  "GPL-3.0 (invoked as an external process, never linked)",
 		Homepage: "https://github.com/marcocesarato/PHP-Antimalware-Scanner",
 		Kind:     schema.KindMalware,
 		Categories: []schema.Category{
@@ -111,34 +111,34 @@ func (a *Adapter) Info() adapter.Info {
 			schema.CategorySpamSEO, schema.CategoryPhishing, schema.CategoryOther,
 		},
 		Cost: adapter.CostMedium,
-		// --filter-paths filtra o RELATORIO, nao a varredura: o engine le a
-		// raiz inteira toda vez. Ver D-018.
+		// --filter-paths filters the REPORT, not the walk: the engine reads the
+		// whole root every time. See D-018.
 		ScopeAware:    false,
 		DefaultWeight: config.WeightAMWScan,
 	}
 }
 
-// pharPath e onde o executavel fica instalado no espaco do usuario.
+// pharPath is where the executable gets installed in the user's space.
 func pharPath(dataDir string) string {
 	return filepath.Join(dataDir, "engines", "amwscan", "scanner.phar")
 }
 
-// reportBase e o prefixo do relatorio. O AMWScan acrescenta ".log".
+// reportBase is the report prefix. AMWScan appends ".log".
 func reportBase(dataDir string) string {
-	return filepath.Join(dataDir, "engines", "amwscan", "relatorio")
+	return filepath.Join(dataDir, "engines", "amwscan", "report")
 }
 
 var phpVersionRe = regexp.MustCompile(`PHP (\d+)\.(\d+)`)
 
-// Probe checa PHP CLI, a presenca do executavel e — o que importa de verdade —
-// se ele REALMENTE roda neste ambiente.
+// Probe checks the PHP CLI, that the executable is present and — what actually
+// matters — that it REALLY runs in this environment.
 func (a *Adapter) Probe(ctx context.Context, env adapter.Environment) adapter.ProbeResult {
 	php := env.BinaryPath
 	if php == "" {
 		php = "php"
 	}
 	if env.Runner == nil {
-		return adapter.Unavailable("executor nao disponivel")
+		return adapter.Unavailable("no executor available")
 	}
 
 	res := env.Runner.Run(ctx, sexec.Command{
@@ -148,102 +148,103 @@ func (a *Adapter) Probe(ctx context.Context, env adapter.Environment) adapter.Pr
 	})
 	if res.Status != schema.StatusCompleted || res.ExitCode != 0 {
 		return adapter.Unavailable(fmt.Sprintf(
-			"PHP CLI nao encontrado ou nao executavel (%s): o AMWScan roda em PHP puro e sem ele nao ha como executar", php))
+			"PHP CLI not found or not executable (%s): AMWScan runs on pure PHP and cannot run without it", php))
 	}
 
 	m := phpVersionRe.FindStringSubmatch(string(res.Stdout))
 	if m == nil {
-		return adapter.Unavailable("nao foi possivel identificar a versao do PHP CLI")
+		return adapter.Unavailable("could not identify the PHP CLI version")
 	}
 	major, _ := strconv.Atoi(m[1])
 	minor, _ := strconv.Atoi(m[2])
 	phpVer := fmt.Sprintf("%d.%d", major, minor)
 	if major < 7 || (major == 7 && minor < 1) {
 		return adapter.Unavailable(fmt.Sprintf(
-			"PHP %s e mais antigo que o minimo exigido pelo AMWScan (%s)", phpVer, MinPHPVersion))
+			"PHP %s is older than the minimum AMWScan requires (%s)", phpVer, MinPHPVersion))
 	}
 
 	phar := pharPath(env.DataDir)
 	info, err := os.Stat(phar)
 	if err != nil {
 		return adapter.UnavailableInstallable(fmt.Sprintf(
-			"PHP %s disponivel, mas o AMWScan ainda nao foi instalado em %s", phpVer, phar))
+			"PHP %s is available, but AMWScan is not installed at %s yet", phpVer, phar))
 	}
 
-	// A checagem que realmente importa: EXECUTAR o engine.
+	// The check that actually matters: EXECUTE the engine.
 	//
-	// "PHP existe e o arquivo esta la" nao e o mesmo que "o engine roda". Numa
-	// hospedagem sem a extensao mbstring, o AMWScan morre com exit 255 e
-	// ZERO saida — e um probe que so olha versao e arquivo marcaria o engine
-	// como saudavel enquanto ele nunca produz um achado. Isso e degradacao
-	// silenciosa de cobertura, o modo de falha mais perigoso deste projeto.
+	// "PHP exists and the file is there" is not the same as "the engine runs".
+	// On hosting without the mbstring extension, AMWScan dies with exit 255 and
+	// ZERO output — and a probe that only looks at the version and the file
+	// would mark the engine as healthy while it never produces a finding. That
+	// is silent coverage degradation, this project's most dangerous failure
+	// mode.
 	//
-	// Este caso nao era hipotetico: foi assim que o container de validacao se
-	// comportou antes de instalar php-mbstring.
-	exec := env.Runner.Run(ctx, sexec.Command{
+	// This case was not hypothetical: it is how the validation container
+	// behaved before php-mbstring was installed.
+	selfTest := env.Runner.Run(ctx, sexec.Command{
 		Engine: Slug + "-selftest",
 		Path:   php,
 		Args:   []string{phar, "--version"},
 	})
-	saida := strings.TrimSpace(string(exec.Stdout)) + strings.TrimSpace(string(exec.Stderr))
-	if exec.Status != schema.StatusCompleted || saida == "" {
+	output := strings.TrimSpace(string(selfTest.Stdout)) + strings.TrimSpace(string(selfTest.Stderr))
+	if selfTest.Status != schema.StatusCompleted || output == "" {
 		return adapter.Unavailable(fmt.Sprintf(
-			"o AMWScan esta instalado mas nao executa neste PHP %s (saiu com codigo %d sem produzir saida). "+
-				"A causa mais comum e falta de uma extensao do PHP, tipicamente mbstring: "+
-				"peca `php-mbstring` ao suporte da hospedagem",
-			phpVer, exec.ExitCode))
+			"AMWScan is installed but does not run on this PHP %s (exited with code %d producing no output). "+
+				"The most common cause is a missing PHP extension, typically mbstring: "+
+				"ask the hosting support for `php-mbstring`",
+			phpVer, selfTest.ExitCode))
 	}
 
-	versao := "PHP " + phpVer
-	if v := extrairVersao(saida); v != "" {
-		versao = "AMWScan " + v + " (PHP " + phpVer + ")"
+	version := "PHP " + phpVer
+	if v := extractVersion(output); v != "" {
+		version = "AMWScan " + v + " (PHP " + phpVer + ")"
 	}
 
 	return adapter.ProbeResult{
 		Available:           true,
-		Version:             versao,
+		Version:             version,
 		BinaryPath:          phar,
 		SignaturesUpdatedAt: info.ModTime(),
 	}
 }
 
-var versaoRe = regexp.MustCompile(`(?i)version\s+v?(\d+\.\d+(?:\.\d+)?)`)
+var versionRe = regexp.MustCompile(`(?i)version\s+v?(\d+\.\d+(?:\.\d+)?)`)
 
-func extrairVersao(s string) string {
-	if m := versaoRe.FindStringSubmatch(s); m != nil {
+func extractVersion(s string) string {
+	if m := versionRe.FindStringSubmatch(s); m != nil {
 		return m[1]
 	}
 	return ""
 }
 
-// Install baixa o executavel para o espaco do usuario, sem root.
+// Install downloads the executable into the user's space, without root.
 func (a *Adapter) Install(ctx context.Context, env adapter.Environment) error {
 	if env.Offline {
-		return errors.New("modo offline: nao e possivel baixar o AMWScan")
+		return errors.New("offline mode: AMWScan cannot be downloaded")
 	}
 	dest := pharPath(env.DataDir)
 	if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
-		return fmt.Errorf("criando diretorio do engine: %w", err)
+		return fmt.Errorf("creating the engine directory: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.pharURL, nil)
 	if err != nil {
-		return fmt.Errorf("montando download: %w", err)
+		return fmt.Errorf("building the download: %w", err)
 	}
 	resp, err := a.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("baixando o AMWScan: %w", err)
+		return fmt.Errorf("downloading AMWScan: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download do AMWScan respondeu %s", resp.Status)
+		return fmt.Errorf("the AMWScan download answered %s", resp.Status)
 	}
 
-	// Grava em temporario e renomeia: um download interrompido nao pode
-	// deixar um executavel pela metade no lugar de um que funcionava.
+	// Write to a temporary file and rename: an interrupted download must not
+	// leave half an executable where a working one used to be.
 	tmp, err := os.CreateTemp(filepath.Dir(dest), ".scanner-*.phar")
 	if err != nil {
-		return fmt.Errorf("criando arquivo temporario: %w", err)
+		return fmt.Errorf("creating the temporary file: %w", err)
 	}
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }()
@@ -251,25 +252,25 @@ func (a *Adapter) Install(ctx context.Context, env adapter.Environment) error {
 	n, err := io.Copy(tmp, io.LimitReader(resp.Body, 64<<20))
 	if err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("gravando o AMWScan: %w", err)
+		return fmt.Errorf("writing AMWScan: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("fechando o AMWScan: %w", err)
+		return fmt.Errorf("closing AMWScan: %w", err)
 	}
 	if n < 100<<10 {
-		return fmt.Errorf("o download veio com apenas %d bytes: nao parece o scanner", n)
+		return fmt.Errorf("the download came back with only %d bytes: that does not look like the scanner", n)
 	}
 	if err := os.Chmod(tmpName, 0o700); err != nil {
-		return fmt.Errorf("ajustando permissao: %w", err)
+		return fmt.Errorf("adjusting permissions: %w", err)
 	}
 	if err := os.Rename(tmpName, dest); err != nil {
-		return fmt.Errorf("instalando o AMWScan: %w", err)
+		return fmt.Errorf("installing AMWScan: %w", err)
 	}
 	return nil
 }
 
-// UpdateSignatures reinstala o executavel: no AMWScan as definicoes viajam
-// dentro do proprio arquivo, entao atualizar assinatura e atualizar o engine.
+// UpdateSignatures reinstalls the executable: in AMWScan the definitions travel
+// inside the file itself, so updating signatures means updating the engine.
 func (a *Adapter) UpdateSignatures(ctx context.Context, env adapter.Environment) (time.Time, error) {
 	if err := a.Install(ctx, env); err != nil {
 		return time.Time{}, err
@@ -281,14 +282,14 @@ func (a *Adapter) UpdateSignatures(ctx context.Context, env adapter.Environment)
 	return info.ModTime(), nil
 }
 
-// Scan executa o AMWScan sobre a lista de caminhos.
+// Scan runs AMWScan over the path list.
 //
-// O AMWScan escreve o resultado num ARQUIVO de relatorio, nao em stdout — e
-// nao tem formato JSON, so `html` e `txt`. A saida bruta deste adaptador e,
-// portanto, o conteudo desse arquivo.
+// AMWScan writes its result to a report FILE, not to stdout — and it has no
+// JSON format, only `html` and `txt`. This adapter's raw output is therefore
+// the contents of that file.
 func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter.ScanRequest) (adapter.RawOutput, error) {
 	if env.Runner == nil {
-		return adapter.RawOutput{Engine: Slug, Status: schema.StatusFailed}, errors.New("executor nao disponivel")
+		return adapter.RawOutput{Engine: Slug, Status: schema.StatusFailed}, errors.New("no executor available")
 	}
 	php := env.BinaryPath
 	if php == "" {
@@ -297,11 +298,11 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 	phar := pharPath(env.DataDir)
 	if _, err := os.Stat(phar); err != nil {
 		return adapter.RawOutput{Engine: Slug, Status: schema.StatusFailed},
-			fmt.Errorf("AMWScan nao instalado em %s: %w", phar, err)
+			fmt.Errorf("AMWScan is not installed at %s: %w", phar, err)
 	}
 
 	base := reportBase(env.DataDir)
-	relatorio := base + ".log"
+	reportFile := base + ".log"
 
 	out := adapter.RawOutput{
 		Engine: Slug, ScanID: req.ScanID, Root: req.Root, Mode: req.Mode,
@@ -309,26 +310,26 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 		Status: schema.StatusCompleted,
 		Extra:  map[string]any{},
 	}
-	// O Parse precisa saber o que foi realmente pedido para descartar o
-	// excedente: o engine sempre varre a raiz inteira.
+	// Parse has to know what was actually requested so it can discard the
+	// surplus: the engine always walks the whole root.
 	if len(req.Paths) > 0 {
-		out.Extra[chaveAlvos] = append([]string(nil), req.Paths...)
+		out.Extra[targetsKey] = append([]string(nil), req.Paths...)
 	}
 
-	// Remove o relatorio anterior ANTES de rodar. Sem isso, uma execucao que
-	// falha deixa o relatorio do ciclo passado no lugar, e o Parse devolveria
-	// achados velhos como se fossem novos.
-	if err := os.Remove(relatorio); err != nil && !os.IsNotExist(err) {
+	// Remove the previous report BEFORE running. Without this, a failed
+	// execution leaves last cycle's report in place and Parse would return old
+	// findings as if they were new.
+	if err := os.Remove(reportFile); err != nil && !os.IsNotExist(err) {
 		out.Status = schema.StatusFailed
-		return out, fmt.Errorf("limpando relatorio anterior: %w", err)
+		return out, fmt.Errorf("clearing the previous report: %w", err)
 	}
 
 	args := []string{
 		"-d", "memory_limit=256M",
 		phar,
-		// --report: modo somente relatorio. Sem ele o AMWScan entra em modo
-		// interativo e pode LIMPAR ou APAGAR arquivos — a quarentena deste
-		// projeto e reversivel e registrada, a dele nao.
+		// --report: report-only mode. Without it AMWScan enters interactive mode
+		// and may CLEAN or DELETE files — this project's quarantine is
+		// reversible and recorded, its own is not.
 		"--report",
 		"--report-format", "txt",
 		"--path-report", base,
@@ -357,29 +358,29 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 		return out, res.Err
 	}
 
-	// A saida bruta e o arquivo de relatorio. stdout fica vazio por causa do
-	// --silent, e confundir "stdout vazio" com "nada achado" seria o erro
-	// classico deste adaptador.
-	conteudo, err := os.ReadFile(relatorio) // caminho derivado do diretorio de dados
+	// The raw output is the report file. stdout stays empty because of
+	// --silent, and mistaking "empty stdout" for "nothing found" would be this
+	// adapter's classic bug.
+	content, err := os.ReadFile(reportFile) // path derived from the data directory
 	switch {
 	case err == nil:
-		out.Stdout = conteudo
+		out.Stdout = content
 	case os.IsNotExist(err):
-		// Sem arquivo de relatorio nao ha o que interpretar. Se o engine
-		// tivesse rodado, ele teria escrito ao menos o cabecalho.
+		// With no report file there is nothing to interpret. Had the engine
+		// run, it would have written at least the header.
 		out.Status = schema.StatusFailed
 		return out, fmt.Errorf(
-			"o AMWScan terminou com codigo %d mas nao escreveu o relatorio em %s (saida: %q)",
-			res.ExitCode, relatorio, primeiraLinha(res.Stderr))
+			"AMWScan exited with code %d but did not write the report at %s (output: %q)",
+			res.ExitCode, reportFile, firstLine(res.Stderr))
 	default:
 		out.Status = schema.StatusFailed
-		return out, fmt.Errorf("lendo relatorio do AMWScan: %w", err)
+		return out, fmt.Errorf("reading the AMWScan report: %w", err)
 	}
 
 	return out, nil
 }
 
-func primeiraLinha(b []byte) string {
+func firstLine(b []byte) string {
 	s := strings.TrimSpace(string(b))
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		s = s[:i]
@@ -390,27 +391,27 @@ func primeiraLinha(b []byte) string {
 	return s
 }
 
-// Formato real do relatorio txt do AMWScan 0.15.1:
+// Real format of the AMWScan 0.15.1 txt report:
 //
 //	Scan date: 2026-07-29 15:59:45
-//	File: /caminho/do/arquivo.php
+//	File: /path/to/file.php
 //	Exploits:
 //	 => [!] Signature (d30fc49e) [line 4]
 //	    - Malware Signature (hash: d30fc49e)
 //	      => backdoor
 //
-// A hierarquia importa: `File:` abre um bloco, e tudo abaixo pertence a ele
-// ate o proximo `File:`. Tratar as linhas isoladamente produziria achados sem
-// arquivo.
+// The hierarchy matters: `File:` opens a block and everything below belongs to
+// it until the next `File:`. Treating the lines in isolation would produce
+// findings with no file.
 var (
-	arquivoRe = regexp.MustCompile(`^File:\s*(.+?)\s*$`)
-	secaoRe   = regexp.MustCompile(`^([A-Za-z][A-Za-z ]*):\s*$`)
-	achadoRe  = regexp.MustCompile(`^\s*=>\s*\[[!*]\]\s*(.+?)\s*(?:\(([^)]*)\))?\s*(?:\[line\s+(\d+)\])?\s*$`)
+	fileRe    = regexp.MustCompile(`^File:\s*(.+?)\s*$`)
+	sectionRe = regexp.MustCompile(`^([A-Za-z][A-Za-z ]*):\s*$`)
+	findingRe = regexp.MustCompile(`^\s*=>\s*\[[!*]\]\s*(.+?)\s*(?:\(([^)]*)\))?\s*(?:\[line\s+(\d+)\])?\s*$`)
 	tagRe     = regexp.MustCompile(`^\s+=>\s*(.+?)\s*$`)
-	dataRe    = regexp.MustCompile(`^Scan date:\s*(.+?)\s*$`)
+	dateRe    = regexp.MustCompile(`^Scan date:\s*(.+?)\s*$`)
 )
 
-// Parse converte o relatorio txt do AMWScan para o esquema normalizado.
+// Parse converts the AMWScan txt report into the normalized schema.
 func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 	rep := schema.ScanReport{
 		SchemaVersion: schema.Version,
@@ -429,16 +430,16 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 		RawRef:   raw.RawRef,
 	}
 
-	// Relatorio vazio e ambiguo demais para ser interpretado como "site
-	// limpo": o AMWScan sempre escreve ao menos a linha `Scan date:`. Vazio
-	// significa que ele nao chegou a escrever — abstencao.
-	texto := strings.TrimSpace(string(raw.Stdout))
-	if texto == "" {
-		return rep, errors.New("o AMWScan nao produziu relatorio (arquivo vazio)")
+	// An empty report is far too ambiguous to read as "the site is clean":
+	// AMWScan always writes at least the `Scan date:` line. Empty means it
+	// never got to writing — abstention.
+	text := strings.TrimSpace(string(raw.Stdout))
+	if text == "" {
+		return rep, errors.New("AMWScan produced no report (empty file)")
 	}
-	if !strings.Contains(texto, "Scan date:") && !strings.Contains(texto, "File:") {
-		return rep, fmt.Errorf("o relatorio do AMWScan nao tem o formato esperado (comeca com %q)",
-			primeiraLinha([]byte(texto)))
+	if !strings.Contains(text, "Scan date:") && !strings.Contains(text, "File:") {
+		return rep, fmt.Errorf("the AMWScan report does not have the expected format (it starts with %q)",
+			firstLine([]byte(text)))
 	}
 
 	detectedAt := raw.FinishedAt
@@ -446,62 +447,62 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 		detectedAt = time.Now()
 	}
 
-	// Quando o Scan varreu a raiz inteira (lote grande demais para uma
-	// execucao por arquivo), o relatorio traz achados de arquivos que o
-	// orquestrador NAO pediu. Descarta-los aqui e o que preserva o escopo
-	// incremental: quem decide a lista e o orquestrador, sempre.
-	permitido := alvosPermitidos(raw)
+	// When Scan walked the whole root (a batch too large for one execution per
+	// file), the report carries findings for files the orchestrator did NOT ask
+	// about. Discarding them here is what preserves the incremental scope: the
+	// orchestrator decides the list, always.
+	allowed := allowedTargets(raw)
 
-	type pendente struct {
+	type pending struct {
 		rule  string
 		extra string
-		linha int64
+		line  int64
 		tag   string
 	}
 
 	var (
-		arquivoAtual  string
-		atual         *pendente
-		desconhecidas int
+		currentFile string
+		current     *pending
+		unknown     int
 	)
 
-	emitir := func() {
-		if atual == nil || arquivoAtual == "" {
-			atual = nil
+	emit := func() {
+		if current == nil || currentFile == "" {
+			current = nil
 			return
 		}
-		defer func() { atual = nil }()
+		defer func() { current = nil }()
 
-		if permitido != nil && !permitido[arquivoAtual] {
+		if allowed != nil && !allowed[currentFile] {
 			if rep.Scope.SkippedReasonCounts == nil {
 				rep.Scope.SkippedReasonCounts = map[string]int{}
 			}
-			rep.Scope.SkippedReasonCounts["fora_do_escopo_pedido"]++
+			rep.Scope.SkippedReasonCounts["outside_requested_scope"]++
 			return
 		}
 
-		m, conhecida := classify(atual.rule, atual.tag)
-		if !conhecida {
-			desconhecidas++
+		m, known := classify(current.rule, current.tag)
+		if !known {
+			unknown++
 		}
-		st, ok := a.stat(arquivoAtual)
+		st, ok := a.stat(currentFile)
 		if !ok || st.SHA256 == "" {
-			// Sem hash nao ha como deduplicar entre engines. Pular e melhor
-			// que inventar uma chave: o arquivo provavelmente sumiu entre o
-			// scan e a leitura do relatorio.
+			// With no hash there is no way to deduplicate across engines.
+			// Skipping beats inventing a key: the file most likely disappeared
+			// between the scan and reading the report.
 			if rep.Scope.SkippedReasonCounts == nil {
 				rep.Scope.SkippedReasonCounts = map[string]int{}
 			}
-			rep.Scope.SkippedReasonCounts["sumiu_antes_do_hash"]++
+			rep.Scope.SkippedReasonCounts["vanished_before_hashing"]++
 			return
 		}
 
-		trecho := atual.rule
-		if atual.extra != "" {
-			trecho += " (" + atual.extra + ")"
+		snippet := current.rule
+		if current.extra != "" {
+			snippet += " (" + current.extra + ")"
 		}
-		if atual.tag != "" {
-			trecho += " => " + atual.tag
+		if current.tag != "" {
+			snippet += " => " + current.tag
 		}
 
 		rep.Findings = append(rep.Findings, schema.Finding{
@@ -509,10 +510,10 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 			Kind:          schema.KindMalware,
 			Engine:        Slug,
 			EngineVersion: raw.EngineVersion,
-			Rule:          atual.rule,
+			Rule:          current.rule,
 			RuleRef:       "https://github.com/marcocesarato/PHP-Antimalware-Scanner",
 			File: schema.FileRef{
-				Path:      arquivoAtual,
+				Path:      currentFile,
 				SizeBytes: st.Size,
 				SHA256:    st.SHA256,
 				MTime:     st.MTime,
@@ -521,106 +522,106 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 			Category:   m.category,
 			Severity:   m.severity,
 			Confidence: m.confidence,
-			// O relatorio txt do AMWScan nao inclui o trecho do codigo, so a
-			// regra e a linha. Melhor assim: conteudo malicioso nunca precisa
-			// atravessar o sistema para o usuario entender o achado.
-			MatchedContent: schema.SanitizeSnippet(trecho),
-			MatchedOffset:  atual.linha,
+			// The AMWScan txt report does not include the code snippet, only the
+			// rule and the line. Better that way: malicious content never needs
+			// to travel through the system for the user to understand a finding.
+			MatchedContent: schema.SanitizeSnippet(snippet),
+			MatchedOffset:  current.line,
 			ScanID:         raw.ScanID,
 			DetectedAt:     detectedAt,
 		})
 	}
 
-	sc := bufio.NewScanner(strings.NewReader(texto))
+	sc := bufio.NewScanner(strings.NewReader(text))
 	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)
 
 	for sc.Scan() {
-		linha := sc.Text()
-		if strings.TrimSpace(linha) == "" {
+		line := sc.Text()
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
 
-		if m := dataRe.FindStringSubmatch(linha); m != nil {
+		if m := dateRe.FindStringSubmatch(line); m != nil {
 			continue
 		}
-		if m := arquivoRe.FindStringSubmatch(linha); m != nil {
-			emitir()
-			arquivoAtual = m[1]
+		if m := fileRe.FindStringSubmatch(line); m != nil {
+			emit()
+			currentFile = m[1]
 			continue
 		}
-		if m := achadoRe.FindStringSubmatch(linha); m != nil {
-			emitir()
-			p := &pendente{rule: strings.TrimSpace(m[1]), extra: strings.TrimSpace(m[2])}
+		if m := findingRe.FindStringSubmatch(line); m != nil {
+			emit()
+			p := &pending{rule: strings.TrimSpace(m[1]), extra: strings.TrimSpace(m[2])}
 			if m[3] != "" {
 				if n, err := strconv.ParseInt(m[3], 10, 64); err == nil {
-					p.linha = n
+					p.line = n
 				}
 			}
-			atual = p
+			current = p
 			continue
 		}
-		// `Exploits:` / `Functions:` apenas separam secoes.
-		if secaoRe.MatchString(linha) {
+		// `Exploits:` / `Functions:` only separate sections.
+		if sectionRe.MatchString(line) {
 			continue
 		}
-		// A linha "      => backdoor" e a categoria que o engine atribuiu.
-		if m := tagRe.FindStringSubmatch(linha); m != nil && atual != nil && atual.tag == "" {
-			atual.tag = strings.TrimSpace(m[1])
+		// The line "      => backdoor" is the category the engine assigned.
+		if m := tagRe.FindStringSubmatch(line); m != nil && current != nil && current.tag == "" {
+			current.tag = strings.TrimSpace(m[1])
 			continue
 		}
 	}
-	emitir()
+	emit()
 
 	if err := sc.Err(); err != nil {
-		return rep, fmt.Errorf("lendo relatorio do AMWScan: %w", err)
+		return rep, fmt.Errorf("reading the AMWScan report: %w", err)
 	}
 
-	if desconhecidas > 0 {
+	if unknown > 0 {
 		if rep.Scope.SkippedReasonCounts == nil {
 			rep.Scope.SkippedReasonCounts = map[string]int{}
 		}
-		rep.Scope.SkippedReasonCounts["regra_desconhecida"] = desconhecidas
+		rep.Scope.SkippedReasonCounts["unknown_rule"] = unknown
 	}
 	return rep, nil
 }
 
-// alvosPermitidos devolve o conjunto de caminhos que o orquestrador pediu, ou
-// nil quando nao ha filtro a aplicar.
+// allowedTargets returns the set of paths the orchestrator asked for, or nil
+// when there is no filter to apply.
 //
-// nil e diferente de conjunto vazio: nil significa "aceite tudo o que o
-// relatorio trouxer" (execucao por arquivo, ou reprocessamento de saida bruta
-// arquivada, onde a lista original ja nao existe).
-func alvosPermitidos(raw adapter.RawOutput) map[string]bool {
+// nil differs from an empty set: nil means "accept everything the report
+// carries" (one execution per file, or reprocessing archived raw output where
+// the original list no longer exists).
+func allowedTargets(raw adapter.RawOutput) map[string]bool {
 	if raw.Extra == nil {
 		return nil
 	}
-	bruto, ok := raw.Extra[chaveAlvos]
+	value, ok := raw.Extra[targetsKey]
 	if !ok {
 		return nil
 	}
-	lista, ok := bruto.([]string)
-	if !ok || len(lista) == 0 {
+	list, ok := value.([]string)
+	if !ok || len(list) == 0 {
 		return nil
 	}
-	out := make(map[string]bool, len(lista))
-	for _, p := range lista {
+	out := make(map[string]bool, len(list))
+	for _, p := range list {
 		out[p] = true
 	}
 	return out
 }
 
-// statFile le hash e metadados do arquivo apontado.
+// statFile reads the hash and metadata of the flagged file.
 //
-// O AMWScan nao reporta hash. Quem calcula e o orquestrador, porque o sha256 e
-// a chave de deduplicacao entre engines e precisa ser calculado do mesmo jeito
-// para todos — se cada adaptador usasse o hash do seu engine, dois engines
-// apontando o mesmo arquivo virariam dois vereditos.
+// AMWScan does not report a hash. The orchestrator computes it, because the
+// sha256 is the deduplication key across engines and has to be computed the
+// same way for all of them — if each adapter used its own engine's hash, two
+// engines flagging the same file would become two verdicts.
 func statFile(path string) (FileStat, bool) {
 	info, err := os.Stat(path)
 	if err != nil || info.IsDir() {
 		return FileStat{}, false
 	}
-	f, err := os.Open(path) // caminho vem do relatorio do engine sobre a raiz configurada
+	f, err := os.Open(path) // path comes from the engine's report over the configured root
 	if err != nil {
 		return FileStat{}, false
 	}

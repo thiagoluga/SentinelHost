@@ -9,38 +9,38 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
 
-// Este arquivo implementa a obrigacao 5 do contrato de adaptadores: panico ou
-// timeout de UM adaptador nao derruba o ciclo — vira ScanReport{status:
-// failed} e abstencao no consenso.
+// This file implements obligation 5 of the adapter contract: a panic or timeout
+// in ONE adapter does not bring the cycle down — it becomes
+// ScanReport{status: failed} and an abstention in the consensus.
 //
-// A blindagem fica aqui, no orquestrador, e nao na boa vontade de cada
-// adaptador. Um adaptador de terceiro com um bug de indice nao pode ser capaz
-// de derrubar a protecao do site inteiro.
+// The shielding lives here, in the orchestrator, rather than relying on each
+// adapter's good behaviour. A third-party adapter with an off-by-one bug must not
+// be able to take down protection for the entire site.
 
-// SafeProbe executa Probe sem deixar panico escapar.
+// SafeProbe runs Probe without letting a panic escape.
 func SafeProbe(ctx context.Context, a Adapter, env Environment) (res ProbeResult) {
 	slug := safeSlug(a)
 	defer func() {
 		if p := recover(); p != nil {
 			res = Unavailable(fmt.Sprintf(
-				"o adaptador %s entrou em panico durante o probe: %v", slug, p))
+				"adapter %s panicked during the probe: %v", slug, p))
 		}
 	}()
 	res = a.Probe(ctx, env)
-	// Motivo vazio numa indisponibilidade e um bug do adaptador que penaliza
-	// o usuario: ele fica sem saber o que fazer para habilitar o engine.
+	// An empty reason on an unavailability is an adapter bug that penalizes the
+	// user: they are left without knowing what to do to enable the engine.
 	if !res.Available && res.Reason == "" {
-		res.Reason = "indisponivel (o adaptador nao informou o motivo)"
+		res.Reason = "unavailable (the adapter did not report a reason)"
 	}
 	return res
 }
 
-// SafeScanAndParse executa Scan e Parse de um adaptador com blindagem total.
+// SafeScanAndParse runs an adapter's Scan and Parse fully shielded.
 //
-// Qualquer desfecho ruim — panico, erro, timeout, saida ilegivel, relatorio
-// que nao passa na validacao do esquema — vira um ScanReport de falha, que o
-// motor de veredito trata como abstencao. Em nenhuma hipotese vira "o engine
-// nao achou nada".
+// Any bad outcome — panic, error, timeout, unreadable output, a report that fails
+// schema validation — becomes a failure ScanReport, which the verdict engine
+// treats as an abstention. Under no circumstances does it become "the engine
+// found nothing".
 func SafeScanAndParse(ctx context.Context, a Adapter, env Environment, req ScanRequest) (report schema.ScanReport) {
 	slug := safeSlug(a)
 	started := time.Now()
@@ -48,7 +48,7 @@ func SafeScanAndParse(ctx context.Context, a Adapter, env Environment, req ScanR
 	defer func() {
 		if p := recover(); p != nil {
 			report = schema.FailedReport(req.ScanID, slug, schema.StatusFailed,
-				fmt.Errorf("panico no adaptador %s: %v\n%s", slug, p, debug.Stack()),
+				fmt.Errorf("panic in adapter %s: %v\n%s", slug, p, debug.Stack()),
 				started)
 		}
 	}()
@@ -57,19 +57,20 @@ func SafeScanAndParse(ctx context.Context, a Adapter, env Environment, req ScanR
 	if err != nil {
 		return schema.FailedReport(req.ScanID, slug, statusOr(raw.Status, schema.StatusFailed), err, started)
 	}
-	// Um Scan que "deu certo" mas devolveu status de falha ainda e falha: o
-	// executor ja traduziu timeout e kill para o vocabulario do esquema.
+	// A Scan that "succeeded" but returned a failure status is still a failure:
+	// the executor has already translated timeout and kill into the schema's
+	// vocabulary.
 	if raw.Status != "" && !raw.Status.CountsAsVote() {
-		return schema.FailedReport(req.ScanID, slug, raw.Status, orErr(raw.Err, "engine nao completou"), started)
+		return schema.FailedReport(req.ScanID, slug, raw.Status, orErr(raw.Err, "the engine did not complete"), started)
 	}
 
 	report, err = a.Parse(raw)
 	if err != nil {
 		return schema.FailedReport(req.ScanID, slug, schema.StatusFailed,
-			fmt.Errorf("saida do engine %s nao pode ser interpretada: %w", slug, err), started)
+			fmt.Errorf("the output of engine %s cannot be interpreted: %w", slug, err), started)
 	}
 
-	// Preenche o que o adaptador pode ter esquecido, antes de validar.
+	// Fill in whatever the adapter may have forgotten, before validating.
 	if report.SchemaVersion == "" {
 		report.SchemaVersion = schema.Version
 	}
@@ -98,33 +99,33 @@ func SafeScanAndParse(ctx context.Context, a Adapter, env Environment, req ScanR
 		report.Scope.Mode = req.Mode
 	}
 
-	// Um relatorio invalido e pior que nenhum relatorio: ele entraria no
-	// consenso carregando dados que o resto do sistema nao sabe interpretar.
+	// An invalid report is worse than no report: it would enter the consensus
+	// carrying data the rest of the system does not know how to interpret.
 	if err := report.Validate(); err != nil {
 		return schema.FailedReport(req.ScanID, slug, schema.StatusFailed,
-			fmt.Errorf("relatorio do engine %s nao cumpre o esquema: %w", slug, err), started)
+			fmt.Errorf("the report of engine %s does not satisfy the schema: %w", slug, err), started)
 	}
 
 	return report
 }
 
-// SafeUpdateSignatures blinda a atualizacao de assinaturas.
+// SafeUpdateSignatures shields the signature update.
 func SafeUpdateSignatures(ctx context.Context, a Adapter, env Environment) (t time.Time, err error) {
 	slug := safeSlug(a)
 	defer func() {
 		if p := recover(); p != nil {
-			err = fmt.Errorf("panico ao atualizar assinaturas de %s: %v", slug, p)
+			err = fmt.Errorf("panic while updating the signatures of %s: %v", slug, p)
 		}
 	}()
 	return a.UpdateSignatures(ctx, env)
 }
 
-// SafeInstall blinda a instalacao.
+// SafeInstall shields the installation.
 func SafeInstall(ctx context.Context, a Adapter, env Environment) (err error) {
 	slug := safeSlug(a)
 	defer func() {
 		if p := recover(); p != nil {
-			err = fmt.Errorf("panico ao instalar %s: %v", slug, p)
+			err = fmt.Errorf("panic while installing %s: %v", slug, p)
 		}
 	}()
 	return a.Install(ctx, env)
@@ -133,13 +134,13 @@ func SafeInstall(ctx context.Context, a Adapter, env Environment) (err error) {
 func safeSlug(a Adapter) (slug string) {
 	defer func() {
 		if recover() != nil {
-			slug = "desconhecido"
+			slug = "unknown"
 		}
 	}()
 	if s := a.Info().Slug; s != "" {
 		return s
 	}
-	return "desconhecido"
+	return "unknown"
 }
 
 func statusOr(s, fallback schema.ScanStatus) schema.ScanStatus {

@@ -11,28 +11,29 @@ import (
 	"time"
 )
 
-// DefaultAPIBase e a API publica de checksums do WordPress.org.
+// DefaultAPIBase is WordPress.org's public checksums API.
 const DefaultAPIBase = "https://api.wordpress.org/core/checksums/1.0/"
 
-// maxAPIBody limita a resposta. Um core tem alguns milhares de arquivos; 8 MiB
-// e folgado e impede que uma resposta anomala estoure a memoria do orquestrador.
+// maxAPIBody caps the response. A core has a few thousand files; 8 MiB is
+// generous and keeps an anomalous response from blowing up the orchestrator's
+// memory.
 const maxAPIBody = 8 << 20
 
-// ErrVersionUnknown indica que a API nao publica checksums para esta versao.
-var ErrVersionUnknown = errors.New("a API nao publica checksums para esta versao")
+// ErrVersionUnknown means the API does not publish checksums for this version.
+var ErrVersionUnknown = errors.New("the API does not publish checksums for this version")
 
-// apiResponse e o formato da resposta.
+// apiResponse is the shape of the response.
 //
-// checksums vem como objeto quando a versao existe e como `false` quando nao
-// existe — por isso o campo e json.RawMessage e nao um map direto.
+// checksums comes back as an object when the version exists and as `false` when
+// it does not — which is why the field is a json.RawMessage and not a map.
 type apiResponse struct {
 	Checksums json.RawMessage `json:"checksums"`
 }
 
-// client busca checksums oficiais.
+// client fetches official checksums.
 type client struct {
 	base string
-	// pluginsBase sobrepoe a API de plugins nos testes. Vazio usa a oficial.
+	// pluginsBase overrides the plugins API in tests. Empty uses the official one.
 	pluginsBase string
 	http        *http.Client
 }
@@ -44,26 +45,26 @@ func newClient(base string) *client {
 	return &client{
 		base: base,
 		http: &http.Client{
-			// Hospedagem compartilhada as vezes tem saida de rede lenta ou
-			// bloqueada. Um timeout curto e melhor que um ciclo pendurado:
-			// sem rede, o adaptador se abstem e os outros engines seguem.
+			// Shared hosting sometimes has slow or blocked outbound traffic. A
+			// short timeout beats a hung cycle: with no network the adapter
+			// abstains and the other engines proceed.
 			Timeout: 20 * time.Second,
 		},
 	}
 }
 
-// fetch busca a resposta bruta da API.
+// fetch retrieves the API's raw response.
 //
-// Devolve o corpo cru porque ELE e a saida bruta arquivada deste adaptador.
-// Privacidade: a requisicao leva apenas versao e locale. Nenhum arquivo,
-// caminho ou hash do usuario sai da hospedagem.
+// It returns the raw body because THAT is this adapter's archived raw output.
+// Privacy: the request carries only the version and the locale. No file, path or
+// hash of the user's leaves the hosting.
 func (c *client) fetch(ctx context.Context, version, locale string) ([]byte, error) {
 	if locale == "" {
 		locale = "en_US"
 	}
 	u, err := url.Parse(c.base)
 	if err != nil {
-		return nil, fmt.Errorf("URL da API invalida: %w", err)
+		return nil, fmt.Errorf("invalid API URL: %w", err)
 	}
 	q := u.Query()
 	q.Set("version", version)
@@ -72,94 +73,95 @@ func (c *client) fetch(ctx context.Context, version, locale string) ([]byte, err
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("montando requisicao: %w", err)
+		return nil, fmt.Errorf("building the request: %w", err)
 	}
-	req.Header.Set("User-Agent", "SentinelHost (orquestrador de scanners; +https://github.com/thiagoluga/SentinelHost)")
+	req.Header.Set("User-Agent", "SentinelHost (scanner orchestrator; +https://github.com/thiagoluga/SentinelHost)")
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("consultando a API de checksums: %w", err)
+		return nil, fmt.Errorf("querying the checksums API: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("a API de checksums respondeu %s", resp.Status)
+		return nil, fmt.Errorf("the checksums API answered %s", resp.Status)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIBody))
 	if err != nil {
-		return nil, fmt.Errorf("lendo resposta da API: %w", err)
+		return nil, fmt.Errorf("reading the API response: %w", err)
 	}
 	return body, nil
 }
 
-// ErrPluginSemChecksum indica que a API nao publica checksums para aquele
-// plugin/versao.
+// ErrPluginNoChecksum means the API does not publish checksums for that
+// plugin/version.
 //
-// E o caso NORMAL para plugin comercial, plugin proprio, ou versao que saiu do
-// diretorio oficial. Nao e falha e nao e achado: o adaptador se abstem sobre
-// aquele plugin. Tratar ausencia de dado como ausencia de problema seria
-// declarar limpo o que ninguem conferiu.
-var ErrPluginSemChecksum = errors.New("a API nao publica checksums para este plugin nesta versao")
+// It is the NORMAL case for a commercial plugin, an in-house plugin, or a version
+// that left the official directory. It is not a failure and not a finding: the
+// adapter abstains about that plugin. Treating absence of data as absence of a
+// problem would declare clean what nobody checked.
+var ErrPluginNoChecksum = errors.New("the API does not publish checksums for this plugin at this version")
 
-// pluginFileSums sao os hashes que a API publica por arquivo de plugin.
+// pluginFileSums are the hashes the API publishes per plugin file.
 //
-// Ao contrario do core, que so publica MD5, aqui vem os dois. E o formato de
-// cada um e AMBIGUO na API real: normalmente uma string,
+// Unlike the core, which only publishes MD5, both come back here. And the format
+// of each is AMBIGUOUS in the real API: usually a string,
 //
 //	"classic-editor.php": {"md5": "d1ee...", "sha256": "1a81..."}
 //
-// mas um array quando o arquivo tem variantes aceitas (fim de linha CRLF e LF
-// produzem hashes diferentes para o mesmo conteudo logico).
+// but an array when the file has accepted variants (CRLF and LF line endings
+// produce different hashes for the same logical content).
 //
-// Declarar so um dos dois formatos quebra tudo em silencio: com `[]string`, o
-// Unmarshal falha na resposta comum e TODO plugin e pulado com "resposta
-// ilegivel"; com `string`, falha nos arquivos que tem variante. Foi assim que a
-// primeira versao disto passou nos testes (que usavam array) e nao detectou
-// nada contra a API de verdade.
+// Declaring only one of the two formats breaks everything silently: with
+// `[]string`, Unmarshal fails on the common response and EVERY plugin is skipped
+// as "unreadable response"; with `string`, it fails on the files that have
+// variants. That is how the first version of this passed its tests (which used
+// arrays) and detected nothing against the real API.
 type pluginFileSums struct {
 	MD5    []string
 	SHA256 []string
 }
 
-// UnmarshalJSON aceita string ou array em cada campo.
+// UnmarshalJSON accepts either a string or an array in each field.
 func (s *pluginFileSums) UnmarshalJSON(data []byte) error {
-	var cru struct {
+	var raw struct {
 		MD5    json.RawMessage `json:"md5"`
 		SHA256 json.RawMessage `json:"sha256"`
 	}
-	if err := json.Unmarshal(data, &cru); err != nil {
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
 	var err error
-	if s.MD5, err = hashesDe(cru.MD5); err != nil {
-		return fmt.Errorf("campo md5: %w", err)
+	if s.MD5, err = hashesFrom(raw.MD5); err != nil {
+		return fmt.Errorf("md5 field: %w", err)
 	}
-	if s.SHA256, err = hashesDe(cru.SHA256); err != nil {
-		return fmt.Errorf("campo sha256: %w", err)
+	if s.SHA256, err = hashesFrom(raw.SHA256); err != nil {
+		return fmt.Errorf("sha256 field: %w", err)
 	}
 	return nil
 }
 
-// hashesDe normaliza um campo que pode ser string, array de strings, ou ausente.
-func hashesDe(raw json.RawMessage) ([]string, error) {
+// hashesFrom normalizes a field that may be a string, an array of strings, or
+// absent.
+func hashesFrom(raw json.RawMessage) ([]string, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
 	}
-	var um string
-	if err := json.Unmarshal(raw, &um); err == nil {
-		if um == "" {
+	var one string
+	if err := json.Unmarshal(raw, &one); err == nil {
+		if one == "" {
 			return nil, nil
 		}
-		return []string{um}, nil
+		return []string{one}, nil
 	}
-	var varios []string
-	if err := json.Unmarshal(raw, &varios); err != nil {
-		return nil, fmt.Errorf("nem string nem array de strings: %s", truncar(raw))
+	var many []string
+	if err := json.Unmarshal(raw, &many); err != nil {
+		return nil, fmt.Errorf("neither a string nor an array of strings: %s", truncate(raw))
 	}
-	return varios, nil
+	return many, nil
 }
 
-func truncar(b []byte) string {
+func truncate(b []byte) string {
 	const max = 60
 	if len(b) <= max {
 		return string(b)
@@ -167,57 +169,57 @@ func truncar(b []byte) string {
 	return string(b[:max]) + "..."
 }
 
-// pluginChecksumsResponse e o formato de downloads.wordpress.org/plugin-checksums.
+// pluginChecksumsResponse is the format of downloads.wordpress.org/plugin-checksums.
 type pluginChecksumsResponse struct {
 	Plugin  string                    `json:"plugin"`
 	Version string                    `json:"version"`
 	Files   map[string]pluginFileSums `json:"files"`
 }
 
-// fetchPlugin busca os checksums de um plugin numa versao.
+// fetchPlugin fetches the checksums of a plugin at a version.
 //
-// Privacidade: a requisicao leva apenas o slug e a versao — que e exatamente o
-// que a constituicao autoriza ("hashes e slugs de versao"). Nenhum caminho ou
-// conteudo do usuario sai da hospedagem.
+// Privacy: the request carries only the slug and the version — exactly what the
+// constitution authorizes ("hashes and version slugs"). No path or content of
+// the user's leaves the hosting.
 func (c *client) fetchPlugin(ctx context.Context, slug, version string) ([]byte, error) {
 	if slug == "" || version == "" {
-		return nil, ErrPluginSemChecksum
+		return nil, ErrPluginNoChecksum
 	}
-	// O slug vem de um nome de diretorio no disco do usuario. PathEscape
-	// impede que um diretorio chamado `../algo` monte uma URL para outro
-	// lugar da API.
+	// The slug comes from a directory name on the user's disk. PathEscape keeps a
+	// directory called `../something` from building a URL to somewhere else in
+	// the API.
 	u := c.pluginBase() + url.PathEscape(slug) + "/" + url.PathEscape(version) + ".json"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return nil, fmt.Errorf("montando requisicao: %w", err)
+		return nil, fmt.Errorf("building the request: %w", err)
 	}
-	req.Header.Set("User-Agent", "SentinelHost (orquestrador de scanners; +https://github.com/thiagoluga/SentinelHost)")
+	req.Header.Set("User-Agent", "SentinelHost (scanner orchestrator; +https://github.com/thiagoluga/SentinelHost)")
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("consultando checksums do plugin %s: %w", slug, err)
+		return nil, fmt.Errorf("querying the checksums of plugin %s: %w", slug, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// 404 e a resposta esperada para plugin fora do diretorio oficial.
+	// 404 is the expected answer for a plugin outside the official directory.
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("%w: %s %s", ErrPluginSemChecksum, slug, version)
+		return nil, fmt.Errorf("%w: %s %s", ErrPluginNoChecksum, slug, version)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("a API de checksums do plugin %s respondeu %s", slug, resp.Status)
+		return nil, fmt.Errorf("the checksums API for plugin %s answered %s", slug, resp.Status)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIBody))
 	if err != nil {
-		return nil, fmt.Errorf("lendo resposta da API: %w", err)
+		return nil, fmt.Errorf("reading the API response: %w", err)
 	}
 	return body, nil
 }
 
-// pluginBase resolve a base da API de plugins.
+// pluginBase resolves the base of the plugins API.
 //
-// Deriva da base do core quando ela foi sobreposta num teste, para que o teste
-// nao precise de rede — e para que nenhum teste bata na API publica por engano.
+// It derives from the core base when that was overridden in a test, so the test
+// needs no network — and so that no test hits the public API by accident.
 func (c *client) pluginBase() string {
 	if c.pluginsBase != "" {
 		return c.pluginsBase
@@ -225,23 +227,23 @@ func (c *client) pluginBase() string {
 	return PluginsAPIBase
 }
 
-// parsePluginChecksums interpreta a resposta de um plugin.
+// parsePluginChecksums interprets a plugin's response.
 func parsePluginChecksums(body []byte) (pluginChecksumsResponse, error) {
 	var resp pluginChecksumsResponse
 	if len(body) == 0 {
-		return resp, errors.New("resposta vazia da API de checksums do plugin")
+		return resp, errors.New("empty response from the plugin checksums API")
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return resp, fmt.Errorf("resposta da API nao e JSON valido: %w", err)
+		return resp, fmt.Errorf("the API response is not valid JSON: %w", err)
 	}
 	if len(resp.Files) == 0 {
-		return resp, ErrPluginSemChecksum
+		return resp, ErrPluginNoChecksum
 	}
 	return resp, nil
 }
 
-// bate responde se o hash local casa com alguma variante publicada.
-func (s pluginFileSums) bate(md5sum, sha string) bool {
+// matches answers whether the local hash matches any published variant.
+func (s pluginFileSums) matches(md5sum, sha string) bool {
 	for _, h := range s.SHA256 {
 		if h != "" && h == sha {
 			return true
@@ -255,28 +257,28 @@ func (s pluginFileSums) bate(md5sum, sha string) bool {
 	return false
 }
 
-// temHash responde se a API publicou algum hash para este arquivo. Entrada sem
-// hash nenhum nao pode virar achado de "alterado".
-func (s pluginFileSums) temHash() bool {
+// hasHash answers whether the API published any hash for this file. An entry
+// with no hash at all cannot become an "altered" finding.
+func (s pluginFileSums) hasHash() bool {
 	return len(s.SHA256) > 0 || len(s.MD5) > 0
 }
 
-// parseChecksums interpreta a resposta bruta.
+// parseChecksums interprets the raw response.
 func parseChecksums(body []byte) (map[string]string, error) {
 	if len(body) == 0 {
-		return nil, errors.New("resposta vazia da API de checksums")
+		return nil, errors.New("empty response from the checksums API")
 	}
 	var resp apiResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("resposta da API nao e JSON valido: %w", err)
+		return nil, fmt.Errorf("the API response is not valid JSON: %w", err)
 	}
 	if len(resp.Checksums) == 0 {
-		return nil, errors.New("resposta da API sem o campo checksums")
+		return nil, errors.New("the API response has no checksums field")
 	}
 
-	// A API devolve `"checksums": false` para versao desconhecida. Tratar isso
-	// como "nenhum arquivo diverge" declararia o core limpo por falta de
-	// informacao — exatamente o erro que o Principio VI proibe.
+	// The API returns `"checksums": false` for an unknown version. Treating that
+	// as "no file diverges" would declare the core clean for lack of information
+	// — exactly the mistake Principle VI forbids.
 	var asBool bool
 	if err := json.Unmarshal(resp.Checksums, &asBool); err == nil {
 		return nil, ErrVersionUnknown
@@ -284,7 +286,7 @@ func parseChecksums(body []byte) (map[string]string, error) {
 
 	var sums map[string]string
 	if err := json.Unmarshal(resp.Checksums, &sums); err != nil {
-		return nil, fmt.Errorf("campo checksums em formato inesperado: %w", err)
+		return nil, fmt.Errorf("the checksums field has an unexpected format: %w", err)
 	}
 	if len(sums) == 0 {
 		return nil, ErrVersionUnknown
