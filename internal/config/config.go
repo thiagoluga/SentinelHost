@@ -1,15 +1,15 @@
-// Package config carrega, valida e grava o arquivo TOML unico do SentinelHost.
+// Package config loads, validates and writes SentinelHost's single TOML file.
 //
-// O TOML e a fonte da verdade compartilhada entre CLI e painel (FR-014):
-// tudo que o painel edita esta aqui, e tudo que e editado a mao aparece no
-// painel. Nao existe segundo arquivo de configuracao (Principio VII).
+// The TOML is the shared source of truth between the CLI and the panel
+// (FR-014): everything the panel edits lives here, and anything edited by hand
+// shows up in the panel. There is no second configuration file (Principle VII).
 package config
 
 import (
 	"time"
 )
 
-// Config e o arquivo inteiro.
+// Config is the whole file.
 type Config struct {
 	General    General           `toml:"general"`
 	Limits     Limits            `toml:"limits"`
@@ -21,187 +21,186 @@ type Config struct {
 	Web        Web               `toml:"web"`
 	Logging    Logging           `toml:"logging"`
 
-	// path guarda de onde este Config foi lido, para que Save() volte ao
-	// mesmo lugar sem o chamador precisar lembrar.
+	// path records where this Config was read from, so Save() can return to the
+	// same place without the caller having to remember.
 	path string `toml:"-"`
 }
 
-// General reune o que define a instalacao.
+// General gathers what defines the installation.
 type General struct {
-	// Roots sao os diretorios raiz vigiados. Nada fora deles e varrido,
-	// nunca — nem por symlink.
+	// Roots are the watched root directories. Nothing outside them is ever
+	// scanned — not even through a symlink.
 	Roots []string `toml:"roots"`
-	// DataDir guarda baseline, cofre de quarentena, saidas brutas e o SQLite.
+	// DataDir holds the baseline, the quarantine vault, raw output and SQLite.
 	DataDir string `toml:"data_dir"`
-	// ObservationMode desliga toda acao automatica: os vereditos continuam
-	// saindo e os alertas viram "acao recomendada".
+	// ObservationMode disables every automatic action: verdicts keep coming out
+	// and alerts become "action recommended".
 	ObservationMode bool `toml:"observation_mode"`
-	// GracePeriodDays e o periodo apos a primeira execucao em que nenhuma
-	// quarentena automatica acontece, mesmo com observation_mode=false.
-	// Existe para o usuario calibrar pesos e whitelist antes de a ferramenta
-	// mexer nos arquivos dele (DECISIONS.md D-007).
+	// GracePeriodDays is the window after the first run during which no
+	// automatic quarantine happens, even with observation_mode=false. It exists
+	// so the user can calibrate weights and the whitelist before the tool
+	// touches their files (DECISIONS.md D-007).
 	GracePeriodDays int `toml:"grace_period_days"`
-	// FirstRunAt e gravado pelo primeiro ciclo. Zero significa "ainda nao
-	// rodou".
+	// FirstRunAt is written by the first cycle. Zero means "has not run yet".
 	FirstRunAt time.Time `toml:"first_run_at"`
-	// Locale do painel e dos e-mails.
+	// Locale of the panel and the emails.
 	Locale string `toml:"locale"`
 }
 
-// Limits e o Principio IV em forma de struct: o scanner nunca pode causar a
-// suspensao da conta do usuario por abuso de recursos. Todos estes limites sao
-// obrigatorios e ativos por padrao.
+// Limits is Principle IV in struct form: the scanner must never get the user's
+// account suspended for resource abuse. Every one of these limits is mandatory
+// and active by default.
 type Limits struct {
-	// Nice de 0 a 19. O padrao e 19 (a menor prioridade possivel).
+	// Nice from 0 to 19. The default is 19 (the lowest possible priority).
 	Nice int `toml:"nice"`
-	// IonoceClass 3 = idle. Aplicado quando ionice existe.
+	// IoniceClass 3 = idle. Applied when ionice exists.
 	IoniceClass int `toml:"ionice_class"`
-	// MaxFileSizeMB: arquivos maiores sao pulados e contabilizados como
-	// "too_large" no relatorio, nunca ignorados em silencio.
+	// MaxFileSizeMB: larger files are skipped and counted as "too_large" in the
+	// report, never silently ignored.
 	MaxFileSizeMB int `toml:"max_file_size_mb"`
-	// EngineTimeout: tempo maximo de UMA execucao de engine.
+	// EngineTimeout: the maximum time for ONE engine execution.
 	EngineTimeout Duration `toml:"engine_timeout"`
-	// CycleTimeout: tempo maximo do ciclo inteiro.
+	// CycleTimeout: the maximum time for the whole cycle.
 	CycleTimeout Duration `toml:"cycle_timeout"`
-	// BatchSize e BatchPause implementam a pausa entre lotes.
+	// BatchSize and BatchPause implement the pause between batches.
 	BatchSize  int      `toml:"batch_size"`
 	BatchPause Duration `toml:"batch_pause"`
-	// MaxDepth limita a profundidade do walker (sites com cache descontrolado).
+	// MaxDepth caps the walker's depth (sites with runaway cache directories).
 	MaxDepth int `toml:"max_depth"`
-	// MaxFilesPerCycle corta o ciclo com status partial em vez de varrer
-	// milhoes de inodes de uma vez.
+	// MaxFilesPerCycle cuts the cycle short with a partial status instead of
+	// walking millions of inodes at once.
 	MaxFilesPerCycle int `toml:"max_files_per_cycle"`
-	// Exclude sao globs relativos a cada raiz.
+	// Exclude are globs relative to each root.
 	Exclude []string `toml:"exclude"`
-	// MemoryLimitMB do proprio orquestrador (engines tem os seus).
+	// MemoryLimitMB of the orchestrator itself (engines have their own).
 	MemoryLimitMB int `toml:"memory_limit_mb"`
 }
 
-// Schedule define o ritmo dos ciclos.
+// Schedule defines the rhythm of the cycles.
 type Schedule struct {
-	// Mode: "daemon" ou "cron". Em "cron" o binario roda um ciclo e sai.
+	// Mode: "daemon" or "cron". In "cron" the binary runs one cycle and exits.
 	Mode string `toml:"mode"`
-	// Incremental e o intervalo entre ciclos incrementais.
+	// Incremental is the interval between incremental cycles.
 	Incremental Duration `toml:"incremental"`
-	// FullCron e a agenda do scan completo (formato cron de 5 campos).
+	// FullCron is the full-scan schedule (5-field cron format).
 	FullCron string `toml:"full_cron"`
-	// SignaturesCron e a agenda de atualizacao de assinaturas dos engines.
+	// SignaturesCron is the schedule for updating engine signatures.
 	SignaturesCron string `toml:"signatures_cron"`
-	// QuietHours suspende scans num intervalo do dia ("02:00-06:00" vazio
-	// significa sem restricao). Serve para quem tem pico de trafego conhecido.
+	// QuietHours suspends scans during a window of the day ("02:00-06:00";
+	// empty means no restriction). Useful for known traffic peaks.
 	QuietHours string `toml:"quiet_hours"`
 }
 
-// VerdictConfig parametriza o motor de consenso. Os limiares e pesos sao
-// configuraveis (FR-017); as regras de seguranca (whitelist e checksum
-// oficial) nao sao.
+// VerdictConfig parameterizes the consensus engine. Thresholds and weights are
+// configurable (FR-017); the safety rules (whitelist and official checksum) are
+// not.
 type VerdictConfig struct {
-	// Saturation e o teto da soma de pesos: score = min(1, soma/saturation).
-	// Ver DECISIONS.md D-003.
+	// Saturation is the ceiling of the weight sum: score = min(1, sum/saturation).
+	// See DECISIONS.md D-003.
 	Saturation float64 `toml:"saturation"`
-	// Thresholds: score minimo de cada nivel.
+	// Thresholds: the minimum score for each level.
 	ConfirmedAt  float64 `toml:"confirmed_at"`
 	LikelyAt     float64 `toml:"likely_at"`
 	SuspiciousAt float64 `toml:"suspicious_at"`
-	// Multiplicadores por confianca do achado.
+	// Multipliers by finding confidence.
 	SignatureMultiplier float64 `toml:"signature_multiplier"`
 	HeuristicMultiplier float64 `toml:"heuristic_multiplier"`
 	AnomalyMultiplier   float64 `toml:"anomaly_multiplier"`
-	// Whitelist de caminhos (globs) que nunca sao quarentenados. Continuam
-	// visiveis no relatorio (DECISIONS.md D-006).
+	// Whitelist of paths (globs) that are never quarantined. They stay visible
+	// in the report (DECISIONS.md D-006).
 	Whitelist []string `toml:"whitelist"`
 }
 
-// QuarantineConfig governa o cofre.
+// QuarantineConfig governs the vault.
 type QuarantineConfig struct {
-	// Dir vazio = <data_dir>/quarantine.
+	// Dir empty = <data_dir>/quarantine.
 	Dir string `toml:"dir"`
-	// RetentionDays antes de um item ficar elegivel a purga. A purga nunca e
-	// automatica sem que o item tenha passado deste prazo (Principio I).
+	// RetentionDays before an item becomes eligible for purging. Purging is
+	// never automatic before an item passes this deadline (Principle I).
 	RetentionDays int `toml:"retention_days"`
-	// AutoPurge liga a rotina periodica de purga dos expirados. Desligado
-	// por padrao: apagar arquivo do usuario e sempre decisao dele.
+	// AutoPurge enables the periodic purge of expired items. Off by default:
+	// deleting the user's file is always the user's decision.
 	AutoPurge bool `toml:"auto_purge"`
-	// NeutralizedExtension e o sufixo aplicado no cofre.
+	// NeutralizedExtension is the suffix applied inside the vault.
 	NeutralizedExtension string `toml:"neutralized_extension"`
 }
 
-// Engine e a configuracao de um adaptador.
+// Engine is one adapter's configuration.
 type Engine struct {
 	Enabled bool `toml:"enabled"`
-	// Weight e o peso do voto deste engine no consenso.
+	// Weight is this engine's vote weight in the consensus.
 	Weight float64 `toml:"weight"`
-	// Path forca o caminho do binario/phar quando o probe automatico nao
-	// acha (hospedagens com PHP em lugar exotico).
+	// Path forces the binary/phar path when the automatic probe cannot find the
+	// engine (hosting with PHP in an exotic location).
 	Path string `toml:"path"`
-	// ExtraArgs sao repassados ao subprocesso.
+	// ExtraArgs are passed through to the subprocess.
 	ExtraArgs []string `toml:"extra_args"`
-	// Timeout sobrepoe limits.engine_timeout so para este engine.
+	// Timeout overrides limits.engine_timeout for this engine only.
 	Timeout Duration `toml:"timeout"`
 }
 
-// Alerts reune os canais de notificacao.
+// Alerts gathers the notification channels.
 type Alerts struct {
 	Email    EmailConfig `toml:"email"`
 	Webhooks []Webhook   `toml:"webhooks"`
 }
 
-// EmailConfig e o SMTP.
+// EmailConfig is the SMTP setup.
 type EmailConfig struct {
 	Enabled  bool   `toml:"enabled"`
 	Host     string `toml:"host"`
 	Port     int    `toml:"port"`
 	Username string `toml:"username"`
 	Password string `toml:"password"`
-	// TLS: "starttls", "tls" ou "none".
+	// TLS: "starttls", "tls" or "none".
 	TLS  string   `toml:"tls"`
 	From string   `toml:"from"`
 	To   []string `toml:"to"`
-	// Levels que disparam alerta imediato.
+	// Levels that trigger an immediate alert.
 	Levels []string `toml:"levels"`
-	// Digest diario.
+	// Daily digest.
 	DigestEnabled bool   `toml:"digest_enabled"`
 	DigestAt      string `toml:"digest_at"`
-	// PanelURL entra no corpo do e-mail para o usuario chegar no achado.
+	// PanelURL goes into the email body so the user can reach the finding.
 	PanelURL string `toml:"panel_url"`
 }
 
-// Webhook e um endpoint assinado.
+// Webhook is a signed endpoint.
 type Webhook struct {
 	ID      string `toml:"id"`
 	Enabled bool   `toml:"enabled"`
 	URL     string `toml:"url"`
-	// Secret e a chave do HMAC-SHA256.
+	// Secret is the HMAC-SHA256 key.
 	Secret string `toml:"secret"`
-	// Events assinados. Sem inscricao, sem entrega.
+	// Events subscribed to. No subscription, no delivery.
 	Events []string `toml:"events"`
 }
 
-// Web e o painel embutido.
+// Web is the embedded panel.
 type Web struct {
 	Enabled bool `toml:"enabled"`
-	// Listen e 127.0.0.1 por padrao. Expor em 0.0.0.0 exige acao consciente
-	// do usuario e dispara aviso na validacao.
+	// Listen defaults to 127.0.0.1. Exposing it on 0.0.0.0 requires a
+	// deliberate choice by the user and triggers a validation warning.
 	Listen string `toml:"listen"`
-	// SessionTTL da sessao autenticada.
+	// SessionTTL of the authenticated session.
 	SessionTTL Duration `toml:"session_ttl"`
-	// LoginRateLimit: tentativas por minuto por IP.
+	// LoginRateLimit: attempts per minute per IP.
 	LoginRateLimit int `toml:"login_rate_limit"`
 }
 
-// Logging do log estruturado.
+// Logging configures the structured log.
 type Logging struct {
 	// Level: debug, info, warn, error.
 	Level string `toml:"level"`
-	// RetentionDays do log e das saidas brutas arquivadas.
+	// RetentionDays of the structured log.
 	RetentionDays int `toml:"retention_days"`
-	// RawOutputRetentionDays das saidas brutas de engine (auditoria e
-	// reprocessamento por Parse).
+	// RawOutputRetentionDays of the archived raw engine output (auditing and
+	// reprocessing through Parse).
 	RawOutputRetentionDays int `toml:"raw_output_retention_days"`
 }
 
-// Path devolve o arquivo de onde este Config foi lido.
+// Path returns the file this Config was read from.
 func (c *Config) Path() string { return c.path }
 
-// SetPath define o destino de Save().
+// SetPath sets Save()'s destination.
 func (c *Config) SetPath(p string) { c.path = p }

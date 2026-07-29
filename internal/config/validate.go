@@ -6,30 +6,31 @@ import (
 	"strings"
 )
 
-// Problem e um achado da validacao da configuracao.
+// Problem is one finding from configuration validation.
 type Problem struct {
 	Field   string
 	Message string
-	// Fatal separa "isto impede o programa de rodar" de "isto merece um aviso
-	// na tela". Um aviso nunca deve impedir o scan de acontecer: a ferramenta
-	// que se recusa a rodar protege menos que a que roda avisando.
+	// Fatal separates "this stops the program from running" from "this deserves
+	// a warning on screen". A warning must never prevent the scan from
+	// happening: a tool that refuses to run protects less than one that runs
+	// and warns.
 	Fatal bool
 }
 
 func (p Problem) String() string {
-	prefix := "aviso"
+	prefix := "warning"
 	if p.Fatal {
-		prefix = "erro"
+		prefix = "error"
 	}
 	return fmt.Sprintf("%s: %s: %s", prefix, p.Field, p.Message)
 }
 
-// ValidationResult reune erros e avisos.
+// ValidationResult collects errors and warnings.
 type ValidationResult struct {
 	Problems []Problem
 }
 
-// HasErrors responde se ha algo que impeca a execucao.
+// HasErrors answers whether anything prevents execution.
 func (r ValidationResult) HasErrors() bool {
 	for _, p := range r.Problems {
 		if p.Fatal {
@@ -39,7 +40,7 @@ func (r ValidationResult) HasErrors() bool {
 	return false
 }
 
-// Errors devolve so os fatais.
+// Errors returns only the fatal problems.
 func (r ValidationResult) Errors() []Problem {
 	var out []Problem
 	for _, p := range r.Problems {
@@ -50,7 +51,7 @@ func (r ValidationResult) Errors() []Problem {
 	return out
 }
 
-// Warnings devolve so os avisos.
+// Warnings returns only the warnings.
 func (r ValidationResult) Warnings() []Problem {
 	var out []Problem
 	for _, p := range r.Problems {
@@ -61,7 +62,7 @@ func (r ValidationResult) Warnings() []Problem {
 	return out
 }
 
-// Err transforma os fatais num error unico, ou nil.
+// Err turns the fatal problems into a single error, or nil.
 func (r ValidationResult) Err() error {
 	errs := r.Errors()
 	if len(errs) == 0 {
@@ -71,7 +72,7 @@ func (r ValidationResult) Err() error {
 	for _, p := range errs {
 		msgs = append(msgs, p.Field+": "+p.Message)
 	}
-	return fmt.Errorf("configuracao invalida: %s", strings.Join(msgs, "; "))
+	return fmt.Errorf("invalid configuration: %s", strings.Join(msgs, "; "))
 }
 
 func (r *ValidationResult) fatal(field, format string, args ...any) {
@@ -82,7 +83,7 @@ func (r *ValidationResult) warn(field, format string, args ...any) {
 	r.Problems = append(r.Problems, Problem{field, fmt.Sprintf(format, args...), false})
 }
 
-// Validate checa a configuracao inteira.
+// Validate checks the whole configuration.
 func (c *Config) Validate() ValidationResult {
 	var r ValidationResult
 
@@ -99,63 +100,63 @@ func (c *Config) Validate() ValidationResult {
 
 func (c *Config) validateGeneral(r *ValidationResult) {
 	if len(c.General.Roots) == 0 {
-		r.fatal("general.roots", "nenhuma raiz configurada: o scan nao tem o que varrer")
+		r.fatal("general.roots", "no root configured: the scan has nothing to walk")
 	}
 	for i, root := range c.General.Roots {
 		if root == "" {
-			r.fatal(fmt.Sprintf("general.roots[%d]", i), "raiz vazia")
+			r.fatal(fmt.Sprintf("general.roots[%d]", i), "empty root")
 			continue
 		}
 		if root == "/" {
 			r.fatal(fmt.Sprintf("general.roots[%d]", i),
-				"varrer / nao e o proposito da ferramenta e derrubaria a conta por uso de recursos")
+				"walking / is not what this tool is for and would get the account suspended for resource abuse")
 		}
 	}
 	if c.General.DataDir == "" {
-		r.fatal("general.data_dir", "vazio")
+		r.fatal("general.data_dir", "empty")
 	}
 	if c.General.GracePeriodDays < 0 {
-		r.fatal("general.grace_period_days", "nao pode ser negativo")
+		r.fatal("general.grace_period_days", "cannot be negative")
 	}
 	if !c.General.ObservationMode && c.General.GracePeriodDays == 0 {
 		r.warn("general.observation_mode",
-			"acao automatica ligada sem periodo de graca: a ferramenta pode quarentenar ja no primeiro ciclo, antes de voce calibrar a whitelist")
+			"automatic action is on with no grace period: the tool may quarantine on the very first cycle, before you have calibrated the whitelist")
 	}
 }
 
 func (c *Config) validateLimits(r *ValidationResult) {
 	if c.Limits.Nice < 0 || c.Limits.Nice > 19 {
-		r.fatal("limits.nice", "deve estar entre 0 e 19, veio %d", c.Limits.Nice)
+		r.fatal("limits.nice", "must be between 0 and 19, got %d", c.Limits.Nice)
 	}
 	if c.Limits.Nice < 10 {
-		// Sem root nao da para BAIXAR o nice depois; subir prioridade e
-		// exatamente o que faz a hospedagem suspender a conta.
-		r.warn("limits.nice", "valor %d da prioridade alta ao scanner e pode fazer a hospedagem suspender a conta (recomendado: 19)", c.Limits.Nice)
+		// Without root you cannot LOWER nice afterwards; raising priority is
+		// exactly what gets a hosting account suspended.
+		r.warn("limits.nice", "a value of %d gives the scanner high priority and may get the account suspended (recommended: 19)", c.Limits.Nice)
 	}
 	if c.Limits.MaxFileSizeMB <= 0 {
-		r.fatal("limits.max_file_size_mb", "deve ser positivo")
+		r.fatal("limits.max_file_size_mb", "must be positive")
 	}
 	if c.Limits.EngineTimeout.Duration <= 0 {
-		r.fatal("limits.engine_timeout", "deve ser positivo: sem timeout um engine travado paralisa o ciclo para sempre")
+		r.fatal("limits.engine_timeout", "must be positive: with no timeout, a stuck engine freezes the cycle forever")
 	}
 	if c.Limits.CycleTimeout.Duration > 0 && c.Limits.CycleTimeout.Duration < c.Limits.EngineTimeout.Duration {
-		r.warn("limits.cycle_timeout", "menor que engine_timeout: nenhum engine conseguira terminar")
+		r.warn("limits.cycle_timeout", "is smaller than engine_timeout: no engine will ever be able to finish")
 	}
 	if c.Limits.BatchSize <= 0 {
-		r.fatal("limits.batch_size", "deve ser positivo")
+		r.fatal("limits.batch_size", "must be positive")
 	}
 	if c.Limits.MaxDepth <= 0 {
-		r.fatal("limits.max_depth", "deve ser positivo")
+		r.fatal("limits.max_depth", "must be positive")
 	}
 	if c.Limits.MemoryLimitMB > 0 && c.Limits.MemoryLimitMB < 32 {
-		r.warn("limits.memory_limit_mb", "abaixo de 32 MB o proprio orquestrador pode nao caber")
+		r.warn("limits.memory_limit_mb", "below 32 MB the orchestrator itself may not fit")
 	}
 }
 
 func (c *Config) validateVerdict(r *ValidationResult) {
 	v := c.Verdict
 	if v.Saturation <= 0 {
-		r.fatal("verdict.saturation", "deve ser positivo (e o divisor do score)")
+		r.fatal("verdict.saturation", "must be positive (it is the score divisor)")
 	}
 	for name, val := range map[string]float64{
 		"verdict.confirmed_at":  v.ConfirmedAt,
@@ -163,14 +164,14 @@ func (c *Config) validateVerdict(r *ValidationResult) {
 		"verdict.suspicious_at": v.SuspiciousAt,
 	} {
 		if val < 0 || val > 1 {
-			r.fatal(name, "deve estar entre 0 e 1, veio %v", val)
+			r.fatal(name, "must be between 0 and 1, got %v", val)
 		}
 	}
-	// Limiares fora de ordem produziriam niveis inalcancaveis — um confirmed
-	// abaixo do likely faria todo achado grave virar likely.
+	// Thresholds out of order would produce unreachable levels — a confirmed
+	// below likely would turn every serious finding into likely.
 	if !(v.ConfirmedAt > v.LikelyAt && v.LikelyAt > v.SuspiciousAt) {
 		r.fatal("verdict",
-			"limiares fora de ordem: confirmed_at (%v) > likely_at (%v) > suspicious_at (%v) e obrigatorio",
+			"thresholds out of order: confirmed_at (%v) > likely_at (%v) > suspicious_at (%v) is required",
 			v.ConfirmedAt, v.LikelyAt, v.SuspiciousAt)
 	}
 	for name, val := range map[string]float64{
@@ -179,34 +180,34 @@ func (c *Config) validateVerdict(r *ValidationResult) {
 		"verdict.anomaly_multiplier":   v.AnomalyMultiplier,
 	} {
 		if val < 0 || val > 1 {
-			r.fatal(name, "deve estar entre 0 e 1, veio %v", val)
+			r.fatal(name, "must be between 0 and 1, got %v", val)
 		}
 	}
 	if v.SignatureMultiplier < v.HeuristicMultiplier || v.HeuristicMultiplier < v.AnomalyMultiplier {
 		r.warn("verdict",
-			"multiplicadores invertidos: uma anomalia passaria a pesar mais que uma assinatura exata")
+			"multipliers are inverted: an anomaly would end up weighing more than an exact signature")
 	}
 	if v.ConfirmedAt < 0.5 {
 		r.warn("verdict.confirmed_at",
-			"limiar baixo (%v) para o nivel que autoriza quarentena automatica", v.ConfirmedAt)
+			"low threshold (%v) for the level that authorizes automatic quarantine", v.ConfirmedAt)
 	}
 }
 
 func (c *Config) validateQuarantine(r *ValidationResult) {
 	if c.Quarantine.RetentionDays < 0 {
-		r.fatal("quarantine.retention_days", "nao pode ser negativo")
+		r.fatal("quarantine.retention_days", "cannot be negative")
 	}
 	if c.Quarantine.AutoPurge && c.Quarantine.RetentionDays == 0 {
 		r.fatal("quarantine.auto_purge",
-			"purga automatica com retencao 0 apagaria o arquivo no mesmo instante em que ele fosse quarentenado, tornando a acao irreversivel")
+			"automatic purge with zero retention would delete the file the instant it was quarantined, making the action irreversible")
 	}
 	if c.Quarantine.AutoPurge && c.Quarantine.RetentionDays < 7 {
 		r.warn("quarantine.retention_days",
-			"%d dias e pouco para perceber um falso positivo antes da purga", c.Quarantine.RetentionDays)
+			"%d days is not long enough to notice a false positive before the purge", c.Quarantine.RetentionDays)
 	}
 	if c.Quarantine.NeutralizedExtension == "" {
 		r.fatal("quarantine.neutralized_extension",
-			"vazio: o arquivo ficaria no cofre com a extensao original e ainda executavel se o cofre for servido pela web")
+			"empty: the file would sit in the vault with its original extension, still executable if the vault is ever served over the web")
 	}
 }
 
@@ -214,26 +215,26 @@ func (c *Config) validateEngines(r *ValidationResult) {
 	enabled := 0
 	for slug, e := range c.Engines {
 		if e.Weight < 0 {
-			r.fatal("engines."+slug+".weight", "nao pode ser negativo")
+			r.fatal("engines."+slug+".weight", "cannot be negative")
 		}
 		if e.Weight > 3 {
 			r.warn("engines."+slug+".weight",
-				"peso %v faz este engine sozinho decidir qualquer veredito", e.Weight)
+				"a weight of %v lets this engine decide any verdict on its own", e.Weight)
 		}
 		if e.Enabled {
 			enabled++
 			if e.Weight == 0 {
 				r.warn("engines."+slug,
-					"habilitado com peso 0: vai gastar CPU e nunca influenciar veredito")
+					"enabled with weight 0: it will burn CPU and never influence a verdict")
 			}
 		}
 	}
 	if enabled == 0 {
-		r.fatal("engines", "nenhum engine habilitado")
+		r.fatal("engines", "no engine enabled")
 	}
 	if enabled == 1 {
 		r.warn("engines",
-			"apenas 1 engine habilitado: nao existe consenso com um voto so, e a cobertura fica reduzida")
+			"only 1 engine enabled: there is no consensus with a single vote, and coverage is reduced")
 	}
 }
 
@@ -241,36 +242,36 @@ func (c *Config) validateAlerts(r *ValidationResult) {
 	e := c.Alerts.Email
 	if e.Enabled {
 		if e.Host == "" {
-			r.fatal("alerts.email.host", "vazio com e-mail habilitado")
+			r.fatal("alerts.email.host", "empty with email enabled")
 		}
 		if e.Port <= 0 || e.Port > 65535 {
-			r.fatal("alerts.email.port", "porta invalida: %d", e.Port)
+			r.fatal("alerts.email.port", "invalid port: %d", e.Port)
 		}
 		if e.From == "" {
-			r.fatal("alerts.email.from", "vazio com e-mail habilitado")
+			r.fatal("alerts.email.from", "empty with email enabled")
 		}
 		if len(e.To) == 0 {
-			r.fatal("alerts.email.to", "nenhum destinatario com e-mail habilitado")
+			r.fatal("alerts.email.to", "no recipient with email enabled")
 		}
 		switch e.TLS {
 		case "starttls", "tls", "none":
 		default:
-			r.fatal("alerts.email.tls", "valor %q invalido (use starttls, tls ou none)", e.TLS)
+			r.fatal("alerts.email.tls", "invalid value %q (use starttls, tls or none)", e.TLS)
 		}
 		if e.TLS == "none" && e.Password != "" {
 			r.warn("alerts.email.tls",
-				"senha SMTP seria enviada em texto claro pela rede")
+				"the SMTP password would be sent over the network in clear text")
 		}
 		for _, lv := range e.Levels {
 			switch lv {
 			case "confirmed", "likely", "suspicious":
 			default:
-				r.fatal("alerts.email.levels", "nivel %q desconhecido", lv)
+				r.fatal("alerts.email.levels", "unknown level %q", lv)
 			}
 		}
 		if len(e.Levels) == 0 {
 			r.warn("alerts.email.levels",
-				"nenhum nivel selecionado: o e-mail esta ligado mas nunca vai disparar")
+				"no level selected: email is enabled but will never fire")
 		}
 	}
 
@@ -278,9 +279,9 @@ func (c *Config) validateAlerts(r *ValidationResult) {
 	for i, w := range c.Alerts.Webhooks {
 		field := fmt.Sprintf("alerts.webhooks[%d]", i)
 		if w.ID == "" {
-			r.fatal(field+".id", "vazio")
+			r.fatal(field+".id", "empty")
 		} else if seen[w.ID] {
-			r.fatal(field+".id", "id %q duplicado", w.ID)
+			r.fatal(field+".id", "duplicate id %q", w.ID)
 		} else {
 			seen[w.ID] = true
 		}
@@ -288,32 +289,32 @@ func (c *Config) validateAlerts(r *ValidationResult) {
 		u, err := url.Parse(w.URL)
 		switch {
 		case w.URL == "":
-			r.fatal(field+".url", "vazio")
+			r.fatal(field+".url", "empty")
 		case err != nil:
-			r.fatal(field+".url", "invalida: %v", err)
+			r.fatal(field+".url", "invalid: %v", err)
 		case u.Scheme != "http" && u.Scheme != "https":
-			r.fatal(field+".url", "esquema %q nao suportado (use http ou https)", u.Scheme)
+			r.fatal(field+".url", "unsupported scheme %q (use http or https)", u.Scheme)
 		case u.Scheme == "http" && w.Enabled:
 			r.warn(field+".url",
-				"http sem TLS: o payload com caminhos dos seus arquivos trafega em claro")
+				"http without TLS: the payload carrying your file paths travels in clear text")
 		}
 
 		if w.Enabled && w.Secret == "" {
 			r.warn(field+".secret",
-				"sem segredo o destino nao consegue verificar que a entrega veio daqui")
+				"without a secret the destination cannot verify the delivery came from here")
 		}
 		if w.Enabled && len(w.Events) == 0 {
-			r.warn(field+".events", "sem eventos assinados: nunca havera entrega")
+			r.warn(field+".events", "no events subscribed: there will never be a delivery")
 		}
 		for _, ev := range w.Events {
 			if !validEvent(ev) {
-				r.fatal(field+".events", "evento %q desconhecido", ev)
+				r.fatal(field+".events", "unknown event %q", ev)
 			}
 		}
 	}
 }
 
-// KnownEvents sao os eventos de webhook do contrato
+// KnownEvents are the webhook events from the contract
 // (specs/001-orquestrador-mvp/contracts/webhooks.md).
 var KnownEvents = []string{
 	"verdict.confirmed",
@@ -338,23 +339,24 @@ func (c *Config) validateWeb(r *ValidationResult) {
 		return
 	}
 	if c.Web.Listen == "" {
-		r.fatal("web.listen", "vazio com painel habilitado")
+		r.fatal("web.listen", "empty with the panel enabled")
 	}
 	host, _, found := strings.Cut(c.Web.Listen, ":")
 	if !found {
-		r.fatal("web.listen", "formato invalido: use host:porta")
+		r.fatal("web.listen", "invalid format: use host:port")
 		return
 	}
-	// A constituicao manda escutar em localhost por padrao. Expor e uma
-	// escolha legitima do usuario — mas tem que ser consciente, com aviso.
+	// The constitution requires listening on localhost by default. Exposing it
+	// is a legitimate user choice — but it has to be a deliberate one, with a
+	// warning.
 	if host != "127.0.0.1" && host != "localhost" && host != "::1" {
 		r.warn("web.listen",
-			"o painel vai aceitar conexoes de fora de %q; prefira tunel SSH ou garanta que a porta esta protegida", host)
+			"the panel will accept connections from outside %q; prefer an SSH tunnel or make sure the port is protected", host)
 	}
 	if c.Web.SessionTTL.Duration <= 0 {
-		r.fatal("web.session_ttl", "deve ser positivo")
+		r.fatal("web.session_ttl", "must be positive")
 	}
 	if c.Web.LoginRateLimit <= 0 {
-		r.fatal("web.login_rate_limit", "deve ser positivo: sem limite o painel fica aberto a forca bruta")
+		r.fatal("web.login_rate_limit", "must be positive: with no limit the panel is open to brute force")
 	}
 }

@@ -6,52 +6,52 @@ import (
 	"time"
 )
 
-// Pesos padrao por engine, de docs/esquema-e-adaptadores.md secao 2.1.
+// Default per-engine weights, from docs/schema-and-adapters.md section 2.1.
 const (
-	WeightWPChecksums = 1.5 // core adulterado = quase certeza
+	WeightWPChecksums = 1.5 // tampered core = near certainty
 	WeightMaldet      = 1.0
 	WeightAMWScan     = 0.8
 	WeightPMF         = 0.8
-	WeightWordfence   = 1.0 // pos-MVP
-	WeightClamAV      = 0.6 // pos-MVP
+	WeightWordfence   = 1.0 // post-MVP
+	WeightClamAV      = 0.6 // post-MVP
 )
 
-// DefaultDataDir e ~/.sentinelhost. Fica no espaco do usuario porque nao ha
-// root (Principio III).
+// DefaultDataDir is ~/.sentinelhost. It lives in user space because there is no
+// root (Principle III).
 func DefaultDataDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		// Sem HOME (cron minimalista de algumas hospedagens), cai no diretorio
-		// atual em vez de falhar: e melhor rodar num lugar previsivel do que
-		// nao rodar.
+		// With no HOME (the minimal cron of some hosts), fall back to the
+		// current directory instead of failing: running in a predictable place
+		// beats not running at all.
 		return ".sentinelhost"
 	}
 	return filepath.Join(home, ".sentinelhost")
 }
 
-// DefaultConfigPath e <data_dir>/config.toml.
+// DefaultConfigPath is <data_dir>/config.toml.
 func DefaultConfigPath() string {
 	return filepath.Join(DefaultDataDir(), "config.toml")
 }
 
-// Default devolve a configuracao inicial.
+// Default returns the initial configuration.
 //
-// Os padroes sao deliberadamente conservadores: observacao ligada, nice 19,
-// incremental de 1h, sem purga automatica, painel so em localhost. A primeira
-// experiencia do usuario tem que ser "nao quebrou nada", nao "que bom que fiz
+// The defaults are deliberately conservative: observation on, nice 19,
+// incremental every hour, no automatic purge, panel on localhost only. The
+// user's first experience has to be "it broke nothing", not "good thing I had a
 // backup".
 func Default() *Config {
 	data := DefaultDataDir()
 	return &Config{
 		General: General{
-			Roots:   nil, // sem raiz definida, o scan recusa rodar
+			Roots:   nil, // with no root configured, the scan refuses to run
 			DataDir: data,
-			// Observacao ligada de saida. Junto com o periodo de graca de 7
-			// dias, garante que a ferramenta so passe a mexer em arquivo
-			// depois que o usuario tiver visto o que ela acha.
+			// Observation on out of the box. Together with the 7-day grace
+			// period, it guarantees the tool only starts touching files after
+			// the user has seen what it thinks.
 			ObservationMode: true,
 			GracePeriodDays: 7,
-			Locale:          "pt-BR",
+			Locale:          "en",
 		},
 		Limits: Limits{
 			Nice:             19,
@@ -65,7 +65,7 @@ func Default() *Config {
 			MaxFilesPerCycle: 200000,
 			MemoryLimitMB:    128,
 			Exclude: []string{
-				// Cache e uploads binarios: volume enorme, risco baixo.
+				// Cache and binary uploads: huge volume, low risk.
 				"**/wp-content/cache/**",
 				"**/wp-content/uploads/**/*.jpg",
 				"**/wp-content/uploads/**/*.jpeg",
@@ -79,19 +79,19 @@ func Default() *Config {
 				"**/vendor/**/tests/**",
 				"**/.git/**",
 				"**/.svn/**",
-				// O proprio diretorio de dados: escanear o cofre de quarentena
-				// re-detectaria o que ja foi neutralizado, em loop.
+				// Our own data directory: scanning the quarantine vault would
+				// re-detect what has already been neutralized, in a loop.
 				"**/.sentinelhost/**",
 			},
 		},
 		Schedule: Schedule{
-			Mode:           "cron", // hospedagem compartilhada raramente mantem daemon vivo
+			Mode:           "cron", // shared hosting rarely keeps a daemon alive
 			Incremental:    D(time.Hour),
-			FullCron:       "0 3 * * 0", // domingo 03:00
-			SignaturesCron: "0 2 * * *", // todo dia 02:00
+			FullCron:       "0 3 * * 0", // Sunday 03:00
+			SignaturesCron: "0 2 * * *", // daily 02:00
 		},
 		Verdict: VerdictConfig{
-			// Ver DECISIONS.md D-003 para a razao do teto 2.0.
+			// See DECISIONS.md D-003 for why the ceiling is 2.0.
 			Saturation:          2.0,
 			ConfirmedAt:         0.9,
 			LikelyAt:            0.6,
@@ -104,7 +104,7 @@ func Default() *Config {
 		Quarantine: QuarantineConfig{
 			Dir:           "", // <data_dir>/quarantine
 			RetentionDays: 30,
-			// Desligado: apagar arquivo do usuario e sempre decisao dele.
+			// Off: deleting the user's file is always their decision.
 			AutoPurge:            false,
 			NeutralizedExtension: ".quarantined",
 		},
@@ -112,11 +112,11 @@ func Default() *Config {
 			"wp-checksums":       {Enabled: true, Weight: WeightWPChecksums},
 			"amwscan":            {Enabled: true, Weight: WeightAMWScan},
 			"php-malware-finder": {Enabled: true, Weight: WeightPMF},
-			// maldet vem DESLIGADO porque este binario ainda nao traz o
-			// adaptador dele. Habilitar um engine sem adaptador o faria
-			// constar como abstencao em todo ciclo — um alarme permanente
-			// sobre algo que o usuario nao tem como resolver. O peso fica
-			// registrado para quando o adaptador chegar.
+			// maldet ships DISABLED because this binary does not carry its
+			// adapter yet. Enabling an engine with no adapter would make it
+			// appear as an abstention in every cycle — a permanent alarm about
+			// something the user has no way to fix. The weight stays recorded
+			// for when the adapter arrives.
 			"maldet": {Enabled: false, Weight: WeightMaldet},
 		},
 		Alerts: Alerts{
@@ -124,8 +124,8 @@ func Default() *Config {
 				Enabled: false,
 				Port:    587,
 				TLS:     "starttls",
-				// So confirmed e likely por padrao: alertar em suspicious de
-				// saida treina o usuario a ignorar os e-mails.
+				// Only confirmed and likely by default: alerting on suspicious
+				// out of the box trains the user to ignore the emails.
 				Levels:        []string{"confirmed", "likely"},
 				DigestEnabled: false,
 				DigestAt:      "08:00",
@@ -134,8 +134,8 @@ func Default() *Config {
 		},
 		Web: Web{
 			Enabled: true,
-			// 127.0.0.1 por padrao. Acesso via tunel SSH ou porta liberada
-			// conscientemente (restricao explicita da constituicao).
+			// 127.0.0.1 by default. Access through an SSH tunnel or a
+			// deliberately opened port (an explicit constitution constraint).
 			Listen:         "127.0.0.1:8787",
 			SessionTTL:     D(12 * time.Hour),
 			LoginRateLimit: 10,
@@ -148,7 +148,7 @@ func Default() *Config {
 	}
 }
 
-// QuarantineDir resolve o diretorio efetivo do cofre.
+// QuarantineDir resolves the vault's effective directory.
 func (c *Config) QuarantineDir() string {
 	if c.Quarantine.Dir != "" {
 		return c.Quarantine.Dir
@@ -156,27 +156,27 @@ func (c *Config) QuarantineDir() string {
 	return filepath.Join(c.General.DataDir, "quarantine")
 }
 
-// DatabasePath e o SQLite de estado.
+// DatabasePath is the state SQLite file.
 func (c *Config) DatabasePath() string {
 	return filepath.Join(c.General.DataDir, "sentinelhost.db")
 }
 
-// RawOutputDir guarda as saidas brutas arquivadas dos engines.
+// RawOutputDir holds the archived raw engine output.
 func (c *Config) RawOutputDir() string {
 	return filepath.Join(c.General.DataDir, "raw")
 }
 
-// BaselinePath e o arquivo de baseline de hashes.
+// BaselinePath is the hash baseline file.
 func (c *Config) BaselinePath() string {
 	return filepath.Join(c.General.DataDir, "baseline.json")
 }
 
-// LockPath e o lock de instancia unica.
+// LockPath is the single-instance lock.
 func (c *Config) LockPath() string {
 	return filepath.Join(c.General.DataDir, "sentinelhost.lock")
 }
 
-// EngineTimeoutFor devolve o timeout efetivo de um engine.
+// EngineTimeoutFor returns an engine's effective timeout.
 func (c *Config) EngineTimeoutFor(slug string) time.Duration {
 	if e, ok := c.Engines[slug]; ok && e.Timeout.Duration > 0 {
 		return e.Timeout.Duration
@@ -184,8 +184,8 @@ func (c *Config) EngineTimeoutFor(slug string) time.Duration {
 	return c.Limits.EngineTimeout.Duration
 }
 
-// WeightFor devolve o peso configurado de um engine. Engine desconhecido pesa
-// zero: um adaptador nao registrado nao pode influenciar veredito.
+// WeightFor returns an engine's configured weight. An unknown engine weighs
+// zero: an unregistered adapter cannot influence a verdict.
 func (c *Config) WeightFor(slug string) float64 {
 	if e, ok := c.Engines[slug]; ok {
 		return e.Weight
@@ -193,29 +193,29 @@ func (c *Config) WeightFor(slug string) float64 {
 	return 0
 }
 
-// EngineEnabled responde se o engine esta ligado na configuracao.
+// EngineEnabled answers whether the engine is switched on in the configuration.
 func (c *Config) EngineEnabled(slug string) bool {
 	e, ok := c.Engines[slug]
 	return ok && e.Enabled
 }
 
-// InGracePeriod responde se a instalacao ainda esta no periodo em que nenhuma
-// acao automatica acontece (DECISIONS.md D-007).
+// InGracePeriod answers whether the installation is still in the window where
+// no automatic action happens (DECISIONS.md D-007).
 func (c *Config) InGracePeriod(now time.Time) bool {
 	if c.General.GracePeriodDays <= 0 {
 		return false
 	}
 	if c.General.FirstRunAt.IsZero() {
-		// Ainda nao houve primeiro ciclo: estamos no inicio do periodo, nao
-		// fora dele. Tratar "nunca rodou" como "graca expirada" deixaria a
-		// primeira execucao ja podendo quarentenar.
+		// No first cycle yet: we are at the start of the window, not past it.
+		// Treating "never ran" as "grace expired" would let the very first run
+		// quarantine already.
 		return true
 	}
 	return now.Before(c.General.FirstRunAt.AddDate(0, 0, c.General.GracePeriodDays))
 }
 
-// GracePeriodEndsAt devolve quando o periodo de graca expira. Zero se nao ha
-// periodo de graca ou se a ferramenta ainda nao rodou.
+// GracePeriodEndsAt returns when the grace period expires. Zero if there is no
+// grace period or the tool has not run yet.
 func (c *Config) GracePeriodEndsAt() time.Time {
 	if c.General.GracePeriodDays <= 0 || c.General.FirstRunAt.IsZero() {
 		return time.Time{}
@@ -223,19 +223,19 @@ func (c *Config) GracePeriodEndsAt() time.Time {
 	return c.General.FirstRunAt.AddDate(0, 0, c.General.GracePeriodDays)
 }
 
-// AutomaticActionAllowed e a porta unica pela qual a quarentena automatica
-// pode passar. Concentrada aqui para que nenhum caminho de codigo consiga
-// agir automaticamente por engano (DECISIONS.md D-008).
+// AutomaticActionAllowed is the single gate automatic quarantine has to pass.
+// Concentrated here so that no code path can act automatically by accident
+// (DECISIONS.md D-008).
 func (c *Config) AutomaticActionAllowed(now time.Time) (bool, string) {
 	if c.General.ObservationMode {
-		return false, "modo observacao ativo"
+		return false, "observation mode is on"
 	}
 	if c.InGracePeriod(now) {
 		end := c.GracePeriodEndsAt()
 		if end.IsZero() {
-			return false, "periodo de graca ativo (primeiro ciclo ainda nao registrado)"
+			return false, "grace period active (the first cycle has not been recorded yet)"
 		}
-		return false, "periodo de graca ativo ate " + end.Format("2006-01-02")
+		return false, "grace period active until " + end.Format("2006-01-02")
 	}
 	return true, ""
 }

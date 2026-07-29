@@ -1,16 +1,16 @@
 package config
 
-// Clone devolve uma copia INDEPENDENTE da configuracao.
+// Clone returns an INDEPENDENT copy of the configuration.
 //
-// Copia rasa nao serve: Config carrega mapas e fatias (engines, whitelist,
-// exclude, webhooks, destinatarios), e uma copia rasa continuaria apontando
-// para as mesmas estruturas. O painel edita a configuracao enquanto um ciclo
-// pode estar lendo — sem copia profunda, os dois mexem no mesmo mapa e o
-// resultado e uma corrida de dados de verdade, do tipo que o `-race` acusa e
-// que em producao aparece como valor impossivel ou panico de mapa.
+// A shallow copy will not do: Config carries maps and slices (engines,
+// whitelist, exclude, webhooks, recipients), and a shallow copy would keep
+// pointing at the same structures. The panel edits the configuration while a
+// cycle may be reading it — without a deep copy the two mutate the same map,
+// which is a genuine data race: the kind `-race` reports and that in production
+// shows up as an impossible value or a map panic.
 //
-// O custo e irrelevante: a configuracao tem dezenas de campos e e clonada em
-// requisicao HTTP, nunca em laco quente.
+// The cost is irrelevant: the configuration has dozens of fields and is cloned
+// once per HTTP request, never in a hot loop.
 func (c *Config) Clone() *Config {
 	if c == nil {
 		return nil

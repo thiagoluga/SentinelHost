@@ -7,20 +7,20 @@ import (
 	"strings"
 )
 
-// ErrIncompatibleVersion indica objeto de uma versao de esquema que este
-// binario nao sabe ler.
-var ErrIncompatibleVersion = errors.New("versao de esquema incompativel")
+// ErrIncompatibleVersion signals an object from a schema version this binary
+// cannot read.
+var ErrIncompatibleVersion = errors.New("incompatible schema version")
 
-// ValidationError agrega todos os problemas de um objeto de uma vez. Um
-// adaptador quebrado deve ver a lista inteira do que precisa corrigir, nao um
-// erro por execucao.
+// ValidationError collects every problem with an object at once. A broken
+// adapter should see the full list of what it needs to fix, not one error per
+// run.
 type ValidationError struct {
 	Object   string
 	Problems []string
 }
 
 func (e *ValidationError) Error() string {
-	return fmt.Sprintf("%s invalido: %s", e.Object, strings.Join(e.Problems, "; "))
+	return fmt.Sprintf("invalid %s: %s", e.Object, strings.Join(e.Problems, "; "))
 }
 
 type problems struct {
@@ -38,26 +38,26 @@ func (p *problems) result(object string) error {
 	return &ValidationError{Object: object, Problems: p.list}
 }
 
-// CompatibleVersion aceita objetos da mesma versao maior do esquema.
+// CompatibleVersion accepts objects from the same schema major version.
 //
-// Vazio e aceito e tratado como Version: adaptadores de terceiros escritos
-// antes do campo existir continuam funcionando. Uma versao maior que a nossa e
-// recusada — ler um esquema do futuro adivinhando campos e como um adaptador
-// mente para o motor de veredito.
+// Empty is accepted and treated as Version: third-party adapters written before
+// the field existed keep working. A version higher than ours is refused —
+// reading a schema from the future by guessing fields is like an adapter lying
+// to the verdict engine.
 func CompatibleVersion(v string) error {
 	if v == "" || v == Version {
 		return nil
 	}
 	got, err := majorOf(v)
 	if err != nil {
-		return fmt.Errorf("%w: %q nao e semver", ErrIncompatibleVersion, v)
+		return fmt.Errorf("%w: %q is not semver", ErrIncompatibleVersion, v)
 	}
 	mine, err := majorOf(Version)
 	if err != nil {
-		return fmt.Errorf("%w: versao interna %q invalida", ErrIncompatibleVersion, Version)
+		return fmt.Errorf("%w: internal version %q is invalid", ErrIncompatibleVersion, Version)
 	}
 	if got != mine {
-		return fmt.Errorf("%w: objeto e %q, este binario le %q", ErrIncompatibleVersion, v, Version)
+		return fmt.Errorf("%w: object is %q, this binary reads %q", ErrIncompatibleVersion, v, Version)
 	}
 	return nil
 }
@@ -67,9 +67,9 @@ func majorOf(v string) (int, error) {
 	return strconv.Atoi(part)
 }
 
-// isSHA256 valida o formato do hash. O motor de veredito deduplica por este
-// campo; um hash malformado silenciosamente criaria um alvo separado e
-// dividiria os votos de um mesmo arquivo entre dois vereditos.
+// isSHA256 validates the hash format. The verdict engine deduplicates by this
+// field; a malformed hash would silently create a separate target and split one
+// file's votes across two verdicts.
 func isSHA256(s string) bool {
 	if len(s) != 64 {
 		return false
@@ -85,7 +85,7 @@ func isSHA256(s string) bool {
 	return true
 }
 
-// Validate checa um Finding vindo de um adaptador.
+// Validate checks a Finding coming from an adapter.
 func (f Finding) Validate() error {
 	var p problems
 
@@ -93,58 +93,58 @@ func (f Finding) Validate() error {
 		p.addf("%v", err)
 	}
 	if f.Engine == "" {
-		p.addf("engine vazio")
+		p.addf("empty engine")
 	}
 	if f.Rule == "" {
-		p.addf("rule vazia (use o nome que o engine reporta)")
+		p.addf("empty rule (use the name the engine reports)")
 	}
 	if k := f.EffectiveKind(); !k.Valid() {
-		p.addf("kind %q desconhecido", f.Kind)
+		p.addf("unknown kind %q", f.Kind)
 	}
 	if !f.Category.Valid() {
-		p.addf("category %q desconhecida (mapeie para other se nao souber)", f.Category)
+		p.addf("unknown category %q (map it to other if you don't know)", f.Category)
 	}
 	if !f.Severity.Valid() {
-		p.addf("severity %q desconhecida", f.Severity)
+		p.addf("unknown severity %q", f.Severity)
 	}
 	if !f.Confidence.Valid() {
-		p.addf("confidence %q desconhecida", f.Confidence)
+		p.addf("unknown confidence %q", f.Confidence)
 	}
 	if f.DetectedAt.IsZero() {
-		p.addf("detected_at zerado")
+		p.addf("detected_at is zero")
 	}
 	if len(f.MatchedContent) > MaxMatchedContentBytes {
-		p.addf("matched_content tem %d bytes, limite e %d (use SanitizeSnippet)",
+		p.addf("matched_content is %d bytes, the limit is %d (use SanitizeSnippet)",
 			len(f.MatchedContent), MaxMatchedContentBytes)
 	}
 
 	switch f.EffectiveKind() {
 	case KindVulnerability:
-		// Vulnerabilidade e consolidada por componente, nao por arquivo:
-		// sha256 nao e obrigatorio, component e.
+		// Vulnerabilities are consolidated per component, not per file: sha256
+		// is not required, the component block is.
 		if f.Component == nil {
-			p.addf("kind=vulnerability exige o bloco component")
+			p.addf("kind=vulnerability requires the component block")
 		} else {
 			if f.Component.Slug == "" {
-				p.addf("component.slug vazio")
+				p.addf("empty component.slug")
 			}
 			if f.Component.InstalledVersion == "" {
-				p.addf("component.installed_version vazio")
+				p.addf("empty component.installed_version")
 			}
 		}
 	default:
 		if !isSHA256(f.File.SHA256) {
-			p.addf("file.sha256 %q invalido: e a chave de deduplicacao entre engines, e obrigatorio", f.File.SHA256)
+			p.addf("invalid file.sha256 %q: it is the deduplication key across engines and is mandatory", f.File.SHA256)
 		}
 		if f.File.Path == "" {
-			p.addf("file.path vazio")
+			p.addf("empty file.path")
 		}
 	}
 
 	return p.result("Finding")
 }
 
-// Validate checa um ScanReport produzido por um adaptador.
+// Validate checks a ScanReport produced by an adapter.
 func (r ScanReport) Validate() error {
 	var p problems
 
@@ -152,24 +152,24 @@ func (r ScanReport) Validate() error {
 		p.addf("%v", err)
 	}
 	if r.ScanID == "" {
-		p.addf("scan_id vazio")
+		p.addf("empty scan_id")
 	}
 	if r.Engine == "" {
-		p.addf("engine vazio")
+		p.addf("empty engine")
 	}
 	if !r.Status.Valid() {
-		p.addf("status %q desconhecido", r.Status)
+		p.addf("unknown status %q", r.Status)
 	}
-	// Um status de falha sem motivo transforma um problema diagnosticavel em
-	// mistério para o usuario.
+	// A failure status with no reason turns a diagnosable problem into a
+	// mystery for the user.
 	if r.Status.Valid() && !r.Status.CountsAsVote() && r.Error == "" {
-		p.addf("status %q exige error preenchido", r.Status)
+		p.addf("status %q requires error to be filled in", r.Status)
 	}
 	if r.Scope.Mode != "" && !r.Scope.Mode.Valid() {
-		p.addf("scope.mode %q desconhecido", r.Scope.Mode)
+		p.addf("unknown scope.mode %q", r.Scope.Mode)
 	}
 	if !r.StartedAt.IsZero() && !r.FinishedAt.IsZero() && r.FinishedAt.Before(r.StartedAt) {
-		p.addf("finished_at anterior a started_at")
+		p.addf("finished_at is before started_at")
 	}
 
 	for i, f := range r.Findings {
@@ -177,19 +177,19 @@ func (r ScanReport) Validate() error {
 			p.addf("findings[%d]: %v", i, err)
 		}
 		if f.Engine != "" && r.Engine != "" && f.Engine != r.Engine {
-			p.addf("findings[%d]: engine %q difere do relatorio (%q)", i, f.Engine, r.Engine)
+			p.addf("findings[%d]: engine %q differs from the report's (%q)", i, f.Engine, r.Engine)
 		}
 	}
 	for i, h := range r.CleanFiles {
 		if !isSHA256(h) {
-			p.addf("clean_files[%d]: sha256 %q invalido", i, h)
+			p.addf("clean_files[%d]: invalid sha256 %q", i, h)
 		}
 	}
 
 	return p.result("ScanReport")
 }
 
-// Validate checa um Verdict antes de ser persistido ou exibido.
+// Validate checks a Verdict before it is persisted or displayed.
 func (v Verdict) Validate() error {
 	var p problems
 
@@ -197,32 +197,32 @@ func (v Verdict) Validate() error {
 		p.addf("%v", err)
 	}
 	if v.VerdictID == "" {
-		p.addf("verdict_id vazio")
+		p.addf("empty verdict_id")
 	}
 	if !isSHA256(v.FileSHA256) {
-		p.addf("file_sha256 %q invalido", v.FileSHA256)
+		p.addf("invalid file_sha256 %q", v.FileSHA256)
 	}
 	if !v.Level.Valid() {
-		p.addf("level %q desconhecido", v.Level)
+		p.addf("unknown level %q", v.Level)
 	}
 	if v.Score < 0 || v.Score > 1 {
-		p.addf("score %v fora de [0,1]", v.Score)
+		p.addf("score %v is outside [0,1]", v.Score)
 	}
 	if v.ActionTaken != "" && !v.ActionTaken.Valid() {
-		p.addf("action_taken %q desconhecido", v.ActionTaken)
+		p.addf("unknown action_taken %q", v.ActionTaken)
 	}
 	if v.ActionTaken == ActionQuarantined && v.QuarantineRef == "" {
-		p.addf("action_taken=quarantined exige quarantine_ref (sem ele o arquivo nao e restauravel)")
+		p.addf("action_taken=quarantined requires quarantine_ref (without it the file is not restorable)")
 	}
 	if v.ActionTaken == ActionFailed && v.ActionError == "" {
-		p.addf("action_taken=failed exige action_error")
+		p.addf("action_taken=failed requires action_error")
 	}
 	for i, vote := range v.Votes {
 		if vote.Engine == "" {
-			p.addf("votes[%d]: engine vazio", i)
+			p.addf("votes[%d]: empty engine", i)
 		}
 		if vote.Weight < 0 {
-			p.addf("votes[%d]: weight negativo", i)
+			p.addf("votes[%d]: negative weight", i)
 		}
 	}
 

@@ -1,21 +1,21 @@
 package schema
 
-// Enums do esquema normalizado. Todos seguem o mesmo padrao: tipo string
-// nomeado, constantes, e um Valid() usado pela validacao. Nenhum valor fora
-// destes conjuntos entra no motor de veredito.
+// Enums of the normalized schema. They all follow the same shape: a named
+// string type, constants, and a Valid() used by validation. No value outside
+// these sets reaches the verdict engine.
 
-// Kind discrimina a natureza do achado. O MVP so produz KindMalware; os
-// demais existem porque docs/esquema-e-adaptadores.md secao 3 ja os define e
-// a feature 002 depende deles (ver DECISIONS.md D-013).
+// Kind discriminates the nature of a finding. The MVP only produces
+// KindMalware; the others exist because docs/schema-and-adapters.md section 3
+// already defines them and feature 002 depends on them (see DECISIONS.md D-013).
 type Kind string
 
 const (
-	// KindMalware e um arquivo malicioso ja instalado. Unico que pode ser
-	// quarentenado.
+	// KindMalware is an already-installed malicious file. The only kind that
+	// can be quarantined.
 	KindMalware Kind = "malware"
-	// KindVulnerability e um componente com falha conhecida. NUNCA quarentena.
+	// KindVulnerability is a component with a known flaw. NEVER quarantined.
 	KindVulnerability Kind = "vulnerability"
-	// KindHardening e uma configuracao insegura.
+	// KindHardening is an insecure configuration.
 	KindHardening Kind = "hardening"
 )
 
@@ -27,8 +27,8 @@ func (k Kind) Valid() bool {
 	return false
 }
 
-// Category e a taxonomia de achados. Cada adaptador mantem sua propria tabela
-// regra->categoria; o que nao mapear vira CategoryOther, nunca e descartado.
+// Category is the finding taxonomy. Each adapter keeps its own rule→category
+// table; anything unmapped becomes CategoryOther and is never discarded.
 type Category string
 
 const (
@@ -59,8 +59,8 @@ func (c Category) Valid() bool {
 	return false
 }
 
-// Severity e a severidade NA VISAO DO ENGINE, normalizada pelo adaptador.
-// Nao e a severidade do veredito consolidado.
+// Severity is the severity AS THE ENGINE SEES IT, normalized by the adapter.
+// It is not the severity of the consolidated verdict.
 type Severity string
 
 const (
@@ -78,15 +78,15 @@ func (s Severity) Valid() bool {
 	return false
 }
 
-// Confidence alimenta o peso do voto no consenso.
+// Confidence feeds the vote weight in the consensus.
 type Confidence string
 
 const (
-	// ConfidenceSignature: hash ou assinatura exata.
+	// ConfidenceSignature: exact hash or signature match.
 	ConfidenceSignature Confidence = "signature"
-	// ConfidenceHeuristic: padrao ou comportamento.
+	// ConfidenceHeuristic: pattern or behaviour.
 	ConfidenceHeuristic Confidence = "heuristic"
-	// ConfidenceAnomaly: fora do padrao, sem assinatura.
+	// ConfidenceAnomaly: out of the ordinary, with no signature.
 	ConfidenceAnomaly Confidence = "anomaly"
 )
 
@@ -98,16 +98,16 @@ func (c Confidence) Valid() bool {
 	return false
 }
 
-// ScanStatus e o desfecho da execucao de um engine.
+// ScanStatus is the outcome of one engine execution.
 type ScanStatus string
 
 const (
 	StatusCompleted ScanStatus = "completed"
-	// StatusPartial: terminou, mas com erros em parte dos arquivos.
+	// StatusPartial: finished, but with errors on some of the files.
 	StatusPartial ScanStatus = "partial"
 	StatusFailed  ScanStatus = "failed"
 	StatusTimeout ScanStatus = "timeout"
-	// StatusKilled: morto por limite de recursos.
+	// StatusKilled: killed by a resource limit.
 	StatusKilled ScanStatus = "killed"
 )
 
@@ -119,23 +119,23 @@ func (s ScanStatus) Valid() bool {
 	return false
 }
 
-// CountsAsVote responde a pergunta central do Principio VI: este relatorio
-// pode contar como "o engine nao achou nada"?
+// CountsAsVote answers the central question of Principle VI: may this report
+// count as "the engine found nothing"?
 //
-// So StatusCompleted pode. Qualquer outro status significa que o engine nao
-// teve chance de opinar sobre todos os arquivos, e um engine que nao opinou
-// abstem-se — nunca vota limpo.
+// Only StatusCompleted may. Any other status means the engine never got the
+// chance to weigh in on every file, and an engine that did not weigh in
+// abstains — it never votes innocent.
 func (s ScanStatus) CountsAsVote() bool {
 	return s == StatusCompleted
 }
 
-// ScanMode e o escopo do ciclo.
+// ScanMode is the scope of the cycle.
 type ScanMode string
 
 const (
 	ModeIncremental ScanMode = "incremental"
 	ModeFull        ScanMode = "full"
-	// ModeTargeted: lista explicita de caminhos (rescan apos re-hash divergente).
+	// ModeTargeted: an explicit path list (rescan after a hash mismatch).
 	ModeTargeted ScanMode = "targeted"
 )
 
@@ -147,7 +147,7 @@ func (m ScanMode) Valid() bool {
 	return false
 }
 
-// Level e o nivel do veredito consolidado.
+// Level is the level of the consolidated verdict.
 type Level string
 
 const (
@@ -165,8 +165,8 @@ func (l Level) Valid() bool {
 	return false
 }
 
-// Rank permite ordenar e comparar niveis (para filtros de alerta do tipo
-// "me avise de likely para cima").
+// Rank allows levels to be ordered and compared (for alert filters such as
+// "notify me about likely and above").
 func (l Level) Rank() int {
 	switch l {
 	case LevelConfirmed:
@@ -181,37 +181,37 @@ func (l Level) Rank() int {
 	return -1
 }
 
-// AtLeast responde se este nivel e tao ou mais grave que outro.
+// AtLeast answers whether this level is as severe as another, or more.
 func (l Level) AtLeast(other Level) bool {
 	return l.Rank() >= other.Rank()
 }
 
-// ActionTaken registra o que o orquestrador fez com o arquivo. E o campo que
-// responde "por que este arquivo (nao) foi quarentenado?".
+// ActionTaken records what the orchestrator did with the file. It is the field
+// that answers "why was this file (not) quarantined?".
 type ActionTaken string
 
 const (
-	// ActionNone: nada a fazer (nivel abaixo do limiar de acao).
+	// ActionNone: nothing to do (level below the action threshold).
 	ActionNone ActionTaken = "none"
-	// ActionQuarantined: movido para o cofre, reversivelmente.
+	// ActionQuarantined: moved to the vault, reversibly.
 	ActionQuarantined ActionTaken = "quarantined"
-	// ActionRecommended: seria quarentenado, mas modo observacao ou periodo
-	// de graca impediram. O alerta sai como "acao recomendada".
+	// ActionRecommended: would have been quarantined, but observation mode or
+	// the grace period prevented it. The alert goes out as "action recommended".
 	ActionRecommended ActionTaken = "recommended"
-	// ActionSkippedWhitelist: usuario colocou o arquivo na whitelist.
+	// ActionSkippedWhitelist: the user put the file on the whitelist.
 	ActionSkippedWhitelist ActionTaken = "skipped_whitelist"
-	// ActionSkippedOfficial: arquivo bate com checksum oficial do WordPress.
+	// ActionSkippedOfficial: the file matches the official WordPress checksum.
 	ActionSkippedOfficial ActionTaken = "skipped_official_checksum"
-	// ActionRescanNeeded: o re-hash imediatamente antes de agir divergiu do
-	// hash do veredito. O arquivo mudou entre o scan e a acao; reescaneia em
-	// vez de quarentenar as cegas (FR-018).
+	// ActionRescanNeeded: the re-hash taken immediately before acting differed
+	// from the verdict's hash. The file changed between scan and action, so it
+	// gets rescanned instead of blindly quarantined (FR-018).
 	ActionRescanNeeded ActionTaken = "rescan_needed"
-	// ActionFailed: tentou quarentenar e nao conseguiu (disco cheio, sem
-	// permissao no cofre). Vira alerta critico, nunca falha silenciosa.
+	// ActionFailed: tried to quarantine and could not (disk full, no permission
+	// on the vault). Becomes a critical alert, never a silent failure.
 	ActionFailed ActionTaken = "failed"
-	// ActionRestored: usuario restaurou o arquivo do cofre.
+	// ActionRestored: the user restored the file from the vault.
 	ActionRestored ActionTaken = "restored"
-	// ActionIgnored: usuario ignorou este achado uma vez.
+	// ActionIgnored: the user ignored this finding once.
 	ActionIgnored ActionTaken = "ignored"
 )
 

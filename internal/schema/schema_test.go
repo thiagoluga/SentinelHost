@@ -34,65 +34,65 @@ func validFinding() schema.Finding {
 	}
 }
 
-func TestFindingValidateAceitaAchadoCompleto(t *testing.T) {
+func TestFindingValidateAcceptsCompleteFinding(t *testing.T) {
 	if err := validFinding().Validate(); err != nil {
-		t.Fatalf("achado valido foi recusado: %v", err)
+		t.Fatalf("a valid finding was rejected: %v", err)
 	}
 }
 
-func TestFindingValidateExigeSHA256(t *testing.T) {
-	// O sha256 e a chave de deduplicacao entre engines. Sem ele, dois engines
-	// apontando o mesmo arquivo virariam dois vereditos com um voto cada em
-	// vez de um veredito com dois votos — exatamente o oposto do consenso.
+func TestFindingValidateRequiresSHA256(t *testing.T) {
+	// sha256 is the deduplication key across engines. Without it, two engines
+	// flagging the same file would become two verdicts with one vote each —
+	// exactly the opposite of consensus.
 	cases := map[string]string{
-		"vazio":       "",
-		"curto":       "e3b0c44298fc",
-		"maiusculo":   strings.ToUpper(validSHA),
-		"nao-hex":     strings.Repeat("z", 64),
-		"com espacos": strings.Repeat("a", 63) + " ",
+		"empty":       "",
+		"short":       "e3b0c44298fc",
+		"uppercase":   strings.ToUpper(validSHA),
+		"non-hex":     strings.Repeat("z", 64),
+		"with spaces": strings.Repeat("a", 63) + " ",
 	}
 	for name, sha := range cases {
 		t.Run(name, func(t *testing.T) {
 			f := validFinding()
 			f.File.SHA256 = sha
 			if err := f.Validate(); err == nil {
-				t.Fatalf("sha256 %q deveria ser recusado", sha)
+				t.Fatalf("sha256 %q should have been rejected", sha)
 			}
 		})
 	}
 }
 
-func TestFindingValidateRecusaEnumDesconhecido(t *testing.T) {
+func TestFindingValidateRejectsUnknownEnum(t *testing.T) {
 	f := validFinding()
-	f.Category = "categoria-inventada"
+	f.Category = "made-up-category"
 	err := f.Validate()
 	if err == nil {
-		t.Fatal("category desconhecida deveria ser recusada")
+		t.Fatal("an unknown category should have been rejected")
 	}
 	if !strings.Contains(err.Error(), "other") {
-		t.Errorf("a mensagem deveria orientar o autor do adaptador a usar other, veio: %v", err)
+		t.Errorf("the message should point the adapter author at other, got: %v", err)
 	}
 }
 
-func TestFindingValidateAcumulaTodosOsProblemas(t *testing.T) {
-	// Um adaptador quebrado precisa ver a lista inteira de uma vez.
+func TestFindingValidateCollectsEveryProblem(t *testing.T) {
+	// A broken adapter needs to see the whole list at once.
 	f := schema.Finding{SchemaVersion: schema.Version}
 	err := f.Validate()
 	if err == nil {
-		t.Fatal("finding vazio deveria ser recusado")
+		t.Fatal("an empty finding should have been rejected")
 	}
 	var ve *schema.ValidationError
 	if !errors.As(err, &ve) {
-		t.Fatalf("erro deveria ser *ValidationError, veio %T", err)
+		t.Fatalf("error should be *ValidationError, got %T", err)
 	}
 	if len(ve.Problems) < 5 {
-		t.Errorf("esperava varios problemas acumulados, veio %d: %v", len(ve.Problems), ve.Problems)
+		t.Errorf("expected several collected problems, got %d: %v", len(ve.Problems), ve.Problems)
 	}
 }
 
-func TestFindingVulnerabilidadeNaoExigeSHA256(t *testing.T) {
-	// Vereditos de vulnerabilidade sao consolidados por componente, nao por
-	// arquivo (esquema secao 3). Exigir sha256 inviabilizaria a feature 002.
+func TestVulnerabilityFindingDoesNotRequireSHA256(t *testing.T) {
+	// Vulnerability verdicts are consolidated per component, not per file
+	// (schema section 3). Requiring sha256 would make feature 002 impossible.
 	f := validFinding()
 	f.Kind = schema.KindVulnerability
 	f.File = schema.FileRef{}
@@ -104,58 +104,58 @@ func TestFindingVulnerabilidadeNaoExigeSHA256(t *testing.T) {
 		FixedIn:          "5.7.2",
 	}
 	if err := f.Validate(); err != nil {
-		t.Fatalf("achado de vulnerabilidade valido foi recusado: %v", err)
+		t.Fatalf("a valid vulnerability finding was rejected: %v", err)
 	}
 
 	f.Component = nil
 	if err := f.Validate(); err == nil {
-		t.Fatal("kind=vulnerability sem component deveria ser recusado")
+		t.Fatal("kind=vulnerability without component should have been rejected")
 	}
 }
 
-func TestKindVazioEMalware(t *testing.T) {
+func TestEmptyKindMeansMalware(t *testing.T) {
 	f := validFinding()
 	f.Kind = ""
 	if got := f.EffectiveKind(); got != schema.KindMalware {
-		t.Errorf("kind vazio deveria ser malware, veio %q", got)
+		t.Errorf("empty kind should be malware, got %q", got)
 	}
 }
 
-func TestStatusNaoCompletadoNuncaContaComoVoto(t *testing.T) {
-	// Principio VI: falha de engine e abstencao, nunca "voto limpo".
+func TestNonCompletedStatusNeverCountsAsVote(t *testing.T) {
+	// Principle VI: an engine failure is an abstention, never a "clean vote".
 	for _, s := range []schema.ScanStatus{
 		schema.StatusPartial, schema.StatusFailed,
 		schema.StatusTimeout, schema.StatusKilled,
 	} {
 		if s.CountsAsVote() {
-			t.Errorf("status %q nao pode contar como voto", s)
+			t.Errorf("status %q must not count as a vote", s)
 		}
 		r := schema.ScanReport{Status: s}
 		if !r.Abstains() {
-			t.Errorf("relatorio com status %q deveria abster-se", s)
+			t.Errorf("a report with status %q should abstain", s)
 		}
 	}
 	if !schema.StatusCompleted.CountsAsVote() {
-		t.Error("completed deveria contar como voto")
+		t.Error("completed should count as a vote")
 	}
 }
 
-func TestFailedReportNuncaProduzStatusDeVoto(t *testing.T) {
-	// Defesa contra chamada errada: mesmo pedindo "completed", o construtor
-	// de falha tem que devolver abstencao.
+func TestFailedReportNeverProducesAVotingStatus(t *testing.T) {
+	// Guard against a wrong call: even when asked for "completed", the failure
+	// constructor has to return an abstention.
 	r := schema.FailedReport("s_1", "amwscan", schema.StatusCompleted, errTest{}, time.Now())
 	if r.Status.CountsAsVote() {
-		t.Fatalf("FailedReport devolveu status que conta como voto: %q", r.Status)
+		t.Fatalf("FailedReport returned a status that counts as a vote: %q", r.Status)
 	}
 	if r.Error == "" {
-		t.Error("FailedReport deveria preencher Error")
+		t.Error("FailedReport should fill in Error")
 	}
 	if err := r.Validate(); err != nil {
-		t.Errorf("relatorio de falha deveria ser valido: %v", err)
+		t.Errorf("a failure report should be valid: %v", err)
 	}
 }
 
-func TestScanReportExigeMotivoQuandoFalha(t *testing.T) {
+func TestScanReportRequiresAReasonOnFailure(t *testing.T) {
 	r := schema.ScanReport{
 		SchemaVersion: schema.Version,
 		ScanID:        "s_1",
@@ -164,15 +164,15 @@ func TestScanReportExigeMotivoQuandoFalha(t *testing.T) {
 	}
 	err := r.Validate()
 	if err == nil {
-		t.Fatal("status de falha sem error deveria ser recusado")
+		t.Fatal("a failure status with no error should have been rejected")
 	}
-	r.Error = "timeout apos 300s"
+	r.Error = "timed out after 300s"
 	if err := r.Validate(); err != nil {
-		t.Fatalf("relatorio com motivo deveria ser valido: %v", err)
+		t.Fatalf("a report with a reason should be valid: %v", err)
 	}
 }
 
-func TestScanReportRecusaFindingDeOutroEngine(t *testing.T) {
+func TestScanReportRejectsFindingFromAnotherEngine(t *testing.T) {
 	f := validFinding()
 	r := schema.ScanReport{
 		SchemaVersion: schema.Version,
@@ -182,42 +182,43 @@ func TestScanReportRecusaFindingDeOutroEngine(t *testing.T) {
 		Findings:      []schema.Finding{f}, // engine = php-malware-finder
 	}
 	if err := r.Validate(); err == nil {
-		t.Fatal("finding de engine diferente do relatorio deveria ser recusado")
+		t.Fatal("a finding from a different engine than the report should have been rejected")
 	}
 }
 
-func TestLevelRankEAtLeast(t *testing.T) {
+func TestLevelRankAndAtLeast(t *testing.T) {
 	if !schema.LevelConfirmed.AtLeast(schema.LevelLikely) {
-		t.Error("confirmed deveria ser >= likely")
+		t.Error("confirmed should be >= likely")
 	}
 	if schema.LevelSuspicious.AtLeast(schema.LevelConfirmed) {
-		t.Error("suspicious nao deveria ser >= confirmed")
+		t.Error("suspicious should not be >= confirmed")
 	}
 	if !schema.LevelClean.AtLeast(schema.LevelClean) {
-		t.Error("clean deveria ser >= clean")
+		t.Error("clean should be >= clean")
 	}
 }
 
-func TestVerdictActionableSoConfirmed(t *testing.T) {
-	// Vereditos automaticos so no nivel confirmed (Principio V).
+func TestVerdictActionableOnlyWhenConfirmed(t *testing.T) {
+	// Automatic verdicts only at the confirmed level (Principle V).
 	for _, l := range []schema.Level{schema.LevelLikely, schema.LevelSuspicious, schema.LevelClean} {
 		v := schema.Verdict{Level: l}
 		if v.Actionable() {
-			t.Errorf("nivel %q nao pode autorizar acao automatica", l)
+			t.Errorf("level %q must not authorize automatic action", l)
 		}
 	}
 	if !(schema.Verdict{Level: schema.LevelConfirmed}).Actionable() {
-		t.Error("confirmed deveria ser acionavel")
+		t.Error("confirmed should be actionable")
 	}
-	// Protecao por checksum oficial vence qualquer nivel.
+	// Official-checksum protection beats any level.
 	v := schema.Verdict{Level: schema.LevelConfirmed, CleanReason: "official_checksum_match"}
 	if v.Actionable() {
-		t.Error("veredito com clean_reason nunca pode ser acionavel")
+		t.Error("a verdict with clean_reason can never be actionable")
 	}
 }
 
-func TestVerdictQuarentenaExigeReferencia(t *testing.T) {
-	// Sem quarantine_ref o arquivo nao e restauravel — viola o Principio I.
+func TestVerdictQuarantineRequiresAReference(t *testing.T) {
+	// Without quarantine_ref the file is not restorable — that violates
+	// Principle I.
 	v := schema.Verdict{
 		SchemaVersion: schema.Version,
 		VerdictID:     "v_1",
@@ -227,15 +228,15 @@ func TestVerdictQuarentenaExigeReferencia(t *testing.T) {
 		ActionTaken:   schema.ActionQuarantined,
 	}
 	if err := v.Validate(); err == nil {
-		t.Fatal("quarantined sem quarantine_ref deveria ser recusado")
+		t.Fatal("quarantined without quarantine_ref should have been rejected")
 	}
 	v.QuarantineRef = "q_20260723_000132"
 	if err := v.Validate(); err != nil {
-		t.Fatalf("veredito completo deveria ser valido: %v", err)
+		t.Fatalf("a complete verdict should be valid: %v", err)
 	}
 }
 
-func TestVerdictRecusaScoreForaDoIntervalo(t *testing.T) {
+func TestVerdictRejectsScoreOutsideRange(t *testing.T) {
 	for _, score := range []float64{-0.1, 1.5} {
 		v := schema.Verdict{
 			SchemaVersion: schema.Version,
@@ -245,7 +246,7 @@ func TestVerdictRecusaScoreForaDoIntervalo(t *testing.T) {
 			Score:         score,
 		}
 		if err := v.Validate(); err == nil {
-			t.Errorf("score %v deveria ser recusado", score)
+			t.Errorf("score %v should have been rejected", score)
 		}
 	}
 }
@@ -254,50 +255,50 @@ func TestCompatibleVersion(t *testing.T) {
 	ok := []string{"", "1.0", "1.4"}
 	for _, v := range ok {
 		if err := schema.CompatibleVersion(v); err != nil {
-			t.Errorf("versao %q deveria ser aceita: %v", v, err)
+			t.Errorf("version %q should be accepted: %v", v, err)
 		}
 	}
 	bad := []string{"2.0", "0.9", "abc"}
 	for _, v := range bad {
 		if err := schema.CompatibleVersion(v); err == nil {
-			t.Errorf("versao %q deveria ser recusada", v)
+			t.Errorf("version %q should be rejected", v)
 		}
 	}
 }
 
-func TestSanitizeSnippetTruncaESanitiza(t *testing.T) {
-	// A constituicao proibe re-servir conteudo malicioso: o trecho e truncado
-	// e limpo de bytes de controle antes de sair do adaptador.
+func TestSanitizeSnippetTruncatesAndSanitizes(t *testing.T) {
+	// The constitution forbids re-serving malicious content: the snippet is
+	// truncated and stripped of control bytes before leaving the adapter.
 	long := strings.Repeat("A", schema.MaxMatchedContentBytes*2)
 	got := schema.SanitizeSnippet(long)
 	if len(got) > schema.MaxMatchedContentBytes {
-		t.Errorf("trecho nao foi truncado: %d bytes", len(got))
+		t.Errorf("snippet was not truncated: %d bytes", len(got))
 	}
 
-	got = schema.SanitizeSnippet("linha1\nlinha2\x00\x07fim")
+	got = schema.SanitizeSnippet("line1\nline2\x00\x07end")
 	if strings.ContainsAny(got, "\x00\x07\n") {
-		t.Errorf("bytes de controle sobreviveram: %q", got)
+		t.Errorf("control bytes survived: %q", got)
 	}
-	if !strings.Contains(got, "linha1") || !strings.Contains(got, "fim") {
-		t.Errorf("conteudo legivel foi perdido: %q", got)
+	if !strings.Contains(got, "line1") || !strings.Contains(got, "end") {
+		t.Errorf("readable content was lost: %q", got)
 	}
 }
 
-func TestSanitizeSnippetNaoQuebraRuna(t *testing.T) {
-	// Truncar no meio de um caractere multibyte produziria lixo invalido no
-	// JSON do relatorio.
+func TestSanitizeSnippetDoesNotBreakARune(t *testing.T) {
+	// Truncating mid-multibyte-character would produce invalid garbage in the
+	// report's JSON.
 	s := strings.Repeat("ç", schema.MaxMatchedContentBytes)
 	got := schema.SanitizeSnippet(s)
 	if !isValidUTF8(got) {
-		t.Errorf("resultado nao e UTF-8 valido: %q", got)
+		t.Errorf("result is not valid UTF-8: %q", got)
 	}
 }
 
-func TestRoundTripJSONPreservaCampos(t *testing.T) {
-	// O esquema e o contrato entre adaptador e motor de veredito; ele viaja
-	// como JSON (saida do scan, API do painel, payload de webhook).
+func TestJSONRoundTripPreservesFields(t *testing.T) {
+	// The schema is the contract between adapter and verdict engine; it travels
+	// as JSON (scan output, panel API, webhook payload).
 	orig := validFinding()
-	orig.MatchedContent = "trecho sanitizado"
+	orig.MatchedContent = "sanitized snippet"
 	orig.MatchedOffset = 1024
 
 	raw, err := json.Marshal(orig)
@@ -310,7 +311,7 @@ func TestRoundTripJSONPreservaCampos(t *testing.T) {
 	}
 	if back.File.SHA256 != orig.File.SHA256 || back.Rule != orig.Rule ||
 		back.Category != orig.Category || back.MatchedOffset != orig.MatchedOffset {
-		t.Errorf("round-trip perdeu campos:\nantes: %+v\ndepois: %+v", orig, back)
+		t.Errorf("round-trip lost fields:\nbefore: %+v\nafter: %+v", orig, back)
 	}
 }
 
@@ -318,7 +319,7 @@ func TestRoundTripJSONPreservaCampos(t *testing.T) {
 
 type errTest struct{}
 
-func (errTest) Error() string { return "engine morreu" }
+func (errTest) Error() string { return "engine died" }
 
 func isValidUTF8(s string) bool {
 	for _, r := range s {

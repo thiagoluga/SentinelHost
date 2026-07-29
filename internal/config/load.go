@@ -11,38 +11,38 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// ErrNotFound indica que o arquivo de configuracao nao existe.
-var ErrNotFound = errors.New("arquivo de configuracao nao encontrado")
+// ErrNotFound signals that the configuration file does not exist.
+var ErrNotFound = errors.New("configuration file not found")
 
-// Load le o TOML do caminho dado. Campos ausentes ficam com o valor de
-// Default(), de modo que um arquivo com tres linhas continue valido: o usuario
-// escreve so o que quer mudar.
+// Load reads the TOML at the given path. Missing fields keep their Default()
+// value, so a three-line file stays valid: the user writes only what they want
+// to change.
 func Load(path string) (*Config, error) {
 	cfg := Default()
 	cfg.path = path
 
-	data, err := os.ReadFile(path) // caminho vem da CLI do proprio usuario
+	data, err := os.ReadFile(path) // path comes from the user's own CLI
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf("%w: %s", ErrNotFound, path)
 		}
-		return nil, fmt.Errorf("lendo %s: %w", path, err)
+		return nil, fmt.Errorf("reading %s: %w", path, err)
 	}
 
 	md, err := toml.Decode(string(data), cfg)
 	if err != nil {
-		return nil, fmt.Errorf("TOML invalido em %s: %w", path, err)
+		return nil, fmt.Errorf("invalid TOML in %s: %w", path, err)
 	}
 
-	// Chave desconhecida quase sempre e erro de digitacao. Avisar em vez de
-	// ignorar evita o pior cenario possivel numa ferramenta de seguranca: o
-	// usuario acredita ter desligado a quarentena automatica e nao desligou.
+	// An unknown key is almost always a typo. Reporting instead of ignoring
+	// avoids the worst possible scenario in a security tool: the user believes
+	// they turned off automatic quarantine and they did not.
 	if und := md.Undecoded(); len(und) > 0 {
 		keys := make([]string, 0, len(und))
 		for _, k := range und {
 			keys = append(keys, k.String())
 		}
-		return cfg, fmt.Errorf("chaves desconhecidas em %s: %s (erro de digitacao?)",
+		return cfg, fmt.Errorf("unknown keys in %s: %s (typo?)",
 			path, strings.Join(keys, ", "))
 	}
 
@@ -50,8 +50,8 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// LoadOrDefault le o arquivo; se ele nao existir, devolve os padroes marcados
-// com o caminho, para que um Save() posterior crie o arquivo.
+// LoadOrDefault reads the file; if it does not exist, it returns the defaults
+// tagged with the path, so a later Save() creates the file.
 func LoadOrDefault(path string) (*Config, bool, error) {
 	cfg, err := Load(path)
 	if errors.Is(err, ErrNotFound) {
@@ -65,7 +65,7 @@ func LoadOrDefault(path string) (*Config, bool, error) {
 	return cfg, true, nil
 }
 
-// normalize aplica ajustes que nao sao erro de validacao, so arrumacao.
+// normalize applies adjustments that are tidying rather than validation errors.
 func (c *Config) normalize() {
 	c.General.DataDir = expandHome(c.General.DataDir)
 	c.Quarantine.Dir = expandHome(c.Quarantine.Dir)
@@ -94,57 +94,57 @@ func expandHome(p string) string {
 	return p
 }
 
-// Save grava o TOML de forma atomica.
+// Save writes the TOML atomically.
 //
-// Atomico importa: o painel grava este arquivo enquanto um ciclo pode estar
-// lendo. Uma escrita truncada deixaria a ferramenta sem configuracao — e sem
-// configuracao ela nao sabe o que e whitelist nem onde fica o cofre.
+// Atomicity matters: the panel writes this file while a cycle may be reading it.
+// A truncated write would leave the tool with no configuration — and with no
+// configuration it does not know what the whitelist is or where the vault lives.
 func (c *Config) Save() error {
 	if c.path == "" {
-		return errors.New("config sem caminho definido: use SetPath()")
+		return errors.New("config has no path set: use SetPath()")
 	}
 	return c.SaveTo(c.path)
 }
 
-// SaveTo grava num caminho especifico.
+// SaveTo writes to a specific path.
 func (c *Config) SaveTo(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("criando diretorio de configuracao: %w", err)
+		return fmt.Errorf("creating configuration directory: %w", err)
 	}
 
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".config-*.toml")
 	if err != nil {
-		return fmt.Errorf("criando arquivo temporario: %w", err)
+		return fmt.Errorf("creating temporary file: %w", err)
 	}
 	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }() // no-op se o rename der certo
+	defer func() { _ = os.Remove(tmpName) }() // no-op if the rename succeeds
 
 	enc := toml.NewEncoder(tmp)
 	enc.Indent = "  "
 	if err := enc.Encode(c); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("serializando configuracao: %w", err)
+		return fmt.Errorf("serializing configuration: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("sincronizando configuracao: %w", err)
+		return fmt.Errorf("syncing configuration: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("fechando arquivo temporario: %w", err)
+		return fmt.Errorf("closing temporary file: %w", err)
 	}
 
-	// O arquivo guarda senha de SMTP e segredos de webhook: 0600, sempre.
+	// The file holds the SMTP password and webhook secrets: 0600, always.
 	if err := os.Chmod(tmpName, 0o600); err != nil {
-		return fmt.Errorf("ajustando permissao da configuracao: %w", err)
+		return fmt.Errorf("adjusting configuration permissions: %w", err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("gravando %s: %w", path, err)
+		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	c.path = path
 	return nil
 }
 
-// EnsureDataDirs cria a arvore de diretorios de dados com permissao restrita.
+// EnsureDataDirs creates the data directory tree with restricted permissions.
 func (c *Config) EnsureDataDirs() error {
 	dirs := []string{
 		c.General.DataDir,
@@ -153,10 +153,10 @@ func (c *Config) EnsureDataDirs() error {
 		filepath.Join(c.General.DataDir, "engines"),
 	}
 	for _, d := range dirs {
-		// 0700: o cofre de quarentena guarda arquivos maliciosos neutralizados.
-		// Nenhum outro usuario da hospedagem tem o que fazer ali.
+		// 0700: the quarantine vault holds neutralized malicious files. No other
+		// user on the host has any business in there.
 		if err := os.MkdirAll(d, 0o700); err != nil {
-			return fmt.Errorf("criando %s: %w", d, err)
+			return fmt.Errorf("creating %s: %w", d, err)
 		}
 	}
 	return nil

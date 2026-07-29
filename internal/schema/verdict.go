@@ -2,27 +2,27 @@ package schema
 
 import "time"
 
-// Vote e a participacao de um engine num veredito. E o que torna o consenso
-// auditavel: o usuario sempre consegue responder "por que este arquivo foi
-// quarentenado?" (Principio V).
+// Vote is one engine's participation in a verdict. It is what makes the
+// consensus auditable: the user can always answer "why was this file
+// quarantined?" (Principle V).
 type Vote struct {
 	Engine    string `json:"engine"`
 	FindingID string `json:"finding_id"`
-	// Weight e o peso configurado do engine.
+	// Weight is the engine's configured weight.
 	Weight float64 `json:"weight"`
-	// Confidence do achado; multiplica o peso no score.
+	// Confidence of the finding; multiplies the weight in the score.
 	Confidence Confidence `json:"confidence"`
-	// EffectiveWeight = Weight * multiplicador(Confidence). E o numero que
-	// realmente entrou na soma.
+	// EffectiveWeight = Weight * multiplier(Confidence). It is the number that
+	// actually entered the sum.
 	EffectiveWeight float64 `json:"effective_weight"`
-	// Rule e Category sao repetidos aqui para que o veredito seja explicavel
-	// sem precisar recarregar os Findings.
+	// Rule and Category are repeated here so a verdict is explainable without
+	// reloading the Findings.
 	Rule     string   `json:"rule"`
 	Category Category `json:"category"`
 }
 
-// Verdict e a decisao consolidada sobre UM arquivo, produzida pelo motor de
-// veredito. Adaptadores nunca produzem Verdict.
+// Verdict is the consolidated decision about ONE file, produced by the verdict
+// engine. Adapters never produce a Verdict.
 type Verdict struct {
 	SchemaVersion string `json:"schema_version"`
 	VerdictID     string `json:"verdict_id"`
@@ -35,17 +35,17 @@ type Verdict struct {
 	Score float64 `json:"score"`
 
 	Votes []Vote `json:"votes"`
-	// Abstentions lista os engines que nao puderam opinar. Registradas para
-	// transparencia; NAO entram no calculo do score (DECISIONS.md D-004).
+	// Abstentions lists the engines that could not weigh in. Recorded for
+	// transparency; they do NOT enter the score calculation (DECISIONS.md D-004).
 	Abstentions []string `json:"abstentions,omitempty"`
 
-	// CleanReason explica um Level=clean que contraria os votos. Hoje so
+	// CleanReason explains a Level=clean that contradicts the votes. Today only
 	// "official_checksum_match".
 	CleanReason string `json:"clean_reason,omitempty"`
 
 	ActionTaken ActionTaken `json:"action_taken"`
 	ActionAt    time.Time   `json:"action_at,omitempty"`
-	// ActionError e o motivo real quando ActionTaken == failed.
+	// ActionError is the real reason when ActionTaken == failed.
 	ActionError   string `json:"action_error,omitempty"`
 	QuarantineRef string `json:"quarantine_ref,omitempty"`
 
@@ -56,7 +56,7 @@ type Verdict struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Engines devolve os slugs que votaram, na ordem em que aparecem.
+// Engines returns the slugs that voted, in the order they appear.
 func (v Verdict) Engines() []string {
 	out := make([]string, 0, len(v.Votes))
 	for _, vote := range v.Votes {
@@ -65,11 +65,12 @@ func (v Verdict) Engines() []string {
 	return out
 }
 
-// Actionable responde se este veredito, isolado, autoriza acao automatica.
+// Actionable answers whether this verdict, on its own, authorizes automatic
+// action.
 //
-// Somente confirmed. Niveis inferiores sempre aguardam decisao humana
-// (Principio V). As demais condicoes (modo observacao, periodo de graca,
-// whitelist, re-hash) sao checadas pelo orquestrador, nao aqui.
+// Only confirmed. Lower levels always wait for a human decision (Principle V).
+// The remaining conditions (observation mode, grace period, whitelist, re-hash)
+// are checked by the orchestrator, not here.
 func (v Verdict) Actionable() bool {
 	return v.Level == LevelConfirmed && v.CleanReason == ""
 }

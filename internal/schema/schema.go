@@ -1,18 +1,19 @@
-// Package schema define o esquema normalizado de resultados do SentinelHost.
+// Package schema defines SentinelHost's normalized result schema.
 //
-// E a unica linguagem que o motor de veredito entende. Adaptadores convertem a
-// saida bruta do seu engine para estes tipos; o motor de veredito nunca conhece
-// um engine especifico (Principio VI da constituicao).
+// It is the only language the verdict engine understands. Adapters convert
+// their engine's raw output into these types; the verdict engine never knows
+// about a specific engine (Principle VI of the constitution).
 //
-// Fonte: docs/esquema-e-adaptadores.md.
+// Source: docs/schema-and-adapters.md.
 package schema
 
-// Version e a versao do esquema normalizado que este pacote implementa.
-// Adaptadores declaram qual versao emitem; o orquestrador recusa carregar um
-// objeto de versao maior que a sua.
+// Version is the normalized schema version this package implements.
+//
+// Adapters declare which version they emit; the orchestrator refuses to load an
+// object from a higher major version than its own.
 const Version = "1.0"
 
-// MaxMatchedContentBytes limita o trecho que disparou a regra. A constituicao
-// exige que conteudo malicioso nunca seja re-servido: o trecho e truncado e
-// sanitizado antes de sair do adaptador.
+// MaxMatchedContentBytes caps the snippet that triggered a rule. The
+// constitution requires that malicious content is never re-served: the snippet
+// is truncated and sanitized before it leaves the adapter.
 const MaxMatchedContentBytes = 512
