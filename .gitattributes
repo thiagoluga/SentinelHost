@@ -1,0 +1,12 @@
+# O alvo do projeto e Linux userland. Tudo que roda la precisa de LF, mesmo
+# quando o repositorio e clonado no Windows.
+* text=auto eol=lf
+
+*.sh      text eol=lf
+Makefile  text eol=lf
+*.go      text eol=lf
+*.toml    text eol=lf
+
+# Fixtures de saida bruta de engine sao contrato: nenhuma normalizacao.
+tests/testdata/raw/** -text
+tests/testdata/corpus/** -text
