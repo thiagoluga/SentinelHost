@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       curl \
       jq \
       time \
+      unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Conta sem privilégio, como numa hospedagem compartilhada. Rodar a validação

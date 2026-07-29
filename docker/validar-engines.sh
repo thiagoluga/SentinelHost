@@ -95,6 +95,49 @@ if [ "$WP_REAL" = "1" ]; then
   ok "core adulterado para checksum + AMWScan (wp-includes/functions.php → confirmed)"
 fi
 
+# Um plugin REAL do diretório oficial, para exercitar a verificação de
+# integridade de plugins contra a API de verdade.
+#
+# Todas as suposições sobre API externa nesta sessão estavam erradas (a URL do
+# release do AMWScan, o caminho das regras do php.yar, o formato do relatório).
+# A API de checksums de plugin tem formato diferente da do core — arrays de hash
+# por arquivo, indexada por slug de diretório — e nada disso vale como
+# verificado até uma resposta real passar pelo parser.
+PLUGIN_SLUG="classic-editor"
+PLUGIN_VERSAO="1.6.7"
+if curl -fsSL "https://downloads.wordpress.org/plugin/${PLUGIN_SLUG}.${PLUGIN_VERSAO}.zip" \
+     -o /tmp/plugin.zip 2>/dev/null; then
+  if command -v unzip >/dev/null && unzip -qo /tmp/plugin.zip -d "$SITE/wp-content/plugins/"; then
+    ok "plugin real instalado: ${PLUGIN_SLUG} ${PLUGIN_VERSAO}"
+    PLUGIN_REAL=1
+    # Adultera o arquivo principal do plugin: é o achado que só a verificação
+    # de plugin encontra — não aparece na conferência do core.
+    #
+    # O arquivo principal, e não "qualquer outro PHP": este plugin tem só um
+    # arquivo PHP, e a primeira versão desta validação procurava
+    # `! -name classic-editor.php`, não achava alvo nenhum, e seguia sem
+    # adulterar nada — declarando sucesso por não ter testado.
+    alvo="$SITE/wp-content/plugins/${PLUGIN_SLUG}/${PLUGIN_SLUG}.php"
+    if [ -f "$alvo" ]; then
+      echo '// SENTINELHOST-SYNTHETIC-CORPUS: alteracao em arquivo de plugin' >> "$alvo"
+      ok "arquivo de plugin adulterado: ${alvo#$SITE/}"
+    else
+      falha "não encontrei o arquivo principal do plugin para adulterar"
+    fi
+    # E um arquivo que não pertence ao plugin: tolerância zero.
+    echo '<?php // SENTINELHOST-SYNTHETIC-CORPUS: nao pertence ao plugin' \
+      > "$SITE/wp-content/plugins/${PLUGIN_SLUG}/extra-backdoor.php"
+    ok "arquivo extra plantado dentro do plugin"
+  else
+    aviso "unzip indisponível ou falhou; a verificação de plugins não será exercitada"
+    PLUGIN_REAL=0
+  fi
+  rm -f /tmp/plugin.zip
+else
+  aviso "não foi possível baixar o plugin; a verificação de plugins não será exercitada"
+  PLUGIN_REAL=0
+fi
+
 cp /corpus/limpo/base64-legitimo.php  "$SITE/wp-content/plugins/legitimo.php"
 cp /corpus/limpo/util.min.js          "$SITE/wp-content/themes/tema/util.min.js"
 cp /corpus/limpo/plugin-legitimo.php  "$SITE/wp-content/plugins/corpus-limpo.php"
@@ -287,6 +330,29 @@ if [ "${WP_REAL:-0}" = "1" ]; then
     fi
   else
     falha "wp-checksums se absteve mesmo com um WordPress real na raiz"
+  fi
+fi
+
+# Integridade de PLUGINS contra a API real (FR-005, segunda metade).
+if [ "${PLUGIN_REAL:-0}" = "1" ]; then
+  if grep -q 'plugin_file_modified' <<<"$saida_scan"; then
+    ok "alteração em arquivo de plugin detectada contra a API real"
+  else
+    falha "a alteração no plugin NÃO foi detectada"
+    info "é o achado que só a verificação de plugin encontra: não aparece no core"
+    info "confira o formato da resposta de downloads.wordpress.org/plugin-checksums"
+  fi
+  if grep -q 'plugin_file_unexpected' <<<"$saida_scan"; then
+    ok "arquivo que não pertence ao plugin detectado"
+  else
+    falha "o arquivo extra dentro do plugin NÃO foi detectado"
+  fi
+  # E o mais importante: plugin sem checksum publicado tem que constar como
+  # NÃO verificado, nunca como verificado e limpo.
+  if grep -qE 'plugin_(sem_checksum|verificado)' <<<"$saida_scan"; then
+    ok "a contabilidade de plugins verificados/não verificados aparece no relatório"
+  else
+    aviso "o relatório não mostrou a contabilidade de plugins"
   fi
 fi
 

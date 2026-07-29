@@ -103,12 +103,68 @@ var ErrPluginSemChecksum = errors.New("a API nao publica checksums para este plu
 
 // pluginFileSums sao os hashes que a API publica por arquivo de plugin.
 //
-// Ao contrario do core, que so publica MD5, aqui vem os dois — e sao ARRAYS,
-// porque um mesmo caminho pode ter variantes aceitas (arquivo com CRLF e com
-// LF, por exemplo). Basta bater com uma.
+// Ao contrario do core, que so publica MD5, aqui vem os dois. E o formato de
+// cada um e AMBIGUO na API real: normalmente uma string,
+//
+//	"classic-editor.php": {"md5": "d1ee...", "sha256": "1a81..."}
+//
+// mas um array quando o arquivo tem variantes aceitas (fim de linha CRLF e LF
+// produzem hashes diferentes para o mesmo conteudo logico).
+//
+// Declarar so um dos dois formatos quebra tudo em silencio: com `[]string`, o
+// Unmarshal falha na resposta comum e TODO plugin e pulado com "resposta
+// ilegivel"; com `string`, falha nos arquivos que tem variante. Foi assim que a
+// primeira versao disto passou nos testes (que usavam array) e nao detectou
+// nada contra a API de verdade.
 type pluginFileSums struct {
-	MD5    []string `json:"md5"`
-	SHA256 []string `json:"sha256"`
+	MD5    []string
+	SHA256 []string
+}
+
+// UnmarshalJSON aceita string ou array em cada campo.
+func (s *pluginFileSums) UnmarshalJSON(data []byte) error {
+	var cru struct {
+		MD5    json.RawMessage `json:"md5"`
+		SHA256 json.RawMessage `json:"sha256"`
+	}
+	if err := json.Unmarshal(data, &cru); err != nil {
+		return err
+	}
+	var err error
+	if s.MD5, err = hashesDe(cru.MD5); err != nil {
+		return fmt.Errorf("campo md5: %w", err)
+	}
+	if s.SHA256, err = hashesDe(cru.SHA256); err != nil {
+		return fmt.Errorf("campo sha256: %w", err)
+	}
+	return nil
+}
+
+// hashesDe normaliza um campo que pode ser string, array de strings, ou ausente.
+func hashesDe(raw json.RawMessage) ([]string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var um string
+	if err := json.Unmarshal(raw, &um); err == nil {
+		if um == "" {
+			return nil, nil
+		}
+		return []string{um}, nil
+	}
+	var varios []string
+	if err := json.Unmarshal(raw, &varios); err != nil {
+		return nil, fmt.Errorf("nem string nem array de strings: %s", truncar(raw))
+	}
+	return varios, nil
+}
+
+func truncar(b []byte) string {
+	const max = 60
+	if len(b) <= max {
+		return string(b)
+	}
+	return string(b[:max]) + "..."
 }
 
 // pluginChecksumsResponse e o formato de downloads.wordpress.org/plugin-checksums.

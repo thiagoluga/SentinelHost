@@ -92,6 +92,14 @@ type EngineOutcome struct {
 	Status    schema.ScanStatus
 	Findings  int
 	Duration  time.Duration
+	// Skipped e o que o engine pulou e por que, vindo do proprio relatorio.
+	//
+	// Sobe do ScanReport ate aqui porque o relatorio em texto precisa mostrar
+	// isso: o wp-checksums registra quantos plugins NAO conseguiu verificar, e
+	// esse numero nao pode ficar so no banco. Plugin nao verificado que nao
+	// aparece em lugar nenhum se parece com plugin verificado e limpo — a
+	// mesma falha silenciosa que o projeto combate em todo lugar.
+	Skipped map[string]int
 }
 
 // Summary e o resultado do ciclo.
@@ -362,6 +370,7 @@ func (r *Runner) runEngines(ctx context.Context, opts Options, alvos []string, s
 		outcome := EngineOutcome{
 			Slug: slug, Available: true, Status: merged.Status,
 			Findings: len(merged.Findings), Duration: r.now().Sub(inicio),
+			Skipped: merged.Scope.SkippedReasonCounts,
 		}
 		if merged.Abstains() {
 			outcome.Reason = merged.Error

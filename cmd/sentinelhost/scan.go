@@ -144,6 +144,13 @@ func imprimirRelatorio(w *os.File, sum cycle.Summary, manut *housekeeping.Result
 		default:
 			fmt.Fprintf(w, "  ✓ %-20s %d achado(s) em %s\n", e.Slug, e.Findings, e.Duration.Round(time.Millisecond))
 		}
+		// O que o engine NAO conseguiu olhar vem junto do que ele olhou.
+		// O wp-checksums registra quantos plugins ficaram sem verificacao
+		// (plugin comercial, proprio, ou sem versao no cabecalho); esse numero
+		// so no banco faria "nao verificado" se parecer com "limpo".
+		if len(e.Skipped) > 0 {
+			fmt.Fprintf(w, "      pulados: %s\n", formatarPulados(e.Skipped))
+		}
 	}
 	// Abstencao de engine que nem chegou a ser sondado (habilitado na
 	// configuracao mas sem adaptador neste binario) tambem entra na lista: o
