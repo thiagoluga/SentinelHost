@@ -1,5 +1,5 @@
-// Package baseline percorre as raizes configuradas, mantem o mapa de hashes
-// usado pelos ciclos incrementais e decide o que precisa ser reescaneado.
+// Package baseline walks the configured roots, keeps the hash map the
+// incremental cycles use, and decides what needs to be re-scanned.
 package baseline
 
 import (
@@ -17,21 +17,21 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/pathmatch"
 )
 
-// WalkOptions parametriza a varredura.
+// WalkOptions parameterizes the walk.
 type WalkOptions struct {
-	// Root e a raiz autorizada. Nada fora dela e varrido, nunca.
+	// Root is the authorized root. Nothing outside it is ever walked.
 	Root string
-	// Exclude sao globs.
+	// Exclude are globs.
 	Exclude []string
-	// MaxDepth limita a profundidade a partir da raiz.
+	// MaxDepth caps the depth from the root.
 	MaxDepth int
-	// MaxFileSizeBytes: arquivos maiores sao pulados e CONTABILIZADOS.
+	// MaxFileSizeBytes: larger files are skipped and COUNTED.
 	MaxFileSizeBytes int64
-	// MaxFiles corta a varredura, sinalizando truncamento.
+	// MaxFiles cuts the walk short, signalling truncation.
 	MaxFiles int
 }
 
-// Entry e um arquivo encontrado.
+// Entry is a file that was found.
 type Entry struct {
 	Path   string `json:"path"`
 	Size   int64  `json:"size"`
@@ -40,27 +40,27 @@ type Entry struct {
 	Perms  string `json:"perms"`
 }
 
-// WalkResult e o resultado da varredura.
+// WalkResult is the result of the walk.
 type WalkResult struct {
 	Entries []Entry
-	// SkippedCounts explica o que ficou de fora e por que. Nunca se pula
-	// arquivo em silencio: o usuario precisa saber que 12 arquivos nao foram
-	// olhados por serem grandes demais, senao a cobertura parece completa.
+	// SkippedCounts explains what was left out and why. A file is never skipped
+	// silently: the user needs to know that 12 files were not looked at because
+	// they were too large, otherwise the coverage looks complete.
 	SkippedCounts map[string]int
-	// Truncated indica que MaxFiles foi atingido. O ciclo vira `partial`.
+	// Truncated says MaxFiles was reached. The cycle becomes `partial`.
 	Truncated bool
-	// Considered e quantas entradas foram avaliadas (antes das exclusoes).
+	// Considered is how many entries were evaluated (before the exclusions).
 	Considered int
 }
 
-// ErrRootUnsafe indica raiz invalida.
-var ErrRootUnsafe = errors.New("raiz invalida para varredura")
+// ErrRootUnsafe means the root is invalid.
+var ErrRootUnsafe = errors.New("invalid root for a walk")
 
-// Walk percorre a raiz aplicando exclusoes e limites.
+// Walk walks the root applying the exclusions and limits.
 //
-// Symlinks NUNCA sao seguidos. Um link para fora da raiz faria o scanner sair
-// do diretorio que o usuario autorizou — e, num servidor compartilhado, entrar
-// na conta de outra pessoa.
+// Symlinks are NEVER followed. A link pointing outside the root would take the
+// scanner out of the directory the user authorized — and, on a shared server,
+// into someone else's account.
 func Walk(ctx context.Context, opts WalkOptions) (WalkResult, error) {
 	res := WalkResult{SkippedCounts: map[string]int{}}
 
@@ -73,7 +73,7 @@ func Walk(ctx context.Context, opts WalkOptions) (WalkResult, error) {
 		return res, fmt.Errorf("%w: %v", ErrRootUnsafe, err)
 	}
 	if !info.IsDir() {
-		return res, fmt.Errorf("%w: %s nao e um diretorio", ErrRootUnsafe, root)
+		return res, fmt.Errorf("%w: %s is not a directory", ErrRootUnsafe, root)
 	}
 
 	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -81,8 +81,8 @@ func Walk(ctx context.Context, opts WalkOptions) (WalkResult, error) {
 			return ctxErr
 		}
 		if err != nil {
-			// Diretorio ou arquivo ilegivel nao derruba a varredura: numa
-			// hospedagem compartilhada e normal haver pastas sem permissao.
+			// An unreadable directory or file does not take down the walk: on
+			// shared hosting it is normal to have folders without permission.
 			res.SkippedCounts["unreadable"]++
 			if d != nil && d.IsDir() {
 				return fs.SkipDir
@@ -107,7 +107,7 @@ func Walk(ctx context.Context, opts WalkOptions) (WalkResult, error) {
 
 		res.Considered++
 
-		// Symlink: contabiliza e segue adiante sem abrir.
+		// Symlink: count it and move on without opening it.
 		if d.Type()&fs.ModeSymlink != 0 {
 			res.SkippedCounts["symlink"]++
 			return nil
@@ -162,9 +162,9 @@ func depth(root, path string) int {
 	return strings.Count(rel, "/") + 1
 }
 
-// HashFile calcula o sha256 de um arquivo.
+// HashFile computes a file's sha256.
 func HashFile(path string) (string, error) {
-	f, err := os.Open(path) // caminho vem da varredura da raiz configurada
+	f, err := os.Open(path) // path comes from walking the configured root
 	if err != nil {
 		return "", err
 	}
@@ -177,11 +177,11 @@ func HashFile(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// HashEntries preenche o sha256 das entradas.
+// HashEntries fills in the entries' sha256.
 //
-// Entrada ilegivel e removida do resultado e contabilizada, em vez de entrar
-// com hash vazio: um hash vazio viraria uma chave de deduplicacao invalida no
-// consenso.
+// An unreadable entry is dropped from the result and counted, rather than kept
+// with an empty hash: an empty hash would become an invalid deduplication key in
+// the consensus.
 func HashEntries(ctx context.Context, entries []Entry, skipped map[string]int) []Entry {
 	out := entries[:0]
 	for _, e := range entries {

@@ -10,9 +10,10 @@ import (
 	"syscall"
 )
 
-// ownerOf devolve o dono do arquivo, para que o restore possa registrar quem
-// era. Nao tentamos restaurar o dono: sem root nao da, e prometer o que nao se
-// cumpre e pior que registrar a informacao e deixar clara a limitacao.
+// ownerOf returns the file's owner, so the restore can record who it was. We do
+// not try to restore the owner: without root it is impossible, and promising what
+// cannot be delivered is worse than recording the information and stating the
+// limitation plainly.
 func ownerOf(info os.FileInfo) string {
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok || st == nil {

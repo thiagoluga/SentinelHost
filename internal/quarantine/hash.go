@@ -6,7 +6,7 @@ import (
 	"hash"
 )
 
-// hasher acumula o sha256 do que passa por ele.
+// hasher accumulates the sha256 of whatever passes through it.
 type hasher struct{ h hash.Hash }
 
 func newHasher() *hasher { return &hasher{h: sha256.New()} }

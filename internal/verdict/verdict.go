@@ -1,10 +1,11 @@
-// Package verdict consolida os achados de varios engines num veredito por
-// arquivo.
+// Package verdict consolidates the findings of several engines into one verdict
+// per file.
 //
-// Este pacote NAO conhece nenhum engine: ele so entende o esquema normalizado
-// (Principio VI). Trocar o AMWScan por outro scanner nao muda uma linha aqui.
+// This package knows NO engine: it only understands the normalized schema
+// (Principle VI). Replacing AMWScan with another scanner does not change a line
+// here.
 //
-// A formula e as regras estao documentadas em DECISIONS.md D-003 a D-006.
+// The formula and the rules are documented in DECISIONS.md D-003 through D-006.
 package verdict
 
 import (
@@ -19,16 +20,16 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
 
-// CleanReasonOfficialChecksum e o unico motivo de veto hoje.
+// CleanReasonOfficialChecksum is the only veto reason today.
 const CleanReasonOfficialChecksum = "official_checksum_match"
 
-// Engine e o motor de consenso.
+// Engine is the consensus engine.
 type Engine struct {
 	cfg     config.VerdictConfig
 	weights map[string]float64
 }
 
-// New cria o motor a partir da configuracao.
+// New creates the engine from the configuration.
 func New(cfg config.VerdictConfig, engines map[string]config.Engine) *Engine {
 	w := make(map[string]float64, len(engines))
 	for slug, e := range engines {
@@ -37,32 +38,32 @@ func New(cfg config.VerdictConfig, engines map[string]config.Engine) *Engine {
 	return &Engine{cfg: cfg, weights: w}
 }
 
-// Input e tudo que o motor precisa para decidir.
+// Input is everything the engine needs in order to decide.
 type Input struct {
 	ScanID string
-	// Reports sao os relatorios de todos os engines que rodaram, incluindo os
-	// que falharam — a falha e informacao, nao ausencia de informacao.
+	// Reports are the reports of every engine that ran, including the ones that
+	// failed — a failure is information, not the absence of information.
 	Reports []schema.ScanReport
-	// ExpectedEngines sao os engines habilitados na configuracao. Um engine
-	// habilitado que nao produziu relatorio nenhum tambem e abstencao: sumir
-	// em silencio nao pode parecer "rodou e nao achou nada".
+	// ExpectedEngines are the engines enabled in the configuration. An enabled
+	// engine that produced no report at all is also an abstention: vanishing
+	// silently must not look like "it ran and found nothing".
 	ExpectedEngines []string
-	// Whitelist de globs do usuario.
+	// Whitelist of the user's globs.
 	Whitelist []string
 	Now       time.Time
 }
 
-// Result e a saida da consolidacao.
+// Result is the output of the consolidation.
 type Result struct {
 	Verdicts []schema.Verdict
-	// Abstentions lista os engines que nao votaram, com o motivo.
+	// Abstentions lists the engines that did not vote, with the reason.
 	Abstentions map[string]string
-	// CleanFileCount e quantos hashes foram declarados legitimos por checksum
-	// oficial.
+	// CleanFileCount is how many hashes were declared legitimate by an official
+	// checksum.
 	CleanFileCount int
 }
 
-// Consolidate transforma os relatorios em vereditos, um por arquivo.
+// Consolidate turns the reports into verdicts, one per file.
 func (e *Engine) Consolidate(in Input) Result {
 	now := in.Now
 	if now.IsZero() {
@@ -72,9 +73,9 @@ func (e *Engine) Consolidate(in Input) Result {
 	abstentions := e.collectAbstentions(in)
 	official := collectOfficialCleanHashes(in.Reports)
 
-	// Agrupa achados por sha256: e a chave de deduplicacao entre engines.
-	// Mesmo arquivo apontado por N engines = N votos no MESMO alvo.
-	grupos := groupBySHA(in.Reports)
+	// Group findings by sha256: it is the deduplication key across engines. The
+	// same file flagged by N engines = N votes on the SAME target.
+	groups := groupBySHA(in.Reports)
 
 	abstentionList := make([]string, 0, len(abstentions))
 	for slug := range abstentions {
@@ -82,9 +83,9 @@ func (e *Engine) Consolidate(in Input) Result {
 	}
 	sort.Strings(abstentionList)
 
-	verdicts := make([]schema.Verdict, 0, len(grupos))
-	for _, sha := range sortedKeys(grupos) {
-		verdicts = append(verdicts, e.consolidateFile(in, sha, grupos[sha], official, abstentionList, now))
+	verdicts := make([]schema.Verdict, 0, len(groups))
+	for _, sha := range sortedKeys(groups) {
+		verdicts = append(verdicts, e.consolidateFile(in, sha, groups[sha], official, abstentionList, now))
 	}
 
 	return Result{
@@ -94,7 +95,7 @@ func (e *Engine) Consolidate(in Input) Result {
 	}
 }
 
-// consolidateFile decide sobre UM arquivo.
+// consolidateFile decides about ONE file.
 func (e *Engine) consolidateFile(
 	in Input,
 	sha string,
@@ -105,15 +106,15 @@ func (e *Engine) consolidateFile(
 ) schema.Verdict {
 	votes := e.buildVotes(findings)
 
-	soma := 0.0
+	sum := 0.0
 	for _, v := range votes {
-		soma += v.EffectiveWeight
+		sum += v.EffectiveWeight
 	}
-	score := e.score(soma)
+	score := e.score(sum)
 	level := e.level(score)
 
-	// O caminho e o do achado mais recente: se um arquivo foi movido entre
-	// engines, o ultimo caminho visto e o que o usuario vai encontrar.
+	// The path is that of the most recent finding: if a file moved between
+	// engines, the last path seen is the one the user will find.
 	path, size := representative(findings)
 
 	v := schema.Verdict{
@@ -131,10 +132,10 @@ func (e *Engine) consolidateFile(
 		CreatedAt:     now,
 	}
 
-	// Veto por checksum oficial (D-005). Aplicado DEPOIS do calculo, e nao
-	// como voto negativo: um voto poderia ser superado por votos suficientes,
-	// e a regra e "nunca, independente de votos". Os votos ficam registrados
-	// para o usuario ver que os engines apontaram e por que foram vencidos.
+	// Official-checksum veto (D-005). Applied AFTER the calculation, and not as a
+	// negative vote: a vote could be overcome by enough other votes, and the rule
+	// is "never, regardless of votes". The votes stay on record so the user can see
+	// that the engines did flag it and why they were overruled.
 	if official[sha] {
 		v.Level = schema.LevelClean
 		v.Score = 0
@@ -143,54 +144,54 @@ func (e *Engine) consolidateFile(
 		return v
 	}
 
-	// Whitelist bloqueia a ACAO, nao o veredito (D-006). O arquivo continua
-	// visivel no relatorio com o nivel real: rebaixa-lo para clean esconderia
-	// do usuario que os engines continuam apontando aquele arquivo.
-	if regra := pathmatch.WhichMatches(in.Whitelist, path); regra != "" && v.Level != schema.LevelClean {
+	// The whitelist blocks the ACTION, not the verdict (D-006). The file stays
+	// visible in the report at its real level: downgrading it to clean would hide
+	// from the user that the engines keep flagging that file.
+	if rule := pathmatch.WhichMatches(in.Whitelist, path); rule != "" && v.Level != schema.LevelClean {
 		v.ActionTaken = schema.ActionSkippedWhitelist
-		v.ActionError = "protegido pela regra de whitelist: " + regra
+		v.ActionError = "protected by the whitelist rule: " + rule
 	}
 
 	return v
 }
 
-// buildVotes monta um voto por ENGINE, nao por achado.
+// buildVotes builds one vote per ENGINE, not per finding.
 //
-// Um engine que aponta o mesmo arquivo por cinco regras diferentes continua
-// sendo um engine so. Contar cinco votos deixaria um unico scanner decidir
-// qualquer veredito sozinho — o oposto de consenso.
+// An engine that flags the same file under five different rules is still one
+// engine. Counting five votes would let a single scanner decide any verdict on its
+// own — the opposite of consensus.
 func (e *Engine) buildVotes(findings []schema.Finding) []schema.Vote {
-	melhor := map[string]schema.Vote{}
+	best := map[string]schema.Vote{}
 
 	for _, f := range findings {
-		peso := e.weights[f.Engine]
-		if peso <= 0 {
-			// Engine desconhecido ou com peso zero nao influencia veredito.
-			// Mesmo assim seu achado ja esta arquivado e visivel no painel.
+		weight := e.weights[f.Engine]
+		if weight <= 0 {
+			// An unknown engine, or one with zero weight, does not influence the
+			// verdict. Its finding is archived and visible in the panel all the same.
 			continue
 		}
-		efetivo := peso * e.confidenceMultiplier(f.Confidence)
+		effective := weight * e.confidenceMultiplier(f.Confidence)
 
-		atual, existe := melhor[f.Engine]
-		if !existe || efetivo > atual.EffectiveWeight {
-			melhor[f.Engine] = schema.Vote{
+		current, exists := best[f.Engine]
+		if !exists || effective > current.EffectiveWeight {
+			best[f.Engine] = schema.Vote{
 				Engine:          f.Engine,
 				FindingID:       f.ID,
-				Weight:          peso,
+				Weight:          weight,
 				Confidence:      f.Confidence,
-				EffectiveWeight: efetivo,
+				EffectiveWeight: effective,
 				Rule:            f.Rule,
 				Category:        f.Category,
 			}
 		}
 	}
 
-	out := make([]schema.Vote, 0, len(melhor))
-	for _, v := range melhor {
+	out := make([]schema.Vote, 0, len(best))
+	for _, v := range best {
 		out = append(out, v)
 	}
-	// Ordem estavel, do voto mais forte para o mais fraco: e a ordem em que o
-	// usuario quer ler "por que este arquivo foi apontado".
+	// Stable order, strongest vote first: it is the order in which the user wants
+	// to read "why was this file flagged".
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].EffectiveWeight != out[j].EffectiveWeight {
 			return out[i].EffectiveWeight > out[j].EffectiveWeight
@@ -209,23 +210,24 @@ func (e *Engine) confidenceMultiplier(c schema.Confidence) float64 {
 	case schema.ConfidenceAnomaly:
 		return e.cfg.AnomalyMultiplier
 	default:
-		// Confianca desconhecida pesa como a mais fraca. Um adaptador que
-		// inventa um valor novo nao pode ganhar peso por isso.
+		// An unknown confidence weighs as the weakest one. An adapter that invents
+		// a new value must not gain weight for it.
 		return e.cfg.AnomalyMultiplier
 	}
 }
 
-// score normaliza a soma de pesos por um teto de saturacao.
+// score normalizes the sum of weights by a saturation ceiling.
 //
-// Soma dividida por teto, e nao media: com media, cada engine que se abstem
-// diluiria o score, transformando falha tecnica em voto de inocencia — o que
-// o Principio VI proibe explicitamente (DECISIONS.md D-003 e D-004).
-func (e *Engine) score(soma float64) float64 {
+// The sum divided by a ceiling, not an average: with an average, every engine
+// that abstains would dilute the score, turning a technical failure into a vote of
+// innocence — which Principle VI explicitly forbids (DECISIONS.md D-003 and
+// D-004).
+func (e *Engine) score(sum float64) float64 {
 	sat := e.cfg.Saturation
 	if sat <= 0 {
 		sat = 2.0
 	}
-	s := soma / sat
+	s := sum / sat
 	if s > 1 {
 		return 1
 	}
@@ -248,37 +250,37 @@ func (e *Engine) level(score float64) schema.Level {
 	}
 }
 
-// collectAbstentions reune quem nao votou e por que.
+// collectAbstentions gathers who did not vote, and why.
 func (e *Engine) collectAbstentions(in Input) map[string]string {
 	out := map[string]string{}
 
-	viu := map[string]bool{}
+	seen := map[string]bool{}
 	for _, r := range in.Reports {
-		viu[r.Engine] = true
+		seen[r.Engine] = true
 		if r.Abstains() {
-			motivo := r.Error
-			if motivo == "" {
-				motivo = fmt.Sprintf("relatorio com status %q", r.Status)
+			reason := r.Error
+			if reason == "" {
+				reason = fmt.Sprintf("report with status %q", r.Status)
 			}
-			out[r.Engine] = motivo
+			out[r.Engine] = reason
 		}
 	}
 
-	// Engine habilitado que nao produziu relatorio nenhum. Sumir em silencio
-	// nao pode parecer "rodou e nao achou nada".
+	// An enabled engine that produced no report at all. Vanishing silently must
+	// not look like "it ran and found nothing".
 	for _, slug := range in.ExpectedEngines {
-		if !viu[slug] {
-			out[slug] = "o engine estava habilitado mas nao produziu relatorio neste ciclo"
+		if !seen[slug] {
+			out[slug] = "the engine was enabled but produced no report in this cycle"
 		}
 	}
 	return out
 }
 
-// collectOfficialCleanHashes reune os hashes declarados legitimos.
+// collectOfficialCleanHashes gathers the hashes declared legitimate.
 //
-// So relatorios COMPLETOS contam. Um wp-checksums que falhou no meio pode ter
-// listado como limpos apenas os arquivos que chegou a verificar; aceitar essa
-// lista parcial daria imunidade a arquivos que ninguem conferiu.
+// Only COMPLETED reports count. A wp-checksums that failed halfway may have listed
+// as clean only the files it managed to verify; accepting that partial list would
+// grant immunity to files nobody checked.
 func collectOfficialCleanHashes(reports []schema.ScanReport) map[string]bool {
 	out := map[string]bool{}
 	for _, r := range reports {
@@ -292,20 +294,20 @@ func collectOfficialCleanHashes(reports []schema.ScanReport) map[string]bool {
 	return out
 }
 
-// groupBySHA agrupa achados de malware por hash do arquivo.
+// groupBySHA groups malware findings by the file's hash.
 func groupBySHA(reports []schema.ScanReport) map[string][]schema.Finding {
 	out := map[string][]schema.Finding{}
 	for _, r := range reports {
-		// Relatorio que se abstem nao contribui com achados: o engine nao
-		// terminou de olhar, e um achado parcial dele nao pode virar voto.
+		// A report that abstains contributes no findings: the engine did not
+		// finish looking, and a partial finding of its own cannot become a vote.
 		if r.Abstains() {
 			continue
 		}
 		for _, f := range r.Findings {
 			if f.EffectiveKind() != schema.KindMalware {
-				// Vulnerabilidade e hardening sao consolidados por componente,
-				// em pipeline separado (spec 002). Nunca se misturam ao score
-				// de malware.
+				// Vulnerability and hardening are consolidated per component, in a
+				// separate pipeline (spec 002). They never mix into the malware
+				// score.
 				continue
 			}
 			if f.File.SHA256 == "" {
@@ -317,37 +319,37 @@ func groupBySHA(reports []schema.ScanReport) map[string][]schema.Finding {
 	return out
 }
 
-// representative escolhe caminho e tamanho para o veredito.
+// representative picks the path and size for the verdict.
 func representative(findings []schema.Finding) (string, int64) {
 	var path string
 	var size int64
-	var maisRecente time.Time
+	var mostRecent time.Time
 	for _, f := range findings {
 		if f.File.Path == "" {
 			continue
 		}
-		if path == "" || f.DetectedAt.After(maisRecente) {
+		if path == "" || f.DetectedAt.After(mostRecent) {
 			path = f.File.Path
 			size = f.File.SizeBytes
-			maisRecente = f.DetectedAt
+			mostRecent = f.DetectedAt
 		}
 	}
 	return path, size
 }
 
-// verdictID e deterministico a partir do ciclo e do arquivo.
+// verdictID is deterministic from the cycle and the file.
 //
-// Determinismo importa: reexecutar o mesmo ciclo tem que ATUALIZAR o veredito,
-// nao criar um segundo. Sem isso, o painel encheria de duplicatas a cada
-// reprocessamento.
+// Determinism matters: re-running the same cycle has to UPDATE the verdict, not
+// create a second one. Without that, the panel would fill with duplicates on every
+// reprocessing.
 func verdictID(scanID, sha string) string {
 	sum := sha256.Sum256([]byte(scanID + ":" + sha))
 	return "v_" + hex.EncodeToString(sum[:])[:12]
 }
 
-// FindingID gera o id de um achado, tambem deterministico.
+// FindingID generates a finding's id, also deterministically.
 //
-// O orquestrador gera os ids, nunca o adaptador (esquema secao 1.1).
+// The orchestrator generates the ids, never the adapter (schema section 1.1).
 func FindingID(scanID, engine, rule, sha string) string {
 	sum := sha256.Sum256([]byte(scanID + ":" + engine + ":" + rule + ":" + sha))
 	return "f_" + hex.EncodeToString(sum[:])[:12]

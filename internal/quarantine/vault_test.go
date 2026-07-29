@@ -17,44 +17,44 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/store"
 )
 
-type ambiente struct {
+type env struct {
 	vault *quarantine.Vault
 	store *store.Store
 	site  string
-	cofre string
+	vdir  string
 }
 
-func montar(t *testing.T) ambiente {
+func setup(t *testing.T) env {
 	t.Helper()
 	base := t.TempDir()
 	site := filepath.Join(base, "public_html")
-	cofre := filepath.Join(base, "quarantine")
+	vdir := filepath.Join(base, "quarantine")
 	if err := os.MkdirAll(site, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	st, err := store.Open(context.Background(), filepath.Join(base, "estado.db"))
+	st, err := store.Open(context.Background(), filepath.Join(base, "state.db"))
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
 
 	cfg := config.Default().Quarantine
-	return ambiente{
-		vault: quarantine.New(cofre, cfg, st),
+	return env{
+		vault: quarantine.New(vdir, cfg, st),
 		store: st,
 		site:  site,
-		cofre: cofre,
+		vdir:  vdir,
 	}
 }
 
-func criarArquivo(t *testing.T, dir, nome, conteudo string) (string, string) {
+func createFile(t *testing.T, dir, name, content string) (string, string) {
 	t.Helper()
-	path := filepath.Join(dir, nome)
+	path := filepath.Join(dir, name)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(path, []byte(conteudo), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	sha, err := baseline.HashFile(path)
@@ -64,79 +64,79 @@ func criarArquivo(t *testing.T, dir, nome, conteudo string) (string, string) {
 	return path, sha
 }
 
-// SC-003: round-trip byte a byte ------------------------------------------------
+// SC-003: byte-for-byte round trip ---------------------------------------------
 
-func TestRoundTripDevolveOArquivoByteAByte(t *testing.T) {
-	// SC-003: 100% dos testes de quarentenar -> restaurar -> comparar hash
-	// tem que passar. E a promessa que torna a automacao aceitavel.
-	env := montar(t)
+func TestTheRoundTripGivesTheFileBackByteForByte(t *testing.T) {
+	// SC-003: 100% of the quarantine -> restore -> compare-hash tests have to
+	// pass. It is the promise that makes the automation acceptable.
+	e := setup(t)
 	ctx := context.Background()
 
-	conteudos := []string{
-		"<?php echo 'pequeno';",
-		strings.Repeat("A", 1<<20),                         // 1 MiB
-		"linha1\nlinha2\r\nbinario:\x00\x01\x02\xff\xfe\n", // binario e CRLF
-		"",                              // arquivo vazio
-		"acentuação e emoji: ção 🎯 ção", // UTF-8 multibyte
+	contents := []string{
+		"<?php echo 'small';",
+		strings.Repeat("A", 1<<20),                      // 1 MiB
+		"line1\nline2\r\nbinary:\x00\x01\x02\xff\xfe\n", // binary and CRLF
+		"",                               // empty file
+		"accents and emoji: ação 🎯 ação", // multibyte UTF-8
 	}
 
-	for i, conteudo := range conteudos {
-		nome := filepath.Join("wp-content", "uploads", "amostra"+string(rune('a'+i))+".php")
-		path, shaOriginal := criarArquivo(t, env.site, nome, conteudo)
+	for i, content := range contents {
+		name := filepath.Join("wp-content", "uploads", "sample"+string(rune('a'+i))+".php")
+		path, originalSHA := createFile(t, e.site, name, content)
 
-		item, err := env.vault.Quarantine(ctx, "v_1", path, shaOriginal)
+		item, err := e.vault.Quarantine(ctx, "v_1", path, originalSHA)
 		if err != nil {
 			t.Fatalf("Quarantine(%d): %v", i, err)
 		}
 
-		// O original saiu do lugar.
+		// The original left its place.
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
-			t.Errorf("caso %d: o arquivo original ainda esta no lugar", i)
+			t.Errorf("case %d: the original file is still in place", i)
 		}
 
-		restaurado, err := env.vault.Restore(ctx, item.Ref)
+		restored, err := e.vault.Restore(ctx, item.Ref)
 		if err != nil {
 			t.Fatalf("Restore(%d): %v", i, err)
 		}
-		if restaurado.Status != store.QuarantineRestored {
-			t.Errorf("caso %d: status apos restore: %q", i, restaurado.Status)
+		if restored.Status != store.QuarantineRestored {
+			t.Errorf("case %d: status after the restore: %q", i, restored.Status)
 		}
 
-		shaFinal, err := baseline.HashFile(path)
+		finalSHA, err := baseline.HashFile(path)
 		if err != nil {
-			t.Fatalf("hash apos restore (%d): %v", i, err)
+			t.Fatalf("hash after the restore (%d): %v", i, err)
 		}
-		if shaFinal != shaOriginal {
-			t.Errorf("caso %d: o arquivo NAO voltou byte a byte: %s -> %s", i, shaOriginal, shaFinal)
+		if finalSHA != originalSHA {
+			t.Errorf("case %d: the file did NOT come back byte for byte: %s -> %s", i, originalSHA, finalSHA)
 		}
 
-		volta, err := os.ReadFile(path)
+		back, err := os.ReadFile(path)
 		if err != nil {
-			t.Fatalf("lendo restaurado (%d): %v", i, err)
+			t.Fatalf("reading the restored file (%d): %v", i, err)
 		}
-		if string(volta) != conteudo {
-			t.Errorf("caso %d: conteudo diferente apos restauracao", i)
+		if string(back) != content {
+			t.Errorf("case %d: different content after the restore", i)
 		}
 	}
 }
 
-func TestRestaurePreservaPermissoes(t *testing.T) {
+func TestTheRestorePreservesPermissions(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("permissoes POSIX nao se aplicam no Windows (D-002)")
+		t.Skip("POSIX permissions do not apply on Windows (D-002)")
 	}
-	env := montar(t)
+	e := setup(t)
 	ctx := context.Background()
 
-	path, sha := criarArquivo(t, env.site, "x.php", "<?php")
+	path, sha := createFile(t, e.site, "x.php", "<?php")
 	if err := os.Chmod(path, 0o640); err != nil {
 		t.Fatalf("chmod: %v", err)
 	}
 
-	item, err := env.vault.Quarantine(ctx, "v_1", path, sha)
+	item, err := e.vault.Quarantine(ctx, "v_1", path, sha)
 	if err != nil {
 		t.Fatalf("Quarantine: %v", err)
 	}
-	if _, err := env.vault.Restore(ctx, item.Ref); err != nil {
+	if _, err := e.vault.Restore(ctx, item.Ref); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
 
@@ -145,200 +145,200 @@ func TestRestaurePreservaPermissoes(t *testing.T) {
 		t.Fatalf("stat: %v", err)
 	}
 	if info.Mode().Perm() != 0o640 {
-		t.Errorf("permissao nao foi restaurada: esperado 0640, veio %v", info.Mode().Perm())
+		t.Errorf("the permissions were not restored: expected 0640, got %v", info.Mode().Perm())
 	}
 }
 
-// FR-018: re-hash antes de agir ------------------------------------------------
+// FR-018: re-hash before acting ------------------------------------------------
 
-func TestRecusaQuarentenarSeOArquivoMudouDesdeOScan(t *testing.T) {
-	// Edge case explicito da spec: arquivo que muda entre o scan e a acao.
-	// Nesses minutos o proprio usuario pode ter limpado o arquivo.
-	env := montar(t)
+func TestItRefusesToQuarantineIfTheFileChangedSinceTheScan(t *testing.T) {
+	// An explicit edge case in the spec: a file that changes between the scan and
+	// the action. In those minutes the user may have cleaned the file themselves.
+	e := setup(t)
 	ctx := context.Background()
 
-	path, shaAntigo := criarArquivo(t, env.site, "x.php", "<?php // versao suja")
-	// O usuario corrige o arquivo antes de a acao rodar.
-	if err := os.WriteFile(path, []byte("<?php // versao limpa"), 0o644); err != nil {
+	path, oldSHA := createFile(t, e.site, "x.php", "<?php // dirty version")
+	// The user fixes the file before the action runs.
+	if err := os.WriteFile(path, []byte("<?php // clean version"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
-	_, err := env.vault.Quarantine(ctx, "v_1", path, shaAntigo)
+	_, err := e.vault.Quarantine(ctx, "v_1", path, oldSHA)
 	if !errors.Is(err, quarantine.ErrHashMismatch) {
-		t.Fatalf("esperava ErrHashMismatch, veio %v", err)
+		t.Fatalf("expected ErrHashMismatch, got %v", err)
 	}
-	// E, principalmente: o arquivo continua no lugar.
+	// And most importantly: the file is still in place.
 	if _, err := os.Stat(path); err != nil {
-		t.Error("o arquivo do usuario foi mexido apesar do hash divergente")
+		t.Error("the user's file was touched despite the divergent hash")
 	}
-	conteudo, _ := os.ReadFile(path)
-	if string(conteudo) != "<?php // versao limpa" {
-		t.Error("o conteudo corrigido pelo usuario foi alterado")
+	content, _ := os.ReadFile(path)
+	if string(content) != "<?php // clean version" {
+		t.Error("the content the user fixed was altered")
 	}
 }
 
-func TestArquivoQueSumiuAntesDaAcaoNaoDerruba(t *testing.T) {
-	env := montar(t)
+func TestAFileThatVanishedBeforeTheActionDoesNotTakeThingsDown(t *testing.T) {
+	e := setup(t)
 	ctx := context.Background()
 
-	_, err := env.vault.Quarantine(ctx, "v_1", filepath.Join(env.site, "nao-existe.php"), "")
+	_, err := e.vault.Quarantine(ctx, "v_1", filepath.Join(e.site, "does-not-exist.php"), "")
 	if err == nil {
-		t.Fatal("esperava erro")
+		t.Fatal("expected an error")
 	}
 	if errors.Is(err, quarantine.ErrHashMismatch) {
-		t.Error("arquivo ausente nao e o mesmo que arquivo alterado")
+		t.Error("a missing file is not the same as an altered file")
 	}
 }
 
-// Neutralizacao -----------------------------------------------------------------
+// Neutralization ---------------------------------------------------------------
 
-func TestArquivoNoCofreEhNeutralizado(t *testing.T) {
-	env := montar(t)
+func TestTheFileInTheVaultIsNeutralized(t *testing.T) {
+	e := setup(t)
 	ctx := context.Background()
 
-	path, sha := criarArquivo(t, env.site, "backdoor.php", "<?php // amostra")
-	item, err := env.vault.Quarantine(ctx, "v_1", path, sha)
+	path, sha := createFile(t, e.site, "backdoor.php", "<?php // sample")
+	item, err := e.vault.Quarantine(ctx, "v_1", path, sha)
 	if err != nil {
 		t.Fatalf("Quarantine: %v", err)
 	}
 
-	// Extensao neutralizada: se o cofre acabar dentro de um diretorio servido
-	// pela web, o arquivo nao pode ser executado pelo servidor.
+	// Neutralized extension: if the vault ends up inside a directory served over
+	// the web, the file must not be executable by the server.
 	if filepath.Ext(item.VaultPath) != ".quarantined" {
-		t.Errorf("a extensao nao foi neutralizada: %s", item.VaultPath)
+		t.Errorf("the extension was not neutralized: %s", item.VaultPath)
 	}
 	if strings.HasSuffix(item.VaultPath, ".php") {
-		t.Errorf("o arquivo no cofre ainda tem extensao executavel: %s", item.VaultPath)
+		t.Errorf("the file in the vault still has an executable extension: %s", item.VaultPath)
 	}
 
 	if runtime.GOOS != "windows" {
 		info, err := os.Stat(item.VaultPath)
 		if err != nil {
-			t.Fatalf("stat do cofre: %v", err)
+			t.Fatalf("stat of the vault copy: %v", err)
 		}
 		perm := info.Mode().Perm()
 		if perm&0o111 != 0 {
-			t.Errorf("o arquivo no cofre manteve permissao de execucao: %v", perm)
+			t.Errorf("the file in the vault kept its execute permission: %v", perm)
 		}
 		if perm&0o077 != 0 {
-			t.Errorf("o arquivo no cofre e acessivel por grupo ou outros: %v", perm)
+			t.Errorf("the file in the vault is accessible by group or others: %v", perm)
 		}
-		// O dono TEM que conseguir ler: sem isso, restaurar e verificar o
-		// cofre param de funcionar e a promessa de reversibilidade morre.
-		// Este defeito e invisivel no Windows, que ignora permissoes POSIX.
+		// The owner MUST be able to read it: without that, restoring and verifying
+		// the vault stop working and the promise of reversibility dies. This defect
+		// is invisible on Windows, which ignores POSIX permissions.
 		if perm&0o400 == 0 {
-			t.Errorf("o dono nao consegue ler a copia no cofre (%v): a restauracao ficaria impossivel", perm)
+			t.Errorf("the owner cannot read the copy in the vault (%v): the restore would be impossible", perm)
 		}
 	}
 
-	// E a prova pratica: o arquivo continua legivel para quem vai restaurar.
+	// And the practical proof: the file is still readable by whoever will restore it.
 	if _, err := os.ReadFile(item.VaultPath); err != nil {
-		t.Errorf("a copia no cofre nao pode ser lida: %v", err)
+		t.Errorf("the copy in the vault cannot be read: %v", err)
 	}
 }
 
-func TestMetadadosDeRestauracaoSaoRegistrados(t *testing.T) {
-	// Sem estes metadados o arquivo no cofre e lixo indecifravel.
-	env := montar(t)
+func TestTheRestoreMetadataIsRecorded(t *testing.T) {
+	// Without this metadata the file in the vault is undecipherable garbage.
+	e := setup(t)
 	ctx := context.Background()
 
-	path, sha := criarArquivo(t, env.site, "wp-content/x.php", "<?php")
-	item, err := env.vault.Quarantine(ctx, "v_42", path, sha)
+	path, sha := createFile(t, e.site, "wp-content/x.php", "<?php")
+	item, err := e.vault.Quarantine(ctx, "v_42", path, sha)
 	if err != nil {
 		t.Fatalf("Quarantine: %v", err)
 	}
 
-	gravado, err := env.store.GetQuarantineItem(ctx, item.Ref)
+	stored, err := e.store.GetQuarantineItem(ctx, item.Ref)
 	if err != nil {
 		t.Fatalf("GetQuarantineItem: %v", err)
 	}
-	if gravado.OriginalPath != path {
-		t.Errorf("caminho original perdido: %q", gravado.OriginalPath)
+	if stored.OriginalPath != path {
+		t.Errorf("the original path was lost: %q", stored.OriginalPath)
 	}
-	if gravado.SHA256 != sha {
-		t.Errorf("hash perdido: %q", gravado.SHA256)
+	if stored.SHA256 != sha {
+		t.Errorf("the hash was lost: %q", stored.SHA256)
 	}
-	if gravado.VerdictID != "v_42" {
-		t.Errorf("veredito de origem perdido: %q", gravado.VerdictID)
+	if stored.VerdictID != "v_42" {
+		t.Errorf("the originating verdict was lost: %q", stored.VerdictID)
 	}
-	if gravado.Perms == "" {
-		t.Error("permissoes originais nao foram registradas")
+	if stored.Perms == "" {
+		t.Error("the original permissions were not recorded")
 	}
-	if gravado.RetentionUntil.IsZero() {
-		t.Error("a retencao nao foi calculada")
+	if stored.RetentionUntil.IsZero() {
+		t.Error("the retention was not calculated")
 	}
 }
 
-// Falhas do cofre ---------------------------------------------------------------
+// Vault failures ---------------------------------------------------------------
 
-func TestCofreSemPermissaoNaoApagaOArquivoDoUsuario(t *testing.T) {
-	// Este e O teste que impede a ferramenta de destruir um site: se o cofre
-	// nao aceita a copia, o original NAO pode ser removido.
+func TestAVaultWithoutPermissionDoesNotDeleteTheUsersFile(t *testing.T) {
+	// This is THE test that keeps the tool from destroying a site: if the vault
+	// does not accept the copy, the original must NOT be removed.
 	if runtime.GOOS == "windows" {
-		t.Skip("permissoes POSIX nao se aplicam no Windows (D-002)")
+		t.Skip("POSIX permissions do not apply on Windows (D-002)")
 	}
-	env := montar(t)
+	e := setup(t)
 	ctx := context.Background()
 
-	path, sha := criarArquivo(t, env.site, "x.php", "<?php // conteudo importante")
+	path, sha := createFile(t, e.site, "x.php", "<?php // important content")
 
-	// Cofre existente porem sem permissao de escrita.
-	if err := os.MkdirAll(env.cofre, 0o500); err != nil {
+	// A vault that exists but has no write permission.
+	if err := os.MkdirAll(e.vdir, 0o500); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(env.cofre, 0o700) })
+	t.Cleanup(func() { _ = os.Chmod(e.vdir, 0o700) })
 
-	_, err := env.vault.Quarantine(ctx, "v_1", path, sha)
+	_, err := e.vault.Quarantine(ctx, "v_1", path, sha)
 	if err == nil {
-		t.Fatal("esperava falha com cofre sem permissao")
+		t.Fatal("expected a failure with an unwritable vault")
 	}
 	if !errors.Is(err, quarantine.ErrVaultUnwritable) {
-		t.Errorf("esperava ErrVaultUnwritable, veio %v", err)
+		t.Errorf("expected ErrVaultUnwritable, got %v", err)
 	}
 
-	// O arquivo do usuario continua intacto.
+	// The user's file is still intact.
 	if _, err := os.Stat(path); err != nil {
-		t.Fatal("o arquivo do usuario foi removido apesar da falha no cofre")
+		t.Fatal("the user's file was removed despite the vault failure")
 	}
-	shaFinal, _ := baseline.HashFile(path)
-	if shaFinal != sha {
-		t.Error("o arquivo do usuario foi alterado")
+	finalSHA, _ := baseline.HashFile(path)
+	if finalSHA != sha {
+		t.Error("the user's file was altered")
 	}
 }
 
-func TestRestoreNaoSobrescreveArquivoExistente(t *testing.T) {
-	// Se ha arquivo no caminho original, ele pode ser a versao limpa que o
-	// usuario ja repos.
-	env := montar(t)
+func TestTheRestoreDoesNotOverwriteAnExistingFile(t *testing.T) {
+	// If there is a file at the original path, it may be the clean version the
+	// user has already put back.
+	e := setup(t)
 	ctx := context.Background()
 
-	path, sha := criarArquivo(t, env.site, "x.php", "<?php // sujo")
-	item, err := env.vault.Quarantine(ctx, "v_1", path, sha)
+	path, sha := createFile(t, e.site, "x.php", "<?php // dirty")
+	item, err := e.vault.Quarantine(ctx, "v_1", path, sha)
 	if err != nil {
 		t.Fatalf("Quarantine: %v", err)
 	}
-	if err := os.WriteFile(path, []byte("<?php // reposto pelo usuario"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("<?php // put back by the user"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
-	_, err = env.vault.Restore(ctx, item.Ref)
+	_, err = e.vault.Restore(ctx, item.Ref)
 	if !errors.Is(err, quarantine.ErrRestoreTargetExists) {
-		t.Fatalf("esperava ErrRestoreTargetExists, veio %v", err)
+		t.Fatalf("expected ErrRestoreTargetExists, got %v", err)
 	}
-	conteudo, _ := os.ReadFile(path)
-	if string(conteudo) != "<?php // reposto pelo usuario" {
-		t.Error("o arquivo reposto pelo usuario foi sobrescrito")
+	content, _ := os.ReadFile(path)
+	if string(content) != "<?php // put back by the user" {
+		t.Error("the file the user put back was overwritten")
 	}
 }
 
-func TestRestoreDetectaCofreCorrompido(t *testing.T) {
-	// Restaurar um arquivo diferente do que foi quarentenado seria pior que
-	// nao restaurar.
-	env := montar(t)
+func TestTheRestoreDetectsACorruptedVault(t *testing.T) {
+	// Restoring a file different from the one that was quarantined would be worse
+	// than not restoring.
+	e := setup(t)
 	ctx := context.Background()
 
-	path, sha := criarArquivo(t, env.site, "x.php", "<?php // original")
-	item, err := env.vault.Quarantine(ctx, "v_1", path, sha)
+	path, sha := createFile(t, e.site, "x.php", "<?php // original")
+	item, err := e.vault.Quarantine(ctx, "v_1", path, sha)
 	if err != nil {
 		t.Fatalf("Quarantine: %v", err)
 	}
@@ -346,124 +346,124 @@ func TestRestoreDetectaCofreCorrompido(t *testing.T) {
 	if err := os.Chmod(item.VaultPath, 0o600); err != nil {
 		t.Fatalf("chmod: %v", err)
 	}
-	if err := os.WriteFile(item.VaultPath, []byte("conteudo trocado"), 0o600); err != nil {
+	if err := os.WriteFile(item.VaultPath, []byte("swapped content"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
-	_, err = env.vault.Restore(ctx, item.Ref)
+	_, err = e.vault.Restore(ctx, item.Ref)
 	if !errors.Is(err, quarantine.ErrVaultCorrupted) {
-		t.Fatalf("esperava ErrVaultCorrupted, veio %v", err)
+		t.Fatalf("expected ErrVaultCorrupted, got %v", err)
 	}
 }
 
-func TestRestaurarDuasVezesFalha(t *testing.T) {
-	env := montar(t)
+func TestRestoringTwiceFails(t *testing.T) {
+	e := setup(t)
 	ctx := context.Background()
 
-	path, sha := criarArquivo(t, env.site, "x.php", "<?php")
-	item, _ := env.vault.Quarantine(ctx, "v_1", path, sha)
-	if _, err := env.vault.Restore(ctx, item.Ref); err != nil {
-		t.Fatalf("primeira restauracao: %v", err)
+	path, sha := createFile(t, e.site, "x.php", "<?php")
+	item, _ := e.vault.Quarantine(ctx, "v_1", path, sha)
+	if _, err := e.vault.Restore(ctx, item.Ref); err != nil {
+		t.Fatalf("first restore: %v", err)
 	}
-	if _, err := env.vault.Restore(ctx, item.Ref); !errors.Is(err, quarantine.ErrNotInVault) {
-		t.Errorf("esperava ErrNotInVault, veio %v", err)
+	if _, err := e.vault.Restore(ctx, item.Ref); !errors.Is(err, quarantine.ErrNotInVault) {
+		t.Errorf("expected ErrNotInVault, got %v", err)
 	}
 }
 
-// Retencao e purga ---------------------------------------------------------------
+// Retention and purge ----------------------------------------------------------
 
-func TestPurgaRecusaItemDentroDaRetencao(t *testing.T) {
-	env := montar(t)
+func TestThePurgeRefusesAnItemInsideItsRetention(t *testing.T) {
+	e := setup(t)
 	ctx := context.Background()
 
-	path, sha := criarArquivo(t, env.site, "x.php", "<?php")
-	item, _ := env.vault.Quarantine(ctx, "v_1", path, sha)
+	path, sha := createFile(t, e.site, "x.php", "<?php")
+	item, _ := e.vault.Quarantine(ctx, "v_1", path, sha)
 
-	if err := env.vault.Purge(ctx, item.Ref, false); err == nil {
-		t.Fatal("purga dentro da retencao deveria ser recusada")
+	if err := e.vault.Purge(ctx, item.Ref, false); err == nil {
+		t.Fatal("a purge inside the retention should have been refused")
 	}
 	if _, err := os.Stat(item.VaultPath); err != nil {
-		t.Error("a copia no cofre foi removida apesar da recusa")
+		t.Error("the copy in the vault was removed despite the refusal")
 	}
 }
 
-func TestPurgaManualIgnoraRetencao(t *testing.T) {
-	// A constituicao permite purga definitiva por acao manual do usuario.
-	env := montar(t)
+func TestAManualPurgeIgnoresTheRetention(t *testing.T) {
+	// The constitution allows a permanent purge by manual user action.
+	e := setup(t)
 	ctx := context.Background()
 
-	path, sha := criarArquivo(t, env.site, "x.php", "<?php")
-	item, _ := env.vault.Quarantine(ctx, "v_1", path, sha)
+	path, sha := createFile(t, e.site, "x.php", "<?php")
+	item, _ := e.vault.Quarantine(ctx, "v_1", path, sha)
 
-	if err := env.vault.Purge(ctx, item.Ref, true); err != nil {
+	if err := e.vault.Purge(ctx, item.Ref, true); err != nil {
 		t.Fatalf("Purge(force): %v", err)
 	}
 	if _, err := os.Stat(item.VaultPath); !os.IsNotExist(err) {
-		t.Error("a copia deveria ter sido removida")
+		t.Error("the copy should have been removed")
 	}
-	gravado, _ := env.store.GetQuarantineItem(ctx, item.Ref)
-	if gravado.Status != store.QuarantinePurged {
-		t.Errorf("status: %q", gravado.Status)
+	stored, _ := e.store.GetQuarantineItem(ctx, item.Ref)
+	if stored.Status != store.QuarantinePurged {
+		t.Errorf("status: %q", stored.Status)
 	}
 }
 
-func TestPurgeExpiredSoPegaOsVencidos(t *testing.T) {
-	env := montar(t)
+func TestPurgeExpiredOnlyTakesTheExpiredOnes(t *testing.T) {
+	e := setup(t)
 	ctx := context.Background()
 
-	pathVelho, shaVelho := criarArquivo(t, env.site, "velho.php", "<?php // velho")
-	pathNovo, shaNovo := criarArquivo(t, env.site, "novo.php", "<?php // novo")
+	oldPath, oldSHA := createFile(t, e.site, "old.php", "<?php // old")
+	newPath, newSHA := createFile(t, e.site, "new.php", "<?php // new")
 
-	// O item velho foi quarentenado ha 60 dias (retencao padrao: 30).
-	passado := time.Now().AddDate(0, 0, -60)
-	velho := quarantine.New(env.cofre, config.Default().Quarantine, env.store).
-		WithClock(func() time.Time { return passado })
-	itemVelho, err := velho.Quarantine(ctx, "v_1", pathVelho, shaVelho)
+	// The old item was quarantined 60 days ago (default retention: 30).
+	past := time.Now().AddDate(0, 0, -60)
+	old := quarantine.New(e.vdir, config.Default().Quarantine, e.store).
+		WithClock(func() time.Time { return past })
+	oldItem, err := old.Quarantine(ctx, "v_1", oldPath, oldSHA)
 	if err != nil {
-		t.Fatalf("Quarantine(velho): %v", err)
+		t.Fatalf("Quarantine(old): %v", err)
 	}
-	itemNovo, err := env.vault.Quarantine(ctx, "v_2", pathNovo, shaNovo)
+	newItem, err := e.vault.Quarantine(ctx, "v_2", newPath, newSHA)
 	if err != nil {
-		t.Fatalf("Quarantine(novo): %v", err)
+		t.Fatalf("Quarantine(new): %v", err)
 	}
 
-	n, err := env.vault.PurgeExpired(ctx)
+	n, err := e.vault.PurgeExpired(ctx)
 	if err != nil {
 		t.Fatalf("PurgeExpired: %v", err)
 	}
 	if n != 1 {
-		t.Fatalf("esperava 1 item purgado, veio %d", n)
+		t.Fatalf("expected 1 purged item, got %d", n)
 	}
 
-	venc, _ := env.store.GetQuarantineItem(ctx, itemVelho.Ref)
-	if venc.Status != store.QuarantinePurged {
-		t.Errorf("o item vencido deveria ter sido purgado, esta %q", venc.Status)
+	expired, _ := e.store.GetQuarantineItem(ctx, oldItem.Ref)
+	if expired.Status != store.QuarantinePurged {
+		t.Errorf("the expired item should have been purged, it is %q", expired.Status)
 	}
-	recente, _ := env.store.GetQuarantineItem(ctx, itemNovo.Ref)
-	if recente.Status != store.QuarantineActive {
-		t.Errorf("o item recente nao pode ser purgado, esta %q", recente.Status)
+	recent, _ := e.store.GetQuarantineItem(ctx, newItem.Ref)
+	if recent.Status != store.QuarantineActive {
+		t.Errorf("the recent item must not be purged, it is %q", recent.Status)
 	}
-	if _, err := os.Stat(itemNovo.VaultPath); err != nil {
-		t.Error("a copia do item recente foi removida")
+	if _, err := os.Stat(newItem.VaultPath); err != nil {
+		t.Error("the recent item's copy was removed")
 	}
 }
 
-func TestRetencaoZeroNuncaExpira(t *testing.T) {
-	// Melhor ocupar disco que apagar arquivo por engano.
-	env := montar(t)
+func TestARetentionOfZeroNeverExpires(t *testing.T) {
+	// Better to occupy disk than to delete a file by mistake.
+	e := setup(t)
 	ctx := context.Background()
 
 	cfg := config.Default().Quarantine
 	cfg.RetentionDays = 0
-	v := quarantine.New(env.cofre, cfg, env.store)
+	v := quarantine.New(e.vdir, cfg, e.store)
 
-	path, sha := criarArquivo(t, env.site, "x.php", "<?php")
+	path, sha := createFile(t, e.site, "x.php", "<?php")
 	item, err := v.Quarantine(ctx, "v_1", path, sha)
 	if err != nil {
 		t.Fatalf("Quarantine: %v", err)
 	}
 	if !item.RetentionUntil.IsZero() {
-		t.Error("com retencao 0 o item nao deveria ter data de expiracao")
+		t.Error("with a retention of 0 the item should have no expiry date")
 	}
 
 	n, err := v.PurgeExpired(ctx)
@@ -471,52 +471,52 @@ func TestRetencaoZeroNuncaExpira(t *testing.T) {
 		t.Fatalf("PurgeExpired: %v", err)
 	}
 	if n != 0 {
-		t.Errorf("item sem expiracao nao pode ser purgado automaticamente, veio %d", n)
+		t.Errorf("an item with no expiry must not be purged automatically, got %d", n)
 	}
 }
 
-// Verificacao de integridade -------------------------------------------------------
+// Integrity verification -------------------------------------------------------
 
-func TestVerifyDetectaCopiaCorrompida(t *testing.T) {
-	// A promessa de reversibilidade so vale se puder ser conferida antes da
-	// hora em que o usuario precisa restaurar.
-	env := montar(t)
+func TestVerifyDetectsACorruptedCopy(t *testing.T) {
+	// The promise of reversibility only holds if it can be checked before the
+	// moment the user needs to restore.
+	e := setup(t)
 	ctx := context.Background()
 
-	pathOK, shaOK := criarArquivo(t, env.site, "ok.php", "<?php // ok")
-	pathRuim, shaRuim := criarArquivo(t, env.site, "ruim.php", "<?php // ruim")
-	if _, err := env.vault.Quarantine(ctx, "v_1", pathOK, shaOK); err != nil {
+	okPath, okSHA := createFile(t, e.site, "ok.php", "<?php // ok")
+	badPath, badSHA := createFile(t, e.site, "bad.php", "<?php // bad")
+	if _, err := e.vault.Quarantine(ctx, "v_1", okPath, okSHA); err != nil {
 		t.Fatalf("Quarantine: %v", err)
 	}
-	itemRuim, err := env.vault.Quarantine(ctx, "v_2", pathRuim, shaRuim)
+	badItem, err := e.vault.Quarantine(ctx, "v_2", badPath, badSHA)
 	if err != nil {
 		t.Fatalf("Quarantine: %v", err)
 	}
 
-	_ = os.Chmod(itemRuim.VaultPath, 0o600)
-	if err := os.WriteFile(itemRuim.VaultPath, []byte("corrompido"), 0o600); err != nil {
+	_ = os.Chmod(badItem.VaultPath, 0o600)
+	if err := os.WriteFile(badItem.VaultPath, []byte("corrupted"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
-	problemas, err := env.vault.Verify(ctx)
+	problems, err := e.vault.Verify(ctx)
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
-	if len(problemas) != 1 {
-		t.Fatalf("esperava 1 problema, veio %d: %v", len(problemas), problemas)
+	if len(problems) != 1 {
+		t.Fatalf("expected 1 problem, got %d: %v", len(problems), problems)
 	}
-	if !strings.Contains(problemas[0], itemRuim.Ref) {
-		t.Errorf("o problema deveria citar o item: %q", problemas[0])
+	if !strings.Contains(problems[0], badItem.Ref) {
+		t.Errorf("the problem should name the item: %q", problems[0])
 	}
 }
 
-func TestLevelAllowsActionSoConfirmed(t *testing.T) {
+func TestLevelAllowsActionOnlyForConfirmed(t *testing.T) {
 	if !quarantine.LevelAllowsAction(schema.LevelConfirmed) {
-		t.Error("confirmed deveria autorizar acao")
+		t.Error("confirmed should authorize an action")
 	}
 	for _, l := range []schema.Level{schema.LevelLikely, schema.LevelSuspicious, schema.LevelClean, ""} {
 		if quarantine.LevelAllowsAction(l) {
-			t.Errorf("nivel %q nao pode autorizar acao automatica", l)
+			t.Errorf("level %q must not authorize an automatic action", l)
 		}
 	}
 }

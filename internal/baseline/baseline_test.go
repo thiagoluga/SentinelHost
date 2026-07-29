@@ -10,30 +10,30 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/baseline"
 )
 
-func criarArvore(t *testing.T) string {
+func buildTree(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	arquivos := map[string]string{
-		"index.php":                          "<?php echo 'oi';",
-		"wp-content/themes/tema/footer.php":  "<?php // footer",
+	files := map[string]string{
+		"index.php":                          "<?php echo 'hi';",
+		"wp-content/themes/theme/footer.php": "<?php // footer",
 		"wp-content/cache/x.php":             "<?php // cache",
-		"wp-content/uploads/2026/foto.jpg":   "binario-falso",
-		"wp-content/uploads/2026/script.php": "<?php // suspeito",
-		"a/b/c/d/e/f/fundo.php":              "<?php // fundo",
+		"wp-content/uploads/2026/photo.jpg":  "fake-binary",
+		"wp-content/uploads/2026/script.php": "<?php // suspicious",
+		"a/b/c/d/e/f/deep.php":               "<?php // deep",
 	}
-	for rel, conteudo := range arquivos {
+	for rel, content := range files {
 		abs := filepath.Join(root, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
-		if err := os.WriteFile(abs, []byte(conteudo), 0o644); err != nil {
+		if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
 			t.Fatalf("write: %v", err)
 		}
 	}
 	return root
 }
 
-func caminhos(entries []baseline.Entry) map[string]bool {
+func paths(entries []baseline.Entry) map[string]bool {
 	out := map[string]bool{}
 	for _, e := range entries {
 		out[filepath.ToSlash(e.Path)] = true
@@ -41,8 +41,8 @@ func caminhos(entries []baseline.Entry) map[string]bool {
 	return out
 }
 
-func TestWalkAplicaExclusoes(t *testing.T) {
-	root := criarArvore(t)
+func TestWalkAppliesExclusions(t *testing.T) {
+	root := buildTree(t)
 
 	res, err := baseline.Walk(context.Background(), baseline.WalkOptions{
 		Root:     root,
@@ -53,29 +53,29 @@ func TestWalkAplicaExclusoes(t *testing.T) {
 		t.Fatalf("Walk: %v", err)
 	}
 
-	got := caminhos(res.Entries)
+	got := paths(res.Entries)
 	for p := range got {
 		if filepath.Ext(p) == ".jpg" {
-			t.Errorf("arquivo excluido por extensao apareceu: %s", p)
+			t.Errorf("a file excluded by extension showed up: %s", p)
 		}
 		if contains(p, "/cache/") {
-			t.Errorf("diretorio excluido apareceu: %s", p)
+			t.Errorf("an excluded directory showed up: %s", p)
 		}
 	}
 	if res.SkippedCounts["excluded"] == 0 {
-		t.Error("as exclusoes deveriam ser contabilizadas, nao silenciosas")
+		t.Error("the exclusions should be counted, not silent")
 	}
 }
 
-func TestWalkContabilizaArquivoGrandeEmVezDeIgnorar(t *testing.T) {
-	// Pular em silencio faria a cobertura parecer completa.
+func TestWalkCountsALargeFileInsteadOfIgnoringIt(t *testing.T) {
+	// Skipping silently would make the coverage look complete.
 	root := t.TempDir()
-	grande := filepath.Join(root, "grande.php")
-	if err := os.WriteFile(grande, make([]byte, 4096), 0o644); err != nil {
+	large := filepath.Join(root, "large.php")
+	if err := os.WriteFile(large, make([]byte, 4096), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	pequeno := filepath.Join(root, "pequeno.php")
-	if err := os.WriteFile(pequeno, []byte("<?php"), 0o644); err != nil {
+	small := filepath.Join(root, "small.php")
+	if err := os.WriteFile(small, []byte("<?php"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -86,15 +86,15 @@ func TestWalkContabilizaArquivoGrandeEmVezDeIgnorar(t *testing.T) {
 		t.Fatalf("Walk: %v", err)
 	}
 	if len(res.Entries) != 1 {
-		t.Fatalf("esperava 1 arquivo, veio %d", len(res.Entries))
+		t.Fatalf("expected 1 file, got %d", len(res.Entries))
 	}
 	if res.SkippedCounts["too_large"] != 1 {
-		t.Errorf("o arquivo grande deveria ser contabilizado: %v", res.SkippedCounts)
+		t.Errorf("the large file should be counted: %v", res.SkippedCounts)
 	}
 }
 
-func TestWalkRespeitaProfundidadeMaxima(t *testing.T) {
-	root := criarArvore(t)
+func TestWalkHonoursTheMaximumDepth(t *testing.T) {
+	root := buildTree(t)
 
 	res, err := baseline.Walk(context.Background(), baseline.WalkOptions{
 		Root: root, MaxDepth: 2,
@@ -104,26 +104,26 @@ func TestWalkRespeitaProfundidadeMaxima(t *testing.T) {
 	}
 	for _, e := range res.Entries {
 		if contains(filepath.ToSlash(e.Path), "/a/b/c/") {
-			t.Errorf("arquivo alem da profundidade apareceu: %s", e.Path)
+			t.Errorf("a file beyond the depth showed up: %s", e.Path)
 		}
 	}
 	if res.SkippedCounts["too_deep"] == 0 {
-		t.Error("a profundidade excedida deveria ser contabilizada")
+		t.Error("the exceeded depth should be counted")
 	}
 }
 
-func TestWalkNuncaSegueSymlink(t *testing.T) {
-	// Um link para fora da raiz faria o scanner entrar na conta de outra
-	// pessoa num servidor compartilhado.
+func TestWalkNeverFollowsASymlink(t *testing.T) {
+	// A link pointing outside the root would take the scanner into someone else's
+	// account on a shared server.
 	if runtime.GOOS == "windows" {
-		t.Skip("criar symlink no Windows exige privilegio; o alvo real e Linux (D-002)")
+		t.Skip("creating a symlink on Windows needs a privilege; the real target is Linux (D-002)")
 	}
 	root := t.TempDir()
-	fora := t.TempDir()
-	if err := os.WriteFile(filepath.Join(fora, "segredo.php"), []byte("<?php"), 0o644); err != nil {
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.php"), []byte("<?php"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if err := os.Symlink(fora, filepath.Join(root, "link")); err != nil {
+	if err := os.Symlink(outside, filepath.Join(root, "link")); err != nil {
 		t.Fatalf("symlink: %v", err)
 	}
 
@@ -132,17 +132,17 @@ func TestWalkNuncaSegueSymlink(t *testing.T) {
 		t.Fatalf("Walk: %v", err)
 	}
 	for _, e := range res.Entries {
-		if contains(e.Path, "segredo.php") {
-			t.Fatalf("o walker seguiu o symlink e saiu da raiz: %s", e.Path)
+		if contains(e.Path, "secret.php") {
+			t.Fatalf("the walker followed the symlink and left the root: %s", e.Path)
 		}
 	}
 	if res.SkippedCounts["symlink"] == 0 {
-		t.Error("o symlink deveria ser contabilizado")
+		t.Error("the symlink should be counted")
 	}
 }
 
-func TestWalkTruncaEmMaxFiles(t *testing.T) {
-	root := criarArvore(t)
+func TestWalkTruncatesAtMaxFiles(t *testing.T) {
+	root := buildTree(t)
 	res, err := baseline.Walk(context.Background(), baseline.WalkOptions{
 		Root: root, MaxDepth: 20, MaxFiles: 2,
 	})
@@ -150,19 +150,19 @@ func TestWalkTruncaEmMaxFiles(t *testing.T) {
 		t.Fatalf("Walk: %v", err)
 	}
 	if len(res.Entries) != 2 {
-		t.Errorf("esperava 2 entradas, veio %d", len(res.Entries))
+		t.Errorf("expected 2 entries, got %d", len(res.Entries))
 	}
 	if !res.Truncated {
-		t.Error("o truncamento deveria ser sinalizado para o ciclo virar partial")
+		t.Error("the truncation should be signalled so the cycle becomes partial")
 	}
 }
 
-func TestWalkRecusaRaizInexistente(t *testing.T) {
+func TestWalkRefusesANonExistentRoot(t *testing.T) {
 	_, err := baseline.Walk(context.Background(), baseline.WalkOptions{
-		Root: filepath.Join(t.TempDir(), "nao-existe"), MaxDepth: 5,
+		Root: filepath.Join(t.TempDir(), "does-not-exist"), MaxDepth: 5,
 	})
 	if err == nil {
-		t.Fatal("raiz inexistente deveria ser erro")
+		t.Fatal("a non-existent root should be an error")
 	}
 }
 
@@ -184,148 +184,149 @@ func TestBaselineRoundTrip(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	if back.Len() != 2 {
-		t.Fatalf("esperava 2 arquivos, veio %d", back.Len())
+		t.Fatalf("expected 2 files, got %d", back.Len())
 	}
 	e, ok := back.Get("/site/a.php")
 	if !ok || e.SHA256 != "aa" {
-		t.Errorf("entrada perdida: %+v", e)
+		t.Errorf("entry lost: %+v", e)
 	}
 }
 
-func TestBaselineAusenteNaoEErro(t *testing.T) {
-	// A primeira execucao nao tem baseline, e isso e normal.
-	b, err := baseline.Load(filepath.Join(t.TempDir(), "nao-existe.json"), []string{"/site"})
+func TestAnAbsentBaselineIsNotAnError(t *testing.T) {
+	// The first run has no baseline, and that is normal.
+	b, err := baseline.Load(filepath.Join(t.TempDir(), "does-not-exist.json"), []string{"/site"})
 	if err != nil {
-		t.Fatalf("baseline ausente nao deveria ser erro: %v", err)
+		t.Fatalf("an absent baseline should not be an error: %v", err)
 	}
 	if b.Len() != 0 {
-		t.Errorf("esperava baseline vazio, veio %d", b.Len())
+		t.Errorf("expected an empty baseline, got %d", b.Len())
 	}
 }
 
-func TestBaselineCorrompidoRecomecaEmVezDeTravar(t *testing.T) {
-	// Recomecar custa um scan completo; travar custa a protecao inteira.
+func TestACorruptedBaselineStartsOverInsteadOfBlocking(t *testing.T) {
+	// Starting over costs one full scan; blocking costs all of the protection.
 	path := filepath.Join(t.TempDir(), "baseline.json")
-	if err := os.WriteFile(path, []byte("{isso nao e json"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("{this is not json"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
 	b, err := baseline.Load(path, []string{"/site"})
 	if err == nil {
-		t.Error("o problema deveria ser reportado ao chamador")
+		t.Error("the problem should be reported to the caller")
 	}
 	if b == nil || b.Len() != 0 {
-		t.Fatal("deveria devolver um baseline vazio utilizavel")
+		t.Fatal("it should return a usable empty baseline")
 	}
 }
 
-func TestCompareDetectaNovoModificadoERemovido(t *testing.T) {
+func TestCompareDetectsNewModifiedAndRemoved(t *testing.T) {
 	b := baseline.New([]string{"/site"})
 	b.Update([]baseline.Entry{
-		{Path: "/site/igual.php", Size: 10, MTime: 100, SHA256: "aa"},
-		{Path: "/site/mudou.php", Size: 20, MTime: 200, SHA256: "bb"},
-		{Path: "/site/sumiu.php", Size: 30, MTime: 300, SHA256: "cc"},
+		{Path: "/site/same.php", Size: 10, MTime: 100, SHA256: "aa"},
+		{Path: "/site/changed.php", Size: 20, MTime: 200, SHA256: "bb"},
+		{Path: "/site/vanished.php", Size: 30, MTime: 300, SHA256: "cc"},
 	}, nil)
 
 	d := b.Compare([]baseline.Entry{
-		{Path: "/site/igual.php", Size: 10, MTime: 100, SHA256: "aa"},
-		{Path: "/site/mudou.php", Size: 25, MTime: 250, SHA256: "bb-novo"},
-		{Path: "/site/novo.php", Size: 5, MTime: 400, SHA256: "dd"},
+		{Path: "/site/same.php", Size: 10, MTime: 100, SHA256: "aa"},
+		{Path: "/site/changed.php", Size: 25, MTime: 250, SHA256: "bb-new"},
+		{Path: "/site/new.php", Size: 5, MTime: 400, SHA256: "dd"},
 	})
 
 	if d.Unchanged != 1 {
-		t.Errorf("esperava 1 inalterado, veio %d", d.Unchanged)
+		t.Errorf("expected 1 unchanged, got %d", d.Unchanged)
 	}
-	if len(d.Modified) != 1 || d.Modified[0].Path != "/site/mudou.php" {
-		t.Errorf("modificados errados: %+v", d.Modified)
+	if len(d.Modified) != 1 || d.Modified[0].Path != "/site/changed.php" {
+		t.Errorf("wrong modified set: %+v", d.Modified)
 	}
-	if len(d.New) != 1 || d.New[0].Path != "/site/novo.php" {
-		t.Errorf("novos errados: %+v", d.New)
+	if len(d.New) != 1 || d.New[0].Path != "/site/new.php" {
+		t.Errorf("wrong new set: %+v", d.New)
 	}
-	if len(d.Removed) != 1 || d.Removed[0] != "/site/sumiu.php" {
-		t.Errorf("removidos errados: %+v", d.Removed)
+	if len(d.Removed) != 1 || d.Removed[0] != "/site/vanished.php" {
+		t.Errorf("wrong removed set: %+v", d.Removed)
 	}
 	if len(d.Targets()) != 2 {
-		t.Errorf("o ciclo deveria escanear 2 arquivos, veio %d", len(d.Targets()))
+		t.Errorf("the cycle should scan 2 files, got %d", len(d.Targets()))
 	}
 }
 
-func TestArquivoComMesmoTamanhoEMtimeMasHashDiferenteEModificado(t *testing.T) {
-	// `touch` para restaurar o mtime e a primeira coisa que um atacante faz.
-	// Quando o hash ja foi calculado, ele vence o par tamanho+mtime.
+func TestAFileWithTheSameSizeAndMtimeButADifferentHashIsModified(t *testing.T) {
+	// `touch` to restore the mtime is the first thing an attacker does. Once the
+	// hash has been computed, it beats the size+mtime pair.
 	b := baseline.New([]string{"/site"})
 	b.Update([]baseline.Entry{{Path: "/site/x.php", Size: 100, MTime: 500, SHA256: "original"}}, nil)
 
-	d := b.Compare([]baseline.Entry{{Path: "/site/x.php", Size: 100, MTime: 500, SHA256: "adulterado"}})
+	d := b.Compare([]baseline.Entry{{Path: "/site/x.php", Size: 100, MTime: 500, SHA256: "tampered"}})
 
 	if len(d.Modified) != 1 {
-		t.Fatalf("hash diferente deveria marcar como modificado, veio %+v", d)
+		t.Fatalf("a different hash should mark it as modified, got %+v", d)
 	}
 }
 
-func TestNeedsHashSoPegaOQueMudouNoParBarato(t *testing.T) {
-	// E o passo que torna o ciclo incremental barato.
+func TestNeedsHashOnlyTakesWhatChangedInTheCheapPair(t *testing.T) {
+	// It is the step that makes the incremental cycle cheap.
 	b := baseline.New([]string{"/site"})
 	b.Update([]baseline.Entry{
 		{Path: "/site/a.php", Size: 10, MTime: 100, SHA256: "aa"},
 		{Path: "/site/b.php", Size: 20, MTime: 200, SHA256: "bb"},
 	}, nil)
 
-	precisa := b.NeedsHash([]baseline.Entry{
+	needed := b.NeedsHash([]baseline.Entry{
 		{Path: "/site/a.php", Size: 10, MTime: 100},
 		{Path: "/site/b.php", Size: 21, MTime: 200},
 		{Path: "/site/c.php", Size: 5, MTime: 300},
 	})
 
-	if len(precisa) != 2 {
-		t.Fatalf("esperava 2 arquivos para hashear, veio %d: %+v", len(precisa), precisa)
+	if len(needed) != 2 {
+		t.Fatalf("expected 2 files to hash, got %d: %+v", len(needed), needed)
 	}
 }
 
-func TestUpdateNaoGravaEntradaSemHash(t *testing.T) {
-	// Gravar sem hash faria o ciclo seguinte achar que ja conhece o arquivo.
+func TestUpdateDoesNotStoreAnEntryWithNoHash(t *testing.T) {
+	// Storing it without a hash would make the next cycle believe it already knows
+	// the file.
 	b := baseline.New([]string{"/site"})
-	b.Update([]baseline.Entry{{Path: "/site/novo.php", Size: 10, MTime: 100}}, nil)
+	b.Update([]baseline.Entry{{Path: "/site/new.php", Size: 10, MTime: 100}}, nil)
 
 	if b.Len() != 0 {
-		t.Errorf("entrada sem hash nao deveria entrar no baseline: %d", b.Len())
+		t.Errorf("an entry with no hash should not enter the baseline: %d", b.Len())
 	}
 }
 
-func TestUpdatePreservaHashConhecidoQuandoNaoRecalculado(t *testing.T) {
+func TestUpdatePreservesAKnownHashWhenItWasNotRecomputed(t *testing.T) {
 	b := baseline.New([]string{"/site"})
 	b.Update([]baseline.Entry{{Path: "/site/x.php", Size: 10, MTime: 100, SHA256: "aa"}}, nil)
-	// Novo ciclo: mesmo arquivo, sem recalcular o hash porque nada mudou.
+	// A new cycle: the same file, with no hash recomputed because nothing changed.
 	b.Update([]baseline.Entry{{Path: "/site/x.php", Size: 10, MTime: 100}}, nil)
 
 	e, ok := b.Get("/site/x.php")
 	if !ok || e.SHA256 != "aa" {
-		t.Errorf("o hash conhecido foi perdido: %+v", e)
+		t.Errorf("the known hash was lost: %+v", e)
 	}
 }
 
-func TestHashEntriesDescartaIlegivel(t *testing.T) {
-	// Hash vazio viraria chave de deduplicacao invalida no consenso.
+func TestHashEntriesDiscardsTheUnreadable(t *testing.T) {
+	// An empty hash would become an invalid deduplication key in the consensus.
 	root := t.TempDir()
-	bom := filepath.Join(root, "bom.php")
-	if err := os.WriteFile(bom, []byte("<?php"), 0o644); err != nil {
+	good := filepath.Join(root, "good.php")
+	if err := os.WriteFile(good, []byte("<?php"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
 	skipped := map[string]int{}
 	out := baseline.HashEntries(context.Background(), []baseline.Entry{
-		{Path: bom},
-		{Path: filepath.Join(root, "nao-existe.php")},
+		{Path: good},
+		{Path: filepath.Join(root, "does-not-exist.php")},
 	}, skipped)
 
 	if len(out) != 1 {
-		t.Fatalf("esperava 1 entrada, veio %d", len(out))
+		t.Fatalf("expected 1 entry, got %d", len(out))
 	}
 	if out[0].SHA256 == "" {
-		t.Error("hash nao foi calculado")
+		t.Error("the hash was not computed")
 	}
 	if skipped["unreadable"] != 1 {
-		t.Errorf("o ilegivel deveria ser contabilizado: %v", skipped)
+		t.Errorf("the unreadable one should be counted: %v", skipped)
 	}
 }
 
