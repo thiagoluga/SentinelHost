@@ -22,21 +22,28 @@ O marcador `SENTINELHOST-SYNTHETIC-CORPUS` aparece em texto claro em todas.
 | `05-spam-seo-links.php` | Links de spam mostrados só para o robô do buscador (cloaking) | `spam_seo` | `medium` | `heuristic` |
 | `06-phishing-coleta.php` | Página clonada que coleta credenciais e exfiltra | `phishing` | `critical` | `heuristic` |
 | `07-injecao-em-tema.php` | Arquivo legítimo de tema com uma linha injetada | `injection` | `high` | `heuristic` |
-| `08-localizacao-suspeita.php` | PHP dentro de `wp-content/uploads` — o sinal é o **lugar** | `suspicious_location` | `medium` | `anomaly` |
+| `08-localizacao-suspeita.php` | PHP dentro de `wp-content/uploads` — o sinal é o **lugar** | `suspicious_location` | `medium` | `anomaly` (esperado: `suspicious`) |
 | `09-marcador-conhecido.php` | Marcador determinístico, o "EICAR" deste corpus | `known_malware` | `critical` | `signature` |
 | `10-core-adulterado.php` | Arquivo de `wp-includes/` que não bate com o checksum oficial | `core_integrity` | `critical` | `signature` |
-| `11-permissoes-frouxas.php` | Arquivo 0777 na raiz web — o sinal é o **modo** | `suspicious_perms` | `medium` | `anomaly` |
+| `11-permissoes-frouxas.php` | Arquivo 0777 na raiz web — o sinal é o **modo** | `suspicious_perms` | `medium` | `anomaly` (esperado: `suspicious`) |
 | `12-shell-reverso-descrito.php` | Shell reverso: só os dados de configuração, nenhuma primitiva | `backdoor` | `critical` | `heuristic` |
 
 Notas por amostra:
 
 - **08 e 11** são deliberadamente banais no conteúdo. O achado tem que vir da
   localização e da permissão, não de padrão no texto. Elas existem para provar
-  que o consenso lida com `confidence=anomaly`, que é o voto mais fraco.
+  que o consenso lida com `confidence=anomaly`, que é o voto mais fraco — e
+  para travar o comportamento de que **anomalia sozinha nunca chega a
+  `likely`**: dois votos de anomalia somam 0,88 sobre o teto 2,0 = 0,44, ou
+  seja `suspicious`. Se um único sinal de anomalia bastasse para `likely`, um
+  arquivo no lugar errado dispararia alerta de "ação recomendada". Por isso
+  elas ficam fora do denominador do SC-001 (`DECISIONS.md` D-016).
 - **09** é o análogo do EICAR: um marcador acordado que os adaptadores de teste
   reconhecem com `confidence=signature`, sem que exista nenhum comportamento.
   É o que permite testar o caminho "dois engines com assinatura → `confirmed`"
-  sem malware real.
+  sem malware real. Os engines declarados são `maldet` (peso 1,0) e `amwscan`
+  (0,8): 1,8 sobre o teto 2,0 = 0,90, exatamente o limiar de `confirmed` que a
+  documentação do esquema usa como exemplo.
 - **10** exercita o voto de peso máximo (`wp-checksums`, peso 1.5). É o único
   caminho pelo qual **um** engine sozinho chega perto de `confirmed`.
 - **12** é a que mais preocupa, então é a que menos código tem. Um shell reverso

@@ -226,6 +226,60 @@ arquivo, e por isso não exige `file.sha256`.
 
 ---
 
+## D-016 — Denominador do SC-001: amostras de conteúdo malicioso
+
+**Ambiguidade**: o SC-001 exige "≥ 95% das amostras como `confirmed`/`likely`".
+O corpus tem 12 amostras, e duas delas (`08-localizacao-suspeita` e
+`11-permissoes-frouxas`) simulam sinais cujo único indício é **anomalia** — um
+arquivo PHP numa pasta de mídia, um arquivo 0777 na raiz web. Com os pesos e
+multiplicadores do documento de esquema, dois votos de anomalia somam 0,88
+sobre o teto 2,0, ou seja `suspicious`. Com 12 amostras, 95% significa que
+todas as 12 teriam que chegar a `likely`.
+
+**Decisão**: o SC-001 é medido sobre as amostras de **conteúdo malicioso** —
+aquelas cujo manifesto declara `nivel_minimo_esperado` de `likely` ou
+`confirmed` (10 das 12). As duas amostras de anomalia pura são verificadas
+contra o piso `suspicious` que o manifesto declara, e existe um teste dedicado
+(`TestAnomaliaSozinhaNaoChegaALikely`) que **trava** o comportamento de que
+anomalia isolada não escala.
+
+**Resultado medido**: 10/10 (100%) das amostras de conteúdo malicioso em
+`confirmed`/`likely`, e 12/12 detectadas em `suspicious` ou acima, com zero
+falso positivo `confirmed` nos arquivos limpos.
+
+**Motivo**: forçar anomalia a `likely` seria mexer nos multiplicadores para
+fazer um número passar, e o efeito colateral seria real: `likely` é o nível que
+dispara alerta de "ação recomendada" (FR-010). Um arquivo no lugar errado
+passaria a acordar o usuário no meio da noite, e o Princípio V é explícito ao
+escalonar a resposta pela força da evidência. A alternativa — remover as duas
+amostras do corpus — seria pior: o consenso deixaria de ter cobertura de teste
+para `confidence=anomaly`, que é justamente o caminho mais fácil de quebrar sem
+ninguém perceber.
+
+---
+
+## D-017 — Teste de painel por HTTP, não por navegador
+
+**Ambiguidade**: T037 pede teste e2e do painel com `chromedp`.
+
+**Decisão**: o teste e2e exercita o painel pela **API HTTP** (`httptest`),
+cobrindo o fluxo completo do SC-004: primeiro acesso → definir senha → listar
+achados → decidir sobre um achado → configurar e-mail → disparar teste de
+webhook. Não há dependência de navegador.
+
+**Motivo**: `chromedp` traria uma árvore de dependências grande e exigiria um
+Chrome instalado para a suíte rodar — em CI e na máquina de quem contribui. O
+Princípio VII (sem dependências externas obrigatórias) vale também para o
+ambiente de desenvolvimento: um repositório cuja suíte só passa em quem tem
+Chrome é um repositório com menos gente rodando os testes.
+
+**O que isto NÃO cobre, e assumo explicitamente**: renderização, layout,
+acessibilidade e a parte do SC-004 que é usabilidade real ("um usuário leigo
+consegue, em menos de 5 minutos, sem documentação"). Isso continua sendo
+validação manual, listada como pendente no `SUMMARY.md`.
+
+---
+
 ## D-014 — Log estruturado no SQLite, saída bruta em arquivo
 
 **Ambiguidade**: o plan.md lista "logs" no diretório de dados e o FR-015 exige

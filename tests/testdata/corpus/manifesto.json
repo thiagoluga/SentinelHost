@@ -81,7 +81,7 @@
       "severity": "medium",
       "confidence": "anomaly",
       "nivel_minimo_esperado": "suspicious",
-      "engines_que_devem_apontar": ["php-malware-finder"]
+      "engines_que_devem_apontar": ["php-malware-finder", "amwscan"]
     },
     {
       "arquivo": "sintetico/09-marcador-conhecido.php",
@@ -91,7 +91,7 @@
       "severity": "critical",
       "confidence": "signature",
       "nivel_minimo_esperado": "confirmed",
-      "engines_que_devem_apontar": ["amwscan", "php-malware-finder"]
+      "engines_que_devem_apontar": ["maldet", "amwscan"]
     },
     {
       "arquivo": "sintetico/10-core-adulterado.php",
@@ -111,7 +111,7 @@
       "severity": "medium",
       "confidence": "anomaly",
       "nivel_minimo_esperado": "suspicious",
-      "engines_que_devem_apontar": ["php-malware-finder"]
+      "engines_que_devem_apontar": ["php-malware-finder", "amwscan"]
     },
     {
       "arquivo": "sintetico/12-shell-reverso-descrito.php",
