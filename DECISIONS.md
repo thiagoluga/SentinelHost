@@ -340,6 +340,29 @@ achado para perto de `confirmed`, autorizando ação sobre um arquivo inexistent
 
 ---
 
+## D-021 — Flags aceitas em qualquer posição na CLI
+
+**Contexto**: o `flag` da biblioteca padrão para de parsear no primeiro
+argumento que não começa com traço. Isso fazia
+
+```
+sentinelhost quarantine restore q_123 --config /caminho/config.toml
+```
+
+ignorar o `--config` em silêncio e cair no caminho padrão — e essa é
+exatamente a forma que o quickstart documenta.
+
+**Decisão**: `parseArgs` parseia em laço, retirando um posicional por vez, e
+aceita flags em qualquer posição.
+
+**Motivo**: o sintoma era um erro enganoso ("configuração não encontrada") num
+comando que recebeu a configuração corretamente. O risco real era pior: numa
+máquina com mais de um site, o comando agiria sobre a instância errada — e
+`restore` e `purge` são justamente os que mexem em arquivos. Uma flag digitada
+errado agora também é erro, em vez de virar um argumento posicional silencioso.
+
+---
+
 ## D-014 — Log estruturado no SQLite, saída bruta em arquivo
 
 **Ambiguidade**: o plan.md lista "logs" no diretório de dados e o FR-015 exige

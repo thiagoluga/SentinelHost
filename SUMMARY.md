@@ -114,6 +114,27 @@ Nada foi silenciosamente omitido. Esta é a lista completa.
 | Retenção de log e de saída bruta | ✅ aplicada de fato (antes era só configuração decorativa) |
 | Corrida de dados na config do painel | ✅ `RWMutex` + `Clone()` profundo + teste de concorrência para o `-race` |
 | Flood de achados de core ausente | ✅ abstenção acima de 10%, `anomaly` abaixo |
+| Engine executado uma vez por lote | ✅ `Info().ScopeAware` — ver abaixo |
+
+#### O achado de desempenho
+
+Medido num WordPress 6.5.2 real (3008 arquivos), antes e depois:
+
+| | Antes | Depois |
+|---|---|---|
+| **Ciclo completo** | **21m45s** | **24,9s** |
+| `amwscan` | 13m54s | 3,3s |
+| `wp-checksums` | 7m02s | 6,2s |
+| `php-malware-finder` | 11s | 8,7s |
+
+O orquestrador executava cada engine **uma vez por lote**. Com lotes de 200 e
+3008 arquivos são ~16 invocações, e engines que não sabem limitar a varredura
+leem a raiz inteira em cada uma. Não era só desperdício: o `wp-checksums`
+reportava **16 achados** para o mesmo arquivo alterado, um por lote.
+
+21 minutos de CPU a 200% por ciclo é exatamente o que faz uma hospedagem
+suspender a conta — uma violação direta do Princípio IV pela própria
+ferramenta. Só a execução real expôs isso; nenhum teste unitário mediria.
 
 ### 1. Validação em conta cPanel real (SC-006, parte da T040)
 
@@ -253,26 +274,47 @@ Todos verdes. `go vet ./...` limpo. CI (lint + test + build amd64/arm64) verde.
 make validar-engines
 ```
 
-Sobe um Debian com PHP CLI e `yara`, usuário sem root, instala os engines e
-compara o que o orquestrador vê com o que cada engine vê sozinho.
+Sobe um Debian com PHP CLI e `yara`, usuário sem root, baixa um WordPress
+6.5.2 real, planta duas adulterações no core, instala os engines e compara o
+que o orquestrador vê com o que cada engine vê sozinho.
 
 **Isso não é opcional.** A suíte automatizada não executa os engines (D-011), e
-por isso as linhas de comando dos adaptadores passaram meses sem nunca terem
-sido exercitadas. Na primeira execução do container, todas reprovaram:
+por isso as linhas de comando dos adaptadores nunca tinham sido exercitadas. O
+container encontrou **oito** defeitos que nenhum teste unitário pegaria:
 
-| O que estava errado | Como aparecia |
+| Defeito | Como aparecia |
 |---|---|
 | URL do release do AMWScan | 404 na instalação — visível |
-| `--format json` (não existe; é `--report-format txt`) | parser construído sobre um formato fictício |
+| `--format json` (não existe; é `--report-format txt`, e escreve em arquivo) | parser inteiro construído sobre um formato fictício |
 | `@arquivo` no yara (é `--scan-list`) | linha de comando inválida |
-| `--filter-paths` com vários caminhos | **engine verde, relatório limpo, site infectado** |
+| `--filter-paths` com vários caminhos (semântica de E) | **engine verde, relatório limpo, site infectado** |
 | `mbstring` ausente | engine marcado como saudável sem nunca poder rodar |
 | 2998 achados `likely` de core ausente | ruído afogando os achados reais |
+| Engine invocado uma vez por lote | 21m45s por ciclo e 16× achados duplicados |
+| `--config` ignorado depois de argumento posicional | `restore` falhava ou agia na instância errada |
 
-Os dois últimos são os que importam: um scanner que reporta "0 achados" quando
-não escaneou nada é pior que scanner nenhum, porque produz confiança falsa. O
-`Probe` agora executa o engine de verdade, e o script compara sempre contra a
-linha de base do engine rodando sozinho.
+Quatro deles teriam causado dano real: três produziriam "0 achados" com
+aparência de saúde — e um scanner que reporta site limpo sem ter escaneado é
+pior que scanner nenhum, porque produz confiança falsa —, e o sétimo poderia
+derrubar a conta por consumo de CPU.
+
+#### O que a validação prova hoje
+
+```text
+✓ o orquestrador viu o que o AMWScan viu sozinho (2 vs 2)
+✓ wp-checksums executou sobre um WordPress real
+✓ a adulteração do core foi detectada (peso 1.50)
+✓ um voto forte sozinho parou em likely (não escalou para confirmed)
+✓ dois votos (checksum + heurística) chegaram a confirmed
+✓ o arquivo foi movido para o cofre (não está mais no lugar)
+✓ cofre íntegro (hashes conferem)
+✓ restauração byte a byte funcionou numa conta sem privilégio
+✓ pico de memória do orquestrador: 51 MB (limite prometido: 128 MB)
+```
+
+O escalonamento do consenso é exercitado com engines de verdade: um arquivo com
+só o voto do checksum para em `likely`; outro com checksum **e** heurística
+chega a `confirmed` e dispara a quarentena reversível.
 
 ### Rode os testes no Linux, não só na estação de trabalho
 

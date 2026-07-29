@@ -89,3 +89,32 @@ func flagSet(nome string) (*flag.FlagSet, *string) {
 	cfgPath := fs.String("config", config.DefaultConfigPath(), "caminho do arquivo de configuracao TOML")
 	return fs, cfgPath
 }
+
+// parseArgs interpreta flags que aparecem DEPOIS de argumentos posicionais.
+//
+// O flag da biblioteca padrao para de parsear no primeiro argumento que nao
+// comeca com traco. Isso faz
+//
+//	sentinelhost quarantine restore q_123 --config /caminho/config.toml
+//
+// ignorar o --config em silencio e cair no caminho padrao — que e exatamente a
+// forma documentada no quickstart para quem tem a configuracao fora do lugar
+// padrao. O comando entao falha dizendo que nao achou a configuracao, ou pior,
+// age sobre a instancia errada.
+//
+// A solucao e o laco: parseia, tira o primeiro posicional, e parseia o resto.
+// Devolve os posicionais na ordem em que apareceram.
+func parseArgs(fs *flag.FlagSet, args []string) ([]string, error) {
+	var posicionais []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return nil, err
+		}
+		resto := fs.Args()
+		if len(resto) == 0 {
+			return posicionais, nil
+		}
+		posicionais = append(posicionais, resto[0])
+		args = resto[1:]
+	}
+}

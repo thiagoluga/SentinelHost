@@ -74,12 +74,25 @@ fi
 
 mkdir -p "$SITE"/wp-content/{plugins/cache-helper,themes/tema/inc,uploads/2026/{03,07}}
 
-# A adulteração do core: uma linha a mais num arquivo oficial. É o sinal de
-# maior peso do projeto, e sem plantá-lo o wp-checksums não tem o que apontar.
+# A adulteração do core. Dois arquivos, de propósito:
+#
+#  - pluggable.php recebe só uma linha inócua: apenas o wp-checksums o aponta.
+#    1,50 sobre o teto 2,0 = 0,75 → `likely`. Um engine sozinho, mesmo o de
+#    maior peso, NÃO chega a `confirmed` — é o desenho do consenso (D-003), e
+#    esta amostra existe para travar isso.
+#
+#  - functions.php recebe o conteúdo de uma amostra que o AMWScan reconhece.
+#    Aí são dois votos: 1,50 (checksum) + 0,64 (heurística) = 2,14, que satura
+#    em 1,0 → `confirmed`. É o único caminho que autoriza quarentena
+#    automática, e sem ele o caminho que justifica a ferramenta existir fica
+#    sem prova.
 if [ "$WP_REAL" = "1" ]; then
   echo '// SENTINELHOST-SYNTHETIC-CORPUS: linha extra que o core oficial nao tem' \
     >> "$SITE/wp-includes/pluggable.php"
-  ok "arquivo de core adulterado (wp-includes/pluggable.php)"
+  ok "core adulterado só para o checksum (wp-includes/pluggable.php → likely)"
+
+  cat /corpus/sintetico/02-backdoor-eval-post.php >> "$SITE/wp-includes/functions.php"
+  ok "core adulterado para checksum + AMWScan (wp-includes/functions.php → confirmed)"
 fi
 
 cp /corpus/limpo/base64-legitimo.php  "$SITE/wp-content/plugins/legitimo.php"
@@ -257,6 +270,21 @@ if [ "${WP_REAL:-0}" = "1" ]; then
       falha "o core adulterado NÃO foi detectado pelo wp-checksums"
       info "é o sinal de maior peso do projeto; sem ele o consenso perde seu voto mais forte"
     fi
+
+    # O consenso escalonando como projetado: um voto forte dá `likely`, dois
+    # votos dão `confirmed`. Se essa distinção sumir, ou a ferramenta age
+    # sozinha cedo demais, ou nunca age.
+    if grep -q 'LIKELY.*pluggable.php' <<<"$saida_scan"; then
+      ok 'um voto forte sozinho parou em likely (nao escalou para confirmed)'
+    else
+      falha 'o veredito de pluggable.php nao e likely: o escalonamento do consenso mudou'
+    fi
+    if grep -q 'CONFIRMED.*functions.php' <<<"$saida_scan"; then
+      ok 'dois votos (checksum + heuristica) chegaram a confirmed'
+    else
+      falha 'checksum + AMWScan no mesmo arquivo NAO chegou a confirmed'
+      info "é o único caminho que autoriza quarentena automática"
+    fi
   else
     falha "wp-checksums se absteve mesmo com um WordPress real na raiz"
   fi
@@ -267,8 +295,17 @@ secao "Quarentena com permissões POSIX de verdade"
 
 # O round-trip já é testado na suíte, mas só aqui ele roda numa conta sem
 # privilégio, com o umask e o dono de uma hospedagem real.
-sed -i 's/^observation_mode = true/observation_mode = false/' "$CFG"
-sed -i 's/^grace_period_days = 7/grace_period_days = 0/' "$CFG"
+# O TOML é gravado com indentação (enc.Indent = "  "), então uma âncora `^`
+# nunca casa. Foi assim que o modo observação continuou ligado e a quarentena
+# nunca disparou nas primeiras rodadas — bug do script, não do produto.
+sed -i -E 's/^[[:space:]]*observation_mode[[:space:]]*=.*/  observation_mode = false/' "$CFG"
+sed -i -E 's/^[[:space:]]*grace_period_days[[:space:]]*=.*/  grace_period_days = 0/' "$CFG"
+
+if grep -qE 'observation_mode[[:space:]]*=[[:space:]]*false' "$CFG"; then
+  ok "modo observação desligado para exercitar a quarentena"
+else
+  falha "não foi possível desligar o modo observação no TOML"
+fi
 
 sentinelhost scan --full --config "$CFG" >/dev/null 2>&1
 lista=$(sentinelhost quarantine list --config "$CFG" 2>&1)
@@ -287,13 +324,31 @@ else
   echo "$lista" | sed 's/^/  /'
   ref=$(grep -oE 'q_[0-9]+_[0-9a-f]+' <<<"$lista" | head -1)
   if [ -n "$ref" ]; then
+    original=$(sentinelhost quarantine list --config "$CFG" 2>/dev/null \
+      | grep "$ref" | awk '{print $NF}')
+
+    # O arquivo saiu do lugar?
+    if [ -n "$original" ] && [ ! -e "$original" ]; then
+      ok "o arquivo foi movido para o cofre (não está mais no lugar)"
+    fi
+
     if sentinelhost quarantine verify --config "$CFG" >/dev/null 2>&1; then
       ok "cofre íntegro (hashes conferem)"
     else
       falha "o cofre tem cópias que não conferem"
     fi
+
+    # Round-trip byte a byte numa conta sem privilégio, com o umask e o dono
+    # de uma hospedagem real. É a promessa que torna a automação aceitável.
+    antes=""
+    [ -n "$original" ] && antes=$(sentinelhost quarantine list --all --config "$CFG" 2>/dev/null | grep -c "$ref")
     if sentinelhost quarantine restore "$ref" --config "$CFG" >/dev/null 2>&1; then
-      ok "restauração byte a byte funcionou numa conta sem privilégio"
+      if [ -n "$original" ] && [ -f "$original" ]; then
+        ok "restauração byte a byte funcionou numa conta sem privilégio"
+        info "arquivo de volta em $original"
+      else
+        falha "o restore reportou sucesso mas o arquivo não voltou para $original"
+      fi
     else
       falha "a RESTAURAÇÃO falhou — a promessa de reversibilidade não se sustenta aqui"
     fi

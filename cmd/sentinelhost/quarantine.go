@@ -79,10 +79,11 @@ func quarantineList(ctx context.Context, args []string) error {
 
 func quarantineRestore(ctx context.Context, args []string) error {
 	fs, cfgPath := flagSet("quarantine restore")
-	if err := fs.Parse(args); err != nil {
+	posicionais, err := parseArgs(fs, args)
+	if err != nil {
 		return err
 	}
-	if fs.NArg() < 1 {
+	if len(posicionais) < 1 {
 		return fmt.Errorf("uso: sentinelhost quarantine restore <ref>")
 	}
 
@@ -92,7 +93,7 @@ func quarantineRestore(ctx context.Context, args []string) error {
 	}
 	defer a.Close()
 
-	ref := fs.Arg(0)
+	ref := posicionais[0]
 	item, err := a.vault.Restore(ctx, ref)
 	if err != nil {
 		return err
@@ -124,7 +125,8 @@ OPCOES
 `)
 		fs.PrintDefaults()
 	}
-	if err := fs.Parse(args); err != nil {
+	posicionais, err := parseArgs(fs, args)
+	if err != nil {
 		return err
 	}
 
@@ -134,7 +136,7 @@ OPCOES
 	}
 	defer a.Close()
 
-	if fs.NArg() == 0 {
+	if len(posicionais) == 0 {
 		n, err := a.vault.PurgeExpired(ctx)
 		if err != nil {
 			return err
@@ -143,7 +145,7 @@ OPCOES
 		return nil
 	}
 
-	ref := fs.Arg(0)
+	ref := posicionais[0]
 	item, err := a.store.GetQuarantineItem(ctx, ref)
 	if err != nil {
 		return err
