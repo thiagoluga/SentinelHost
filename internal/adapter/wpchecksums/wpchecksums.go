@@ -33,6 +33,17 @@ func New() *Adapter { return &Adapter{api: newClient(""), maxDepth: 12} }
 // NewWithBase cria o adaptador apontando para outra base de API (testes).
 func NewWithBase(base string) *Adapter { return &Adapter{api: newClient(base), maxDepth: 12} }
 
+// NewWithBases sobrepoe as bases do core E dos plugins.
+//
+// Existe para que nenhum teste bata na API publica do WordPress.org: um teste
+// que depende de rede falha em CI por motivos alheios ao codigo, e usaria de
+// graca a infraestrutura de um projeto que ja nos serve de graca.
+func NewWithBases(coreBase, pluginsBase string) *Adapter {
+	c := newClient(coreBase)
+	c.pluginsBase = pluginsBase
+	return &Adapter{api: c, maxDepth: 12}
+}
+
 func (a *Adapter) Info() adapter.Info {
 	return adapter.Info{
 		Slug:     Slug,
@@ -105,6 +116,27 @@ type rawPayload struct {
 	Missing     []string             `json:"missing"`
 	Extra       []LocalFile          `json:"extra"`
 	FetchedAt   time.Time            `json:"fetched_at"`
+
+	// Plugins e a segunda metade do FR-005. Vazio quando a instalacao nao tem
+	// plugins ou nenhum deles tem checksum publicado.
+	Plugins []pluginPayload `json:"plugins,omitempty"`
+	// PluginsSkipped explica, por slug, por que um plugin nao foi verificado.
+	// Existe para que "nao verificado" nunca se pareca com "verificado e
+	// limpo" no relatorio.
+	PluginsSkipped map[string]string `json:"plugins_skipped,omitempty"`
+}
+
+// pluginPayload e o resultado da verificacao de UM plugin.
+type pluginPayload struct {
+	Slug    string `json:"slug"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Dir     string `json:"dir"`
+	// APIResponse crua, para o Parse reprocessar sem rede.
+	APIResponse json.RawMessage      `json:"api_response"`
+	Local       map[string]LocalFile `json:"local"`
+	Missing     []string             `json:"missing"`
+	Extra       []LocalFile          `json:"extra"`
 }
 
 // Scan consulta a API e monta o inventario local.
@@ -151,14 +183,17 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 	}
 
 	local, missing := inventory(req.Root, sums)
+	plugins, pulados := a.scanPlugins(ctx, req.Root)
 	payload := rawPayload{
-		WPVersion:   inst.Version,
-		Root:        req.Root,
-		APIResponse: body,
-		Local:       local,
-		Missing:     missing,
-		Extra:       extraFiles(req.Root, sums, a.maxDepth),
-		FetchedAt:   time.Now(),
+		WPVersion:      inst.Version,
+		Root:           req.Root,
+		APIResponse:    body,
+		Local:          local,
+		Missing:        missing,
+		Extra:          extraFiles(req.Root, sums, a.maxDepth),
+		FetchedAt:      time.Now(),
+		Plugins:        plugins,
+		PluginsSkipped: pulados,
 	}
 	blob, err := json.Marshal(payload)
 	if err != nil {
@@ -289,8 +324,36 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 		))
 	}
 
+	// Plugins: a segunda metade do FR-005.
+	achadosPlugin, limposPlugin := a.parsePlugins(
+		rawOutputInfo{ScanID: raw.ScanID, EngineVersion: raw.EngineVersion},
+		payload, detectedAt)
+	rep.Findings = append(rep.Findings, achadosPlugin...)
+	rep.CleanFiles = append(rep.CleanFiles, limposPlugin...)
+
 	rep.Scope.FilesConsidered = len(sums)
 	rep.Scope.FilesScanned = len(payload.Local) + len(payload.Extra)
+	for _, p := range payload.Plugins {
+		rep.Scope.FilesConsidered += len(p.Local) + len(p.Missing)
+		rep.Scope.FilesScanned += len(p.Local) + len(p.Extra)
+	}
+
+	// Plugin nao verificado NUNCA pode se parecer com plugin verificado e
+	// limpo. Cada motivo entra na contabilidade do relatorio, que o painel e o
+	// `scan` exibem.
+	if len(payload.PluginsSkipped) > 0 {
+		if rep.Scope.SkippedReasonCounts == nil {
+			rep.Scope.SkippedReasonCounts = map[string]int{}
+		}
+		rep.Scope.SkippedReasonCounts["plugin_sem_checksum"] = len(payload.PluginsSkipped)
+	}
+	if n := len(payload.Plugins); n > 0 {
+		if rep.Scope.SkippedReasonCounts == nil {
+			rep.Scope.SkippedReasonCounts = map[string]int{}
+		}
+		rep.Scope.SkippedReasonCounts["plugin_verificado"] = n
+	}
+
 	return rep, nil
 }
 

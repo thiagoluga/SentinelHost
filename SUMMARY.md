@@ -176,6 +176,36 @@ real. O painel foi verificado manualmente durante o desenvolvimento (primeiro
 acesso, autenticação, carga das 7 áreas com dados reais da API), mas o SC-004
 completo continua sendo validação com pessoa.
 
+### ~~4a. Checksums de plugins~~ — implementado
+
+O FR-005 pede integridade "do core **e, quando disponível, plugins**". A segunda
+metade estava faltando e agora está em `internal/adapter/wpchecksums/plugins.go`.
+
+Plugin abandonado é o vetor de invasão mais comum em WordPress, e um plugin
+legítimo com um arquivo alterado é o esconderijo preferido de backdoor: ele não
+aparece na conferência do core e o usuário nunca suspeita do que ele mesmo
+instalou.
+
+Três decisões que a implementação codifica:
+
+- **O slug é o nome do diretório**, não o do cabeçalho `Plugin Name`. É assim
+  que a API indexa; usar o cabeçalho faria toda consulta dar 404 e o
+  verificador nunca acharia nada — falhando em silêncio.
+- **Plugin sem checksum publicado gera abstenção com motivo, nunca silêncio.**
+  Plugin comercial ou próprio não está no diretório oficial. Tratar ausência de
+  *dado* como ausência de *problema* declararia limpo o que ninguém conferiu, e
+  o relatório registra cada plugin não verificado.
+- **Arquivo extra é `signature`; arquivo ausente é `anomaly`.** Plugin oficial
+  não ganha `.php` por conta própria — isso é prova. Já um arquivo que sumiu não
+  contém código malicioso e não pode ser quarentenado; como `signature`, o peso
+  1,50 empurraria sozinho o achado para perto de `confirmed`.
+
+Arquivos intactos de plugin entram em `clean_files` e ganham o mesmo veto do
+core — plugin costuma ter JS minificado e base64, que é exatamente o que gera
+falso positivo em heurística.
+
+16 testes cobrem isso, nenhum tocando a rede.
+
 ### 4b. Integração com Slack e Discord
 
 A US4 diz que os webhooks servem para "integrar com Slack/Discord/n8n ou
