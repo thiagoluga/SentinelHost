@@ -14,11 +14,16 @@ linters:
     - unused
     - bodyclose
     - gosec
-    - misspell
     - revive
     - unconvert
     - nolintlint
     - gofmt
+
+  # `misspell` fica de fora: ele so conhece ingles, e o codigo deste projeto e
+  # escrito em portugues. Ele acusa `problemas` como erro de `problems`,
+  # `independente` como erro de `independence` e `eles` como erro de `eels`.
+  # Manter um linter que exige renomear identificadores corretos para palavras
+  # erradas treina todo mundo a ignorar o lint.
 
 linters-settings:
   gosec:
