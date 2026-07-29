@@ -98,7 +98,7 @@ func configShow(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	data, err := os.ReadFile(*cfgPath) //nolint:gosec // caminho informado pelo proprio usuario
+	data, err := os.ReadFile(*cfgPath) // caminho informado pelo proprio usuario
 	if err != nil {
 		return err
 	}

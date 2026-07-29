@@ -21,7 +21,7 @@ func Load(path string) (*Config, error) {
 	cfg := Default()
 	cfg.path = path
 
-	data, err := os.ReadFile(path) //nolint:gosec // caminho vem da CLI do proprio usuario
+	data, err := os.ReadFile(path) // caminho vem da CLI do proprio usuario
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf("%w: %s", ErrNotFound, path)

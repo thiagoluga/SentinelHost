@@ -28,7 +28,7 @@ const shaFalso = "11111111111111111111111111111111111111111111111111111111111111
 func fixture(t *testing.T, engine, nome string) []byte {
 	t.Helper()
 	path := filepath.Join("..", "testdata", "raw", engine, nome)
-	b, err := os.ReadFile(path) //nolint:gosec // caminho fixo de fixture
+	b, err := os.ReadFile(path) // caminho fixo de fixture
 	if err != nil {
 		t.Fatalf("lendo fixture %s: %v", path, err)
 	}

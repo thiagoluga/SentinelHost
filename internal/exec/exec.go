@@ -136,7 +136,7 @@ func (r *Runner) Run(ctx context.Context, c Command) Result {
 	name, args := r.wrap(bin, c.Args)
 	res.Wrapped = append([]string{name}, args...)
 
-	cmd := exec.CommandContext(runCtx, name, args...) //nolint:gosec // argumentos montados pelo adaptador, nunca por shell
+	cmd := exec.CommandContext(runCtx, name, args...) // argumentos montados pelo adaptador, nunca por shell
 	cmd.Dir = c.Dir
 	cmd.Env = append(os.Environ(), c.Env...)
 	if len(c.Stdin) > 0 {

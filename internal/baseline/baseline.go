@@ -26,7 +26,7 @@ func New(roots []string) *Baseline {
 // Load le o baseline do disco. Ausente devolve um baseline vazio, nao erro: a
 // primeira execucao nao tem baseline, e isso e normal.
 func Load(path string, roots []string) (*Baseline, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // caminho derivado do diretorio de dados
+	data, err := os.ReadFile(path) // caminho derivado do diretorio de dados
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return New(roots), nil

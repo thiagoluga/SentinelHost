@@ -164,7 +164,7 @@ func depth(root, path string) int {
 
 // HashFile calcula o sha256 de um arquivo.
 func HashFile(path string) (string, error) {
-	f, err := os.Open(path) //nolint:gosec // caminho vem da varredura da raiz configurada
+	f, err := os.Open(path) // caminho vem da varredura da raiz configurada
 	if err != nil {
 		return "", err
 	}

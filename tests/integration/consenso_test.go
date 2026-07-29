@@ -176,7 +176,7 @@ func TestSC001Deteccao(t *testing.T) {
 		}
 		piso := schema.Level(a.NivelMinimo)
 		if !v.Level.AtLeast(piso) {
-			falhas = append(falhas, // nolint:gocritic
+			falhas = append(falhas,
 				a.Arquivo+": nivel "+string(v.Level)+", esperado ao menos "+string(piso))
 		}
 

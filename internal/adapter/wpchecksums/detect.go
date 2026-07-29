@@ -9,7 +9,7 @@ package wpchecksums
 
 import (
 	"bufio"
-	"crypto/md5" //nolint:gosec // a API do WordPress.org publica MD5; nao e uso criptografico
+	"crypto/md5" // a API do WordPress.org publica MD5; nao e uso criptografico
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -44,7 +44,7 @@ type Install struct {
 // Detect procura uma instalacao WordPress na raiz.
 func Detect(root string) (Install, error) {
 	versionFile := filepath.Join(root, "wp-includes", "version.php")
-	f, err := os.Open(versionFile) //nolint:gosec // caminho derivado da raiz configurada pelo usuario
+	f, err := os.Open(versionFile) // caminho derivado da raiz configurada pelo usuario
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return Install{}, fmt.Errorf("%w: %s nao existe", ErrNotWordPress, versionFile)
@@ -121,13 +121,13 @@ func inventory(root string, checksums map[string]string) (map[string]LocalFile, 
 // hashFile calcula MD5 (para comparar com a API) e SHA-256 (chave do esquema)
 // numa unica leitura do arquivo.
 func hashFile(path string) (string, string, error) {
-	f, err := os.Open(path) //nolint:gosec // caminho derivado da raiz configurada
+	f, err := os.Open(path) // caminho derivado da raiz configurada
 	if err != nil {
 		return "", "", err
 	}
 	defer func() { _ = f.Close() }()
 
-	m := md5.New() //nolint:gosec // formato imposto pela API do WordPress.org
+	m := md5.New() // formato imposto pela API do WordPress.org
 	s := sha256.New()
 	if _, err := io.Copy(io.MultiWriter(m, s), f); err != nil {
 		return "", "", err

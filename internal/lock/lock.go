@@ -80,7 +80,7 @@ func Acquire(path string) (*Lock, error) {
 
 // Read le quem detem o lock.
 func Read(path string) (Info, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // caminho derivado do diretorio de dados
+	data, err := os.ReadFile(path) // caminho derivado do diretorio de dados
 	if err != nil {
 		return Info{}, err
 	}

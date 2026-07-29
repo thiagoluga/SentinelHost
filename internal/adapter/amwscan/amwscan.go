@@ -428,7 +428,7 @@ func statFile(path string) (FileStat, bool) {
 	if err != nil || info.IsDir() {
 		return FileStat{}, false
 	}
-	f, err := os.Open(path) //nolint:gosec // caminho vem do relatorio do engine sobre a raiz configurada
+	f, err := os.Open(path) // caminho vem do relatorio do engine sobre a raiz configurada
 	if err != nil {
 		return FileStat{}, false
 	}

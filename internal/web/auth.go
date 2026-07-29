@@ -72,14 +72,17 @@ func verifyPassword(senha, phc string) bool {
 	if err != nil {
 		return false
 	}
-	// Faixa fechada antes de converter para uint32. Um hash com tamanho
-	// absurdo so chegaria aqui vindo de um banco adulterado, e a conversao
-	// truncada faria o argon2 derivar uma chave de tamanho diferente do
-	// esperado — comparacao entre coisas incomparaveis.
-	if len(esperado) < 16 || len(esperado) > 64 {
+	// Exige exatamente o tamanho que hashPassword produz, e deriva com a
+	// constante — sem nenhuma conversao de int para uint32.
+	//
+	// Nao e rigor formal: derivar com um tamanho vindo do proprio hash
+	// armazenado deixaria um banco adulterado escolher o parametro, e uma
+	// conversao truncada faria o argon2 gerar uma chave de tamanho diferente
+	// do esperado, comparando coisas incomparaveis.
+	if len(esperado) != argonKeyLen {
 		return false
 	}
-	calculado := argon2.IDKey([]byte(senha), salt, t, m, p, uint32(len(esperado)))
+	calculado := argon2.IDKey([]byte(senha), salt, t, m, p, argonKeyLen)
 	return subtle.ConstantTimeCompare(calculado, esperado) == 1
 }
 

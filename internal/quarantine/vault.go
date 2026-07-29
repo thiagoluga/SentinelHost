@@ -354,7 +354,7 @@ func newRef(t time.Time) (string, error) {
 // O hash e calculado sobre o fluxo de escrita, nao sobre a origem: e assim que
 // se detecta disco cheio, escrita parcial e corrupcao no meio do caminho.
 func copyAndVerify(origem, destino string) (string, int64, error) {
-	src, err := os.Open(origem) //nolint:gosec // caminho vem do veredito sobre a raiz configurada
+	src, err := os.Open(origem) // caminho vem do veredito sobre a raiz configurada
 	if err != nil {
 		return "", 0, err
 	}
