@@ -218,7 +218,26 @@ ok  internal/quarantine   internal/schema      internal/store
 ok  internal/verdict      tests/contract       tests/integration
 ```
 
-Todos verdes. `go vet ./...` limpo.
+Todos verdes. `go vet ./...` limpo. CI (lint + test + build amd64/arm64) verde.
+
+### Rode os testes no Linux, não só na estação de trabalho
+
+O primeiro CI reprovou e expôs **dois defeitos que o Windows escondia**, ambos
+já corrigidos:
+
+1. **A quarentena era irrecuperável no Linux.** O cofre aplicava `chmod 000`, e
+   `Restore` e `quarantine verify` precisam *ler* a cópia — os dois falhavam com
+   "permission denied". Isso derrubava o Princípio I inteiro. O Windows ignora
+   permissões POSIX e permite ler um arquivo "0000", então toda a suíte passava
+   local. Agora é `0400`, e o teste de neutralização lê o arquivo de fato.
+2. **O `.gitignore` engolia o programa.** O padrão `sentinelhost` sem barra
+   inicial casa qualquer arquivo *ou diretório* com esse nome em qualquer nível,
+   e o primeiro alvo era `cmd/sentinelhost/`. O primeiro push publicou um
+   repositório sem o pacote `main`, e só o build no CI percebeu.
+
+A lição vale para quem for contribuir: este projeto tem semântica de sistema de
+arquivos POSIX no núcleo, e uma suíte verde no Windows não é evidência de nada
+nessa área.
 
 ---
 
