@@ -1,0 +1,155 @@
+{
+  "version": "1.0",
+  "description": "The per-file expectation of the corpus, read by the SC-001 test. Every sample under synthetic/ and clean/ has to be here: the test fails if it finds an undeclared file, so nobody adds a sample without saying what they expect from it.",
+  "inert_marker": "SENTINELHOST-SYNTHETIC-CORPUS",
+  "samples": [
+    {
+      "file": "synthetic/01-webshell-parameter.php",
+      "simulated_path": "wp-content/uploads/2026/07/cache.php",
+      "simulates": "a webshell taking a command from a request parameter",
+      "category": "webshell",
+      "severity": "critical",
+      "confidence": "heuristic",
+      "minimum_expected_level": "likely",
+      "engines_that_should_flag": ["amwscan", "php-malware-finder"]
+    },
+    {
+      "file": "synthetic/02-backdoor-eval-post.php",
+      "simulated_path": "wp-content/plugins/cache-helper/init.php",
+      "simulates": "a backdoor evaluating code coming from POST",
+      "category": "backdoor",
+      "severity": "critical",
+      "confidence": "heuristic",
+      "minimum_expected_level": "likely",
+      "engines_that_should_flag": ["amwscan", "php-malware-finder"]
+    },
+    {
+      "file": "synthetic/03-obfuscation-blob.php",
+      "simulated_path": "wp-content/themes/theme/inc/loader.php",
+      "simulates": "a long encoded blob and unintelligible names, with no readable code",
+      "category": "obfuscation",
+      "severity": "high",
+      "confidence": "heuristic",
+      "minimum_expected_level": "likely",
+      "engines_that_should_flag": ["amwscan", "php-malware-finder"]
+    },
+    {
+      "file": "synthetic/04-uploader-no-validation.php",
+      "simulated_path": "public_html/up.php",
+      "simulates": "an upload with no type validation inside the web root",
+      "category": "dropper",
+      "severity": "high",
+      "confidence": "heuristic",
+      "minimum_expected_level": "likely",
+      "engines_that_should_flag": ["amwscan", "php-malware-finder"]
+    },
+    {
+      "file": "synthetic/05-spam-seo-links.php",
+      "simulated_path": "wp-content/themes/theme/footer-extra.php",
+      "simulates": "spam links served only to the search engine's crawler",
+      "category": "spam_seo",
+      "severity": "medium",
+      "confidence": "heuristic",
+      "minimum_expected_level": "likely",
+      "engines_that_should_flag": ["amwscan", "php-malware-finder"]
+    },
+    {
+      "file": "synthetic/06-phishing-harvest.php",
+      "simulated_path": "public_html/secure/login.php",
+      "simulates": "a cloned page that harvests credentials and exfiltrates them",
+      "category": "phishing",
+      "severity": "critical",
+      "confidence": "heuristic",
+      "minimum_expected_level": "likely",
+      "engines_that_should_flag": ["amwscan", "php-malware-finder"]
+    },
+    {
+      "file": "synthetic/07-injection-in-theme.php",
+      "simulated_path": "wp-content/themes/theme/footer.php",
+      "simulates": "a legitimate theme file with one injected line",
+      "category": "injection",
+      "severity": "high",
+      "confidence": "heuristic",
+      "minimum_expected_level": "likely",
+      "engines_that_should_flag": ["amwscan", "php-malware-finder"]
+    },
+    {
+      "file": "synthetic/08-suspicious-location.php",
+      "simulated_path": "wp-content/uploads/2026/03/image.php",
+      "simulates": "PHP in a media folder; the signal is the place, not the content",
+      "category": "suspicious_location",
+      "severity": "medium",
+      "confidence": "anomaly",
+      "minimum_expected_level": "suspicious",
+      "engines_that_should_flag": ["php-malware-finder", "amwscan"]
+    },
+    {
+      "file": "synthetic/09-known-marker.php",
+      "simulated_path": "wp-content/uploads/2026/07/x.php",
+      "simulates": "a deterministic marker, this corpus's EICAR",
+      "category": "known_malware",
+      "severity": "critical",
+      "confidence": "signature",
+      "minimum_expected_level": "confirmed",
+      "engines_that_should_flag": ["maldet", "amwscan"]
+    },
+    {
+      "file": "synthetic/10-core-tampered.php",
+      "simulated_path": "wp-includes/pluggable.php",
+      "simulates": "a core file that does not match the official checksum",
+      "category": "core_integrity",
+      "severity": "critical",
+      "confidence": "signature",
+      "minimum_expected_level": "confirmed",
+      "engines_that_should_flag": ["wp-checksums", "amwscan"]
+    },
+    {
+      "file": "synthetic/11-loose-permissions.php",
+      "simulated_path": "public_html/config-extra.php",
+      "simulates": "a 0777 file in the web root; the signal is the mode",
+      "category": "suspicious_perms",
+      "severity": "medium",
+      "confidence": "anomaly",
+      "minimum_expected_level": "suspicious",
+      "engines_that_should_flag": ["php-malware-finder", "amwscan"]
+    },
+    {
+      "file": "synthetic/12-reverse-shell-described.php",
+      "simulated_path": "wp-content/uploads/2026/07/conn.php",
+      "simulates": "a reverse shell: only the data, no network primitive at all",
+      "category": "backdoor",
+      "severity": "critical",
+      "confidence": "heuristic",
+      "minimum_expected_level": "likely",
+      "engines_that_should_flag": ["amwscan", "php-malware-finder"]
+    }
+  ],
+  "clean": [
+    {
+      "file": "clean/base64-legitimate.php",
+      "simulated_path": "wp-content/plugins/util/helpers.php",
+      "typical_false_positive": "legitimate use of base64_encode",
+      "maximum_acceptable_level": "suspicious"
+    },
+    {
+      "file": "clean/util.min.js",
+      "simulated_path": "wp-content/themes/theme/js/util.min.js",
+      "typical_false_positive": "the high entropy of minified code",
+      "maximum_acceptable_level": "suspicious"
+    },
+    {
+      "file": "clean/wp-includes/version.php",
+      "simulated_path": "wp-includes/version.php",
+      "typical_false_positive": "an official core file flagged by an engine",
+      "maximum_acceptable_level": "clean",
+      "official_checksum": true,
+      "note": "Two engines flag it with confidence=signature in the test. The verdict MUST come out clean with clean_reason=official_checksum_match: the checksum protection is a veto, not a vote."
+    },
+    {
+      "file": "clean/legitimate-plugin.php",
+      "simulated_path": "wp-content/plugins/clean-corpus/clean-corpus.php",
+      "typical_false_positive": "none; the corpus's baseline",
+      "maximum_acceptable_level": "clean"
+    }
+  ]
+}

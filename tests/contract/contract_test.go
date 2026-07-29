@@ -1,13 +1,13 @@
-// Package contract_test verifica que cada adaptador entende o que o seu
-// engine fala.
+// Package contract_test verifies that each adapter understands what its engine
+// says.
 //
-// O que esta sob teste aqui e o PARSER, nunca a deteccao. As fixtures em
-// tests/testdata/raw/ sao saida bruta no formato exato de cada engine; o teste
-// alimenta Parse() com elas e confere o ScanReport normalizado.
+// What is under test here is the PARSER, never the detection. The fixtures under
+// tests/testdata/raw/ are raw output in each engine's exact format; the test feeds
+// Parse() with them and checks the normalized ScanReport.
 //
-// A distincao que mais importa nestes testes: "nao achou nada" e "nao
-// conseguiu procurar" sao coisas diferentes (Principio VI). Um parser que
-// confunde as duas transforma engine morto em atestado de saude.
+// The distinction that matters most in these tests: "found nothing" and "could not
+// look" are different things (Principle VI). A parser that confuses the two turns
+// a dead engine into a certificate of health.
 package contract_test
 
 import (
@@ -23,35 +23,35 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
 
-const shaFalso = "1111111111111111111111111111111111111111111111111111111111111111"
+const fakeSHA = "1111111111111111111111111111111111111111111111111111111111111111"
 
-func fixture(t *testing.T, engine, nome string) []byte {
+func fixture(t *testing.T, engine, name string) []byte {
 	t.Helper()
-	path := filepath.Join("..", "testdata", "raw", engine, nome)
-	b, err := os.ReadFile(path) // caminho fixo de fixture
+	path := filepath.Join("..", "testdata", "raw", engine, name)
+	b, err := os.ReadFile(path) // fixed fixture path
 	if err != nil {
-		t.Fatalf("lendo fixture %s: %v", path, err)
+		t.Fatalf("reading fixture %s: %v", path, err)
 	}
 	return b
 }
 
-// statFalso responde por qualquer caminho, para que o teste exercite o parser
-// sem precisar materializar a arvore de um servidor real no disco (D-009).
-func statFalso(path string) (amwscan.FileStat, bool) {
+// fakeStat answers for any path, so the test exercises the parser without having
+// to materialize a real server's tree on disk (D-009).
+func fakeStat(path string) (amwscan.FileStat, bool) {
 	return amwscan.FileStat{
-		SHA256: shaFalso, Size: 1024, Perms: "0644", MTime: time.Unix(1785000000, 0),
+		SHA256: fakeSHA, Size: 1024, Perms: "0644", MTime: time.Unix(1785000000, 0),
 	}, true
 }
 
-func statFalsoPMF(path string) (pmf.FileStat, bool) {
+func fakeStatPMF(path string) (pmf.FileStat, bool) {
 	return pmf.FileStat{
-		SHA256: shaFalso, Size: 1024, Perms: "0644", MTime: time.Unix(1785000000, 0),
+		SHA256: fakeSHA, Size: 1024, Perms: "0644", MTime: time.Unix(1785000000, 0),
 	}, true
 }
 
 func raw(engine string, stdout []byte, status schema.ScanStatus) adapter.RawOutput {
 	return adapter.RawOutput{
-		Engine: engine, ScanID: "s_teste", Root: "/home/user/public_html",
+		Engine: engine, ScanID: "s_test", Root: "/home/user/public_html",
 		Mode: schema.ModeIncremental, Stdout: stdout, Status: status,
 		StartedAt: time.Now().Add(-time.Minute), FinishedAt: time.Now(),
 		PathsRequested: 412,
@@ -60,315 +60,314 @@ func raw(engine string, stdout []byte, status schema.ScanStatus) adapter.RawOutp
 
 // AMWScan ---------------------------------------------------------------------
 
-func TestAMWScanParseAchados(t *testing.T) {
-	a := amwscan.New().WithStat(statFalso)
+func TestAMWScanParsesFindings(t *testing.T) {
+	a := amwscan.New().WithStat(fakeStat)
 
-	rep, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "sucesso-com-achados.txt"), schema.StatusCompleted))
+	rep, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "success-with-findings.txt"), schema.StatusCompleted))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	if err := rep.Validate(); err != nil {
-		t.Fatalf("relatorio nao cumpre o esquema: %v", err)
+		t.Fatalf("the report does not satisfy the schema: %v", err)
 	}
 	if rep.Abstains() {
-		t.Fatalf("relatorio de sucesso nao deveria abster-se: %q", rep.Status)
+		t.Fatalf("a success report should not abstain: %q", rep.Status)
 	}
 	if len(rep.Findings) != 3 {
-		t.Fatalf("esperava 3 achados, veio %d", len(rep.Findings))
+		t.Fatalf("expected 3 findings, got %d", len(rep.Findings))
 	}
 
-	// A hierarquia do relatorio: cada achado tem que ficar com o arquivo do
-	// bloco `File:` a que pertence. Tratar as linhas isoladamente produziria
-	// achados sem arquivo, ou todos no arquivo errado.
-	esperado := map[string]string{
-		"Signature":               "/home/user/public_html/wp-content/uploads/2026/07/x.php",
-		"Eval":                    "/home/user/public_html/wp-content/plugins/cache-helper/init.php",
-		"RegraQueNaoEstaNaTabela": "/home/user/public_html/wp-content/themes/tema/inc/loader.php",
+	// The report's hierarchy: each finding has to end up with the file of the
+	// `File:` block it belongs to. Treating the lines in isolation would produce
+	// findings with no file, or all of them on the wrong file.
+	expected := map[string]string{
+		"Signature":            "/home/user/public_html/wp-content/uploads/2026/07/x.php",
+		"Eval":                 "/home/user/public_html/wp-content/plugins/cache-helper/init.php",
+		"RuleThatIsNotInTable": "/home/user/public_html/wp-content/themes/theme/inc/loader.php",
 	}
 	for _, f := range rep.Findings {
-		caminho, ok := esperado[f.Rule]
+		path, ok := expected[f.Rule]
 		if !ok {
-			t.Errorf("regra inesperada: %q", f.Rule)
+			t.Errorf("unexpected rule: %q", f.Rule)
 			continue
 		}
-		if f.File.Path != caminho {
-			t.Errorf("%s: arquivo %q, esperado %q", f.Rule, f.File.Path, caminho)
+		if f.File.Path != path {
+			t.Errorf("%s: file %q, expected %q", f.Rule, f.File.Path, path)
 		}
-		if f.File.SHA256 != shaFalso {
-			t.Errorf("%s: o orquestrador deveria ter calculado o sha256", f.Rule)
+		if f.File.SHA256 != fakeSHA {
+			t.Errorf("%s: the orchestrator should have computed the sha256", f.Rule)
 		}
 	}
 }
 
-func TestAMWScanTagVenceONomeDaRegra(t *testing.T) {
-	// A linha "      => backdoor" e mais especifica que o nome da regra:
-	// "Signature" sozinho nao diz de que familia e o achado.
-	a := amwscan.New().WithStat(statFalso)
-	rep, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "sucesso-com-achados.txt"), schema.StatusCompleted))
+func TestAMWScanTheTagBeatsTheRuleName(t *testing.T) {
+	// The line "      => backdoor" is more specific than the rule name:
+	// "Signature" alone does not say which family the finding belongs to.
+	a := amwscan.New().WithStat(fakeStat)
+	rep, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "success-with-findings.txt"), schema.StatusCompleted))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	for _, f := range rep.Findings {
 		if f.Rule == "Signature" && f.Category != schema.CategoryBackdoor {
-			t.Errorf("a tag `backdoor` deveria ter definido a categoria, veio %q", f.Category)
+			t.Errorf("the `backdoor` tag should have set the category, got %q", f.Category)
 		}
 	}
 }
 
-func TestAMWScanLinhaDoAchadoEPreservada(t *testing.T) {
-	a := amwscan.New().WithStat(statFalso)
-	rep, _ := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "sucesso-com-achados.txt"), schema.StatusCompleted))
-	achou := false
+func TestAMWScanTheFindingsLineIsPreserved(t *testing.T) {
+	a := amwscan.New().WithStat(fakeStat)
+	rep, _ := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "success-with-findings.txt"), schema.StatusCompleted))
+	found := false
 	for _, f := range rep.Findings {
 		if f.Rule == "Signature" {
-			achou = true
+			found = true
 			if f.MatchedOffset != 4 {
-				t.Errorf("linha do achado: %d, esperado 4", f.MatchedOffset)
+				t.Errorf("finding line: %d, expected 4", f.MatchedOffset)
 			}
 		}
 	}
-	if !achou {
-		t.Error("achado Signature nao apareceu")
+	if !found {
+		t.Error("the Signature finding did not show up")
 	}
 }
 
-func TestAMWScanSemAchadosNaoEAbstencao(t *testing.T) {
-	// O AMWScan sempre escreve ao menos a linha `Scan date:`. Um relatorio so
-	// com o cabecalho significa site limpo, nao falha.
-	a := amwscan.New().WithStat(statFalso)
+func TestAMWScanNoFindingsIsNotAnAbstention(t *testing.T) {
+	// AMWScan always writes at least the `Scan date:` line. A report with only the
+	// header means a clean site, not a failure.
+	a := amwscan.New().WithStat(fakeStat)
 
-	rep, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "sucesso-sem-achados.txt"), schema.StatusCompleted))
+	rep, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "success-no-findings.txt"), schema.StatusCompleted))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	if rep.Abstains() {
-		t.Fatal("zero achados nao pode virar abstencao")
+		t.Fatal("zero findings must not become an abstention")
 	}
 	if len(rep.Findings) != 0 {
-		t.Errorf("esperava lista vazia, veio %d", len(rep.Findings))
+		t.Errorf("expected an empty list, got %d", len(rep.Findings))
 	}
 }
 
-func TestAMWScanRelatorioVazioViraAbstencao(t *testing.T) {
-	// Vazio significa que o engine nao chegou a escrever o cabecalho —
-	// abstencao, nunca "nao achou nada".
-	a := amwscan.New().WithStat(statFalso)
+func TestAMWScanAnEmptyReportBecomesAnAbstention(t *testing.T) {
+	// Empty means the engine never got to writing the header — an abstention,
+	// never "found nothing".
+	a := amwscan.New().WithStat(fakeStat)
 
-	_, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "saida-vazia.txt"), schema.StatusCompleted))
+	_, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "empty-output.txt"), schema.StatusCompleted))
 	if err == nil {
-		t.Fatal("relatorio vazio deveria ser recusado pelo parser")
+		t.Fatal("an empty report should have been refused by the parser")
 	}
 }
 
-func TestAMWScanRelatorioForaDoFormatoViraAbstencao(t *testing.T) {
-	a := amwscan.New().WithStat(statFalso)
+func TestAMWScanAnOffFormatReportBecomesAnAbstention(t *testing.T) {
+	a := amwscan.New().WithStat(fakeStat)
 
-	_, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "saida-corrompida.txt"), schema.StatusCompleted))
+	_, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "corrupted-output.txt"), schema.StatusCompleted))
 	if err == nil {
-		t.Fatal("relatorio fora do formato deveria ser recusado")
+		t.Fatal("an off-format report should have been refused")
 	}
 }
 
-func TestAMWScanRegraDesconhecidaNaoEDescartada(t *testing.T) {
-	// Obrigacao 4 do contrato. A tabela cobre so as regras vistas em execucao
-	// real; descartar o resto faria achados sumirem a cada versao nova do
-	// engine.
-	a := amwscan.New().WithStat(statFalso)
+func TestAMWScanAnUnknownRuleIsNotDiscarded(t *testing.T) {
+	// Obligation 4 of the contract. The table covers only the rules seen in a real
+	// run; discarding the rest would make findings vanish with every new engine
+	// version.
+	a := amwscan.New().WithStat(fakeStat)
 
-	rep, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "sucesso-com-achados.txt"), schema.StatusCompleted))
+	rep, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "success-with-findings.txt"), schema.StatusCompleted))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	var achou bool
+	var found bool
 	for _, f := range rep.Findings {
-		if f.Rule == "RegraQueNaoEstaNaTabela" {
-			achou = true
+		if f.Rule == "RuleThatIsNotInTable" {
+			found = true
 			if f.Category != schema.CategoryOther {
-				t.Errorf("categoria: %q, esperada other", f.Category)
+				t.Errorf("category: %q, expected other", f.Category)
 			}
 		}
 	}
-	if !achou {
-		t.Fatal("o achado de regra desconhecida foi descartado")
+	if !found {
+		t.Fatal("the unknown-rule finding was discarded")
 	}
-	if rep.Scope.SkippedReasonCounts["regra_desconhecida"] == 0 {
-		t.Errorf("a regra desconhecida deveria ser contabilizada: %v", rep.Scope.SkippedReasonCounts)
+	if rep.Scope.SkippedReasonCounts["unknown_rule"] == 0 {
+		t.Errorf("the unknown rule should be counted: %v", rep.Scope.SkippedReasonCounts)
 	}
 }
 
-func TestAMWScanArquivoQueSumiuNaoViraAchadoSemHash(t *testing.T) {
+func TestAMWScanAVanishedFileDoesNotBecomeAFindingWithNoHash(t *testing.T) {
 	a := amwscan.New().WithStat(func(string) (amwscan.FileStat, bool) {
 		return amwscan.FileStat{}, false
 	})
 
-	rep, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "sucesso-com-achados.txt"), schema.StatusCompleted))
+	rep, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "success-with-findings.txt"), schema.StatusCompleted))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	if len(rep.Findings) != 0 {
-		t.Fatalf("achado sem hash nao deveria entrar: %+v", rep.Findings)
+		t.Fatalf("a finding with no hash should not enter: %+v", rep.Findings)
 	}
-	if rep.Scope.SkippedReasonCounts["sumiu_antes_do_hash"] != 3 {
-		t.Errorf("os arquivos sumidos deveriam ser contabilizados: %v", rep.Scope.SkippedReasonCounts)
+	if rep.Scope.SkippedReasonCounts["vanished_before_hashing"] != 3 {
+		t.Errorf("the vanished files should be counted: %v", rep.Scope.SkippedReasonCounts)
 	}
 }
 
-// php-malware-finder ------------------------------------------------------------
+// php-malware-finder -----------------------------------------------------------
 
-func TestPMFParseHierarquiaDeRegraEStrings(t *testing.T) {
-	// O formato do yara tem hierarquia: "REGRA CAMINHO" e, abaixo, as strings
-	// que casaram. Tratar cada linha isoladamente produziria achados sem
-	// arquivo.
-	a := pmf.New().WithStat(statFalsoPMF)
+func TestPMFParsesTheRuleAndStringHierarchy(t *testing.T) {
+	// yara's format is hierarchical: "RULE PATH" and, below it, the strings that
+	// matched. Treating each line in isolation would produce findings with no file.
+	a := pmf.New().WithStat(fakeStatPMF)
 
-	rep, err := a.Parse(raw(pmf.Slug, fixture(t, "php-malware-finder", "sucesso-com-achados.txt"), schema.StatusCompleted))
+	rep, err := a.Parse(raw(pmf.Slug, fixture(t, "php-malware-finder", "success-with-findings.txt"), schema.StatusCompleted))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	if err := rep.Validate(); err != nil {
-		t.Fatalf("relatorio nao cumpre o esquema: %v", err)
+		t.Fatalf("the report does not satisfy the schema: %v", err)
 	}
 	if len(rep.Findings) != 5 {
-		t.Fatalf("esperava 5 achados, veio %d", len(rep.Findings))
+		t.Fatalf("expected 5 findings, got %d", len(rep.Findings))
 	}
 
-	porRegra := map[string]schema.Finding{}
+	byRule := map[string]schema.Finding{}
 	for _, f := range rep.Findings {
-		porRegra[f.Rule] = f
+		byRule[f.Rule] = f
 		if f.File.Path == "" {
-			t.Errorf("achado da regra %q ficou sem arquivo", f.Rule)
+			t.Errorf("the finding for rule %q ended up with no file", f.Rule)
 		}
 	}
 
-	// As strings casadas viram matched_content do achado a que pertencem.
-	if got := porRegra["ObfuscatedPhp"]; got.MatchedContent == "" {
-		t.Error("as strings casadas nao viraram matched_content")
+	// The matched strings become the matched_content of the finding they belong to.
+	if got := byRule["ObfuscatedPhp"]; got.MatchedContent == "" {
+		t.Error("the matched strings did not become matched_content")
 	}
-	if got := porRegra["ObfuscatedPhp"]; got.Category != schema.CategoryObfuscation {
-		t.Errorf("ObfuscatedPhp: categoria %q", got.Category)
+	if got := byRule["ObfuscatedPhp"]; got.Category != schema.CategoryObfuscation {
+		t.Errorf("ObfuscatedPhp: category %q", got.Category)
 	}
-	if got := porRegra["SuspiciousEncoding"]; got.Confidence != schema.ConfidenceSignature {
-		t.Errorf("SuspiciousEncoding deveria ser assinatura, veio %q", got.Confidence)
+	if got := byRule["SuspiciousEncoding"]; got.Confidence != schema.ConfidenceSignature {
+		t.Errorf("SuspiciousEncoding should be a signature, got %q", got.Confidence)
 	}
-	// Regra sem strings (linha solta) tambem vira achado.
-	if _, ok := porRegra["PhpInUploads"]; !ok {
-		t.Error("regra sem strings casadas deveria virar achado mesmo assim")
+	// A rule with no strings (a lone line) also becomes a finding.
+	if _, ok := byRule["PhpInUploads"]; !ok {
+		t.Error("a rule with no matched strings should become a finding all the same")
 	}
-	if got := porRegra["PhpInUploads"]; got.Confidence != schema.ConfidenceAnomaly {
-		t.Errorf("PhpInUploads deveria ser anomalia, veio %q", got.Confidence)
+	if got := byRule["PhpInUploads"]; got.Confidence != schema.ConfidenceAnomaly {
+		t.Errorf("PhpInUploads should be an anomaly, got %q", got.Confidence)
 	}
-	// Regra fora da tabela nao e descartada.
-	if got, ok := porRegra["RegraDesconhecidaQueNaoEstaNaTabela"]; !ok {
-		t.Error("regra desconhecida foi descartada")
+	// A rule outside the table is not discarded.
+	if got, ok := byRule["UnknownRuleThatIsNotInTable"]; !ok {
+		t.Error("the unknown rule was discarded")
 	} else if got.Category != schema.CategoryOther {
-		t.Errorf("regra desconhecida: categoria %q, esperada other", got.Category)
+		t.Errorf("unknown rule: category %q, expected other", got.Category)
 	}
 }
 
-func TestPMFOffsetEExtraidoDaPrimeiraString(t *testing.T) {
-	a := pmf.New().WithStat(statFalsoPMF)
-	entrada := []byte("ObfuscatedPhp /site/x.php\n0x1f2:$blob: AAAA\n0x300:$outra: BBBB\n")
+func TestPMFTheOffsetComesFromTheFirstString(t *testing.T) {
+	a := pmf.New().WithStat(fakeStatPMF)
+	input := []byte("ObfuscatedPhp /site/x.php\n0x1f2:$blob: AAAA\n0x300:$other: BBBB\n")
 
-	rep, err := a.Parse(raw(pmf.Slug, entrada, schema.StatusCompleted))
+	rep, err := a.Parse(raw(pmf.Slug, input, schema.StatusCompleted))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	if rep.Findings[0].MatchedOffset != 0x1f2 {
-		t.Errorf("offset: %#x, esperado 0x1f2", rep.Findings[0].MatchedOffset)
+		t.Errorf("offset: %#x, expected 0x1f2", rep.Findings[0].MatchedOffset)
 	}
 }
 
-// TestPMFVazioSignificaCoisasOpostas e o teste central deste pacote.
-func TestPMFVazioSignificaCoisasOpostas(t *testing.T) {
-	// Quando o yara roda e nao acha nada, stdout e vazio.
-	// Quando o yara morre antes de escrever, stdout tambem e vazio.
-	// A saida bruta e a MESMA; o significado e oposto. A diferenca vem do
-	// status do processo, e um parser que olha so o conteudo nao tem como
-	// acertar os dois.
-	a := pmf.New().WithStat(statFalsoPMF)
-	vazio := fixture(t, "php-malware-finder", "saida-vazia.txt")
+// TestPMFEmptyMeansOppositeThings is this package's central test.
+func TestPMFEmptyMeansOppositeThings(t *testing.T) {
+	// When yara runs and finds nothing, stdout is empty.
+	// When yara dies before writing, stdout is empty too.
+	// The raw output is the SAME; the meaning is the opposite. The difference comes
+	// from the process's status, and a parser that only looks at the content has no
+	// way of getting both right.
+	a := pmf.New().WithStat(fakeStatPMF)
+	empty := fixture(t, "php-malware-finder", "empty-output.txt")
 
-	// Caso 1: engine completou. Site limpo.
-	rep, err := a.Parse(raw(pmf.Slug, vazio, schema.StatusCompleted))
+	// Case 1: the engine completed. The site is clean.
+	rep, err := a.Parse(raw(pmf.Slug, empty, schema.StatusCompleted))
 	if err != nil {
 		t.Fatalf("Parse (completed): %v", err)
 	}
 	if rep.Abstains() {
-		t.Fatal("yara que rodou e nao achou nada NAO pode virar abstencao")
+		t.Fatal("a yara that ran and found nothing must NOT become an abstention")
 	}
 	if len(rep.Findings) != 0 {
-		t.Errorf("esperava zero achados, veio %d", len(rep.Findings))
+		t.Errorf("expected zero findings, got %d", len(rep.Findings))
 	}
 
-	// Caso 2: engine morreu. O SafeScanAndParse do orquestrador e quem
-	// converte isso em abstencao, antes de o Parse ser chamado.
-	morto := raw(pmf.Slug, vazio, schema.StatusFailed)
-	morto.Err = errTeste{}
-	sr := adapter.SafeScanAndParse(t.Context(), adaptadorMorto{raw: morto}, adapter.Environment{},
-		adapter.ScanRequest{ScanID: "s_teste", Root: "/site", Mode: schema.ModeIncremental})
+	// Case 2: the engine died. The orchestrator's SafeScanAndParse is what turns
+	// that into an abstention, before Parse is ever called.
+	dead := raw(pmf.Slug, empty, schema.StatusFailed)
+	dead.Err = testErr{}
+	sr := adapter.SafeScanAndParse(t.Context(), deadAdapter{raw: dead}, adapter.Environment{},
+		adapter.ScanRequest{ScanID: "s_test", Root: "/site", Mode: schema.ModeIncremental})
 	if !sr.Abstains() {
-		t.Fatal("yara que morreu TEM que virar abstencao")
+		t.Fatal("a yara that died MUST become an abstention")
 	}
 }
 
-func TestPMFIgnoraLinhaDeStringSemRegraAnterior(t *testing.T) {
-	// Saida truncada pode comecar no meio. Criar um achado sem arquivo seria
-	// pior que ignorar.
-	a := pmf.New().WithStat(statFalsoPMF)
-	entrada := []byte("0x1f2:$blob: AAAA\nObfuscatedPhp /site/x.php\n")
+func TestPMFIgnoresAStringLineWithNoPrecedingRule(t *testing.T) {
+	// Truncated output may start mid-way. Creating a finding with no file would be
+	// worse than ignoring it.
+	a := pmf.New().WithStat(fakeStatPMF)
+	input := []byte("0x1f2:$blob: AAAA\nObfuscatedPhp /site/x.php\n")
 
-	rep, err := a.Parse(raw(pmf.Slug, entrada, schema.StatusCompleted))
+	rep, err := a.Parse(raw(pmf.Slug, input, schema.StatusCompleted))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	if len(rep.Findings) != 1 {
-		t.Fatalf("esperava 1 achado, veio %d", len(rep.Findings))
+		t.Fatalf("expected 1 finding, got %d", len(rep.Findings))
 	}
 	if rep.Findings[0].File.Path != "/site/x.php" {
-		t.Errorf("caminho: %q", rep.Findings[0].File.Path)
+		t.Errorf("path: %q", rep.Findings[0].File.Path)
 	}
 }
 
-func TestPMFCaminhoComEspacoNaoQuebra(t *testing.T) {
-	// yara nao escapa nada. O nome da regra nunca tem espaco, entao o corte e
-	// no primeiro espaco e o resto da linha e o caminho inteiro.
-	a := pmf.New().WithStat(statFalsoPMF)
-	entrada := []byte("ObfuscatedPhp /site/pasta com espaco/arquivo estranho.php\n")
+func TestPMFAPathWithASpaceDoesNotBreak(t *testing.T) {
+	// yara escapes nothing. A rule name never contains a space, so the cut is at
+	// the first space and the rest of the line is the whole path.
+	a := pmf.New().WithStat(fakeStatPMF)
+	input := []byte("ObfuscatedPhp /site/folder with space/strange file.php\n")
 
-	rep, err := a.Parse(raw(pmf.Slug, entrada, schema.StatusCompleted))
+	rep, err := a.Parse(raw(pmf.Slug, input, schema.StatusCompleted))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	if len(rep.Findings) != 1 {
-		t.Fatalf("esperava 1 achado, veio %d", len(rep.Findings))
+		t.Fatalf("expected 1 finding, got %d", len(rep.Findings))
 	}
-	if rep.Findings[0].File.Path != "/site/pasta com espaco/arquivo estranho.php" {
-		t.Errorf("caminho truncado no espaco: %q", rep.Findings[0].File.Path)
+	if rep.Findings[0].File.Path != "/site/folder with space/strange file.php" {
+		t.Errorf("the path was truncated at the space: %q", rep.Findings[0].File.Path)
 	}
 }
 
-// Helpers ------------------------------------------------------------------------
+// Helpers ----------------------------------------------------------------------
 
-type errTeste struct{}
+type testErr struct{}
 
-func (errTeste) Error() string { return "o engine morreu" }
+func (testErr) Error() string { return "the engine died" }
 
-// adaptadorMorto devolve uma saida bruta com status de falha.
-type adaptadorMorto struct{ raw adapter.RawOutput }
+// deadAdapter returns raw output with a failure status.
+type deadAdapter struct{ raw adapter.RawOutput }
 
-func (a adaptadorMorto) Info() adapter.Info {
+func (a deadAdapter) Info() adapter.Info {
 	return adapter.Info{Slug: pmf.Slug, Kind: schema.KindMalware}
 }
-func (a adaptadorMorto) Probe(_ context.Context, _ adapter.Environment) adapter.ProbeResult {
+func (a deadAdapter) Probe(_ context.Context, _ adapter.Environment) adapter.ProbeResult {
 	return adapter.ProbeResult{Available: true}
 }
-func (a adaptadorMorto) Install(_ context.Context, _ adapter.Environment) error { return nil }
-func (a adaptadorMorto) UpdateSignatures(_ context.Context, _ adapter.Environment) (time.Time, error) {
+func (a deadAdapter) Install(_ context.Context, _ adapter.Environment) error { return nil }
+func (a deadAdapter) UpdateSignatures(_ context.Context, _ adapter.Environment) (time.Time, error) {
 	return time.Time{}, nil
 }
-func (a adaptadorMorto) Scan(_ context.Context, _ adapter.Environment, _ adapter.ScanRequest) (adapter.RawOutput, error) {
+func (a deadAdapter) Scan(_ context.Context, _ adapter.Environment, _ adapter.ScanRequest) (adapter.RawOutput, error) {
 	return a.raw, nil
 }
-func (a adaptadorMorto) Parse(adapter.RawOutput) (schema.ScanReport, error) {
+func (a deadAdapter) Parse(adapter.RawOutput) (schema.ScanReport, error) {
 	return schema.ScanReport{}, nil
 }

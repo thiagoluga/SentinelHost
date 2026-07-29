@@ -1,52 +1,51 @@
-# Corpus de teste
+# Test corpus
 
-Este diretório existe para validar o **motor de consenso**, não para validar a
-capacidade de detecção de nenhum engine.
+This directory exists to validate the **consensus engine**, not to validate any
+engine's detection ability.
 
-## Regra absoluta: nada aqui é malware vivo
+## Absolute rule: nothing here is live malware
 
-A constituição do projeto proíbe malware executável no repositório. Todas as
-amostras em `sintetico/` são **inertes por construção**:
+The project's constitution forbids executable malware in the repository. Every
+sample under `synthetic/` is **inert by construction**:
 
-- reproduzem a **estrutura** de um padrão malicioso (concatenação ofuscada,
-  callback dinâmico, blob base64, upload sem validação), mas
-- **nunca** montam uma chamada executável funcional, e
-- carregam o marcador `SENTINELHOST-SYNTHETIC-CORPUS` em texto claro.
+- it reproduces the **structure** of a malicious pattern (obfuscated concatenation,
+  dynamic callback, base64 blob, upload without validation), but
+- it **never** assembles a working executable call, and
+- it carries the marker `SENTINELHOST-SYNTHETIC-CORPUS` in plain text.
 
-[`AMOSTRAS.md`](AMOSTRAS.md) documenta, uma a uma, o que cada amostra simula,
-por que ela é inofensiva e qual categoria/severidade/confiança do esquema
-normalizado ela deveria receber. Ver `DECISIONS.md` D-010.
+[`SAMPLES.md`](SAMPLES.md) documents, one by one, what each sample simulates, why it
+is harmless and which category/severity/confidence of the normalized schema it
+should receive. See `DECISIONS.md` D-010.
 
-Se você abrir uma dessas amostras num navegador ou passá-la a `php`, ela imprime
-um aviso e termina. Ela não abre shell, não escreve arquivo, não faz rede.
+If you open one of these samples in a browser or hand it to `php`, it prints a
+warning and exits. It opens no shell, writes no file, makes no network call.
 
-## Estrutura
+## Structure
 
 ```text
 corpus/
-├── sintetico/          amostras que o consenso DEVE apontar
-├── limpo/              arquivos legítimos que o consenso NÃO pode apontar
-├── AMOSTRAS.md         o que cada amostra simula e por que é inerte
-└── manifesto.json      expectativa por arquivo, lida pelo teste do SC-001
+├── synthetic/       samples the consensus MUST flag
+├── clean/           legitimate files the consensus must NOT flag
+├── SAMPLES.md       what each sample simulates and why it is inert
+└── manifest.json    the per-file expectation, read by the SC-001 test
 ```
 
-`limpo/` contém arquivos que costumam gerar falso positivo em scanner de
-malware: PHP legítimo com `base64_encode` (uso normal), JS minificado, e um
-arquivo de core do WordPress cujo hash bate com o checksum oficial. Detectar
-qualquer um deles como `confirmed` reprova o SC-001.
+`clean/` holds files that commonly produce false positives in a malware scanner:
+legitimate PHP with `base64_encode` (normal usage), minified JS, and a WordPress
+core file whose hash matches the official checksum. Detecting any of them as
+`confirmed` fails SC-001.
 
-## Antivírus de estação de trabalho
+## Workstation antivirus
 
-Um antivírus pode reagir a este diretório mesmo com amostras inertes — a
-heurística acerta no formato, não na intenção. Se o clone do repositório vier
-incompleto no Windows, adicione uma exclusão para a pasta do repositório.
-Nenhuma amostra aqui pode causar dano, mas essa afirmação você deve verificar
-lendo os arquivos, não confiando neste README.
+An antivirus may react to this directory even with inert samples — the heuristic gets
+the shape right, not the intent. If the repository clone comes out incomplete on
+Windows, add an exclusion for the repository folder. No sample here can cause harm,
+but that is a claim you should verify by reading the files, not by trusting this
+README.
 
-## O que este corpus NÃO é
+## What this corpus is NOT
 
-Não é um benchmark de detecção. Os engines reais (AMWScan, php-malware-finder,
-maldet) não são executados nos testes automatizados — ver `DECISIONS.md` D-011.
-O SC-001 é verificado com adaptadores de teste que emitem `ScanReport` fixos,
-porque o que está sob teste é a consolidação por consenso, não a assinatura de
-terceiros.
+It is not a detection benchmark. The real engines (AMWScan, php-malware-finder,
+maldet) are not executed in the automated tests — see `DECISIONS.md` D-011. SC-001 is
+verified with test adapters that emit fixed `ScanReport`s, because what is under test
+is the consensus consolidation, not a third party's signature.
