@@ -1,20 +1,20 @@
-/* Painel do SentinelHost — JS vanilla, sem framework e sem build step.
+/* SentinelHost panel — vanilla JS, no framework and no build step.
  *
- * Regra que atravessa este arquivo: TODO texto vindo do servidor entra no DOM
- * por textContent, nunca por innerHTML. Os caminhos de arquivo exibidos aqui
- * foram escolhidos pelo ATACANTE — um arquivo chamado
- * `<img src=x onerror=...>.php` transformaria o painel em vetor de ataque
- * contra o dono do site. A CSP e a segunda barreira; esta e a primeira.
+ * The rule that runs through this file: EVERY text coming from the server enters
+ * the DOM through textContent, never through innerHTML. The file paths displayed
+ * here were chosen by the ATTACKER — a file named
+ * `<img src=x onerror=...>.php` would turn the panel into an attack vector
+ * against the site's owner. The CSP is the second barrier; this is the first.
  */
 'use strict';
 
-// ---------------------------------------------------------------- utilitarios
+// ------------------------------------------------------------------- utilities
 
-const $ = (sel, raiz = document) => raiz.querySelector(sel);
-const $$ = (sel, raiz = document) => Array.from(raiz.querySelectorAll(sel));
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-/** Cria um elemento. `texto` sempre vira textContent. */
-function el(tag, attrs = {}, texto) {
+/** Creates an element. `text` always becomes textContent. */
+function el(tag, attrs = {}, text) {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (v === undefined || v === null || v === false) continue;
@@ -22,123 +22,123 @@ function el(tag, attrs = {}, texto) {
     else if (k === 'dataset') Object.assign(n.dataset, v);
     else n.setAttribute(k, v);
   }
-  if (texto !== undefined) n.textContent = texto;
+  if (text !== undefined) n.textContent = text;
   return n;
 }
 
-function limpar(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
 
 let toastTimer;
-function toast(msg, ruim = false) {
+function toast(msg, bad = false) {
   const t = $('#toast');
   t.textContent = msg;
-  t.classList.toggle('bad', ruim);
+  t.classList.toggle('bad', bad);
   t.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.hidden = true; }, 5200);
 }
 
-async function api(caminho, opts = {}) {
-  const resp = await fetch(caminho, {
+async function api(path, opts = {}) {
+  const resp = await fetch(path, {
     credentials: 'same-origin',
     headers: opts.body ? { 'Content-Type': 'application/json' } : {},
     ...opts,
   });
-  let dados = null;
-  try { dados = await resp.json(); } catch { /* resposta sem corpo */ }
+  let data = null;
+  try { data = await resp.json(); } catch { /* response with no body */ }
 
   if (resp.status === 401) {
-    mostrarGate();
-    throw new Error('sessao expirada');
+    showGate();
+    throw new Error('session expired');
   }
   if (!resp.ok) {
-    throw new Error((dados && dados.error) || `HTTP ${resp.status}`);
+    throw new Error((data && data.error) || `HTTP ${resp.status}`);
   }
-  return dados;
+  return data;
 }
 
-function fmtData(s) {
+function fmtDate(s) {
   if (!s || s.startsWith('0001-01-01')) return '—';
   const d = new Date(s);
   if (isNaN(d)) return '—';
-  return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
 }
 
-function fmtDia(s) {
-  if (!s || s.startsWith('0001-01-01')) return 'nunca expira';
+function fmtDay(s) {
+  if (!s || s.startsWith('0001-01-01')) return 'never expires';
   const d = new Date(s);
-  return isNaN(d) ? '—' : d.toLocaleDateString('pt-BR');
+  return isNaN(d) ? '—' : d.toLocaleDateString(undefined);
 }
 
-const CLASSE_NIVEL = {
+const LEVEL_CLASS = {
   confirmed: 'b-crit', likely: 'b-serious', suspicious: 'b-warn', clean: 'b-good',
 };
-const ROTULO_NIVEL = {
-  confirmed: 'confirmado', likely: 'provável', suspicious: 'suspeito', clean: 'limpo',
+const LEVEL_LABEL = {
+  confirmed: 'confirmed', likely: 'likely', suspicious: 'suspicious', clean: 'clean',
 };
 
-// ---------------------------------------------------------------- autenticacao
+// -------------------------------------------------------------- authentication
 
 async function bootstrap() {
   try {
     const s = await api('/api/session');
-    if (s.authenticated) return mostrarApp();
-    mostrarGate(!s.password_set);
+    if (s.authenticated) return showApp();
+    showGate(!s.password_set);
   } catch {
-    mostrarGate();
+    showGate();
   }
 }
 
-function mostrarGate(primeiroAcesso = false) {
+function showGate(firstAccess = false) {
   $('#app').hidden = true;
   $('#gate').hidden = false;
-  $('#senha2-wrap').hidden = !primeiroAcesso;
-  $('#gate-title').textContent = primeiroAcesso ? 'Defina a senha do painel' : 'SentinelHost';
-  $('#gate-sub').textContent = primeiroAcesso
-    ? 'Primeiro acesso: escolha a senha que protege este painel.'
-    : 'Entre para acessar o painel.';
-  $('#gate-btn').textContent = primeiroAcesso ? 'Definir senha' : 'Entrar';
-  $('#gate-form').dataset.setup = primeiroAcesso ? '1' : '';
-  $('#senha').value = '';
-  $('#senha2').value = '';
-  $('#senha').focus();
+  $('#password2-wrap').hidden = !firstAccess;
+  $('#gate-title').textContent = firstAccess ? 'Set the panel password' : 'SentinelHost';
+  $('#gate-sub').textContent = firstAccess
+    ? 'First access: choose the password that protects this panel.'
+    : 'Sign in to reach the panel.';
+  $('#gate-btn').textContent = firstAccess ? 'Set the password' : 'Sign in';
+  $('#gate-form').dataset.setup = firstAccess ? '1' : '';
+  $('#password').value = '';
+  $('#password2').value = '';
+  $('#password').focus();
 }
 
-function mostrarApp() {
+function showApp() {
   $('#gate').hidden = true;
   $('#app').hidden = false;
-  carregarTudo();
+  loadEverything();
 }
 
 $('#gate-form').addEventListener('submit', async (ev) => {
   ev.preventDefault();
-  const erro = $('#gate-err');
-  erro.hidden = true;
-  const senha = $('#senha').value;
+  const err = $('#gate-err');
+  err.hidden = true;
+  const password = $('#password').value;
   const setup = $('#gate-form').dataset.setup === '1';
 
-  if (setup && senha !== $('#senha2').value) {
-    erro.textContent = 'As senhas não conferem.';
-    erro.hidden = false;
+  if (setup && password !== $('#password2').value) {
+    err.textContent = 'The passwords do not match.';
+    err.hidden = false;
     return;
   }
   try {
     await api(setup ? '/api/setup' : '/api/login', {
-      method: 'POST', body: JSON.stringify({ password: senha }),
+      method: 'POST', body: JSON.stringify({ password }),
     });
-    mostrarApp();
+    showApp();
   } catch (e) {
-    erro.textContent = e.message;
-    erro.hidden = false;
+    err.textContent = e.message;
+    err.hidden = false;
   }
 });
 
 $('#btn-logout').addEventListener('click', async () => {
-  try { await api('/api/logout', { method: 'POST' }); } catch { /* ja deslogado */ }
+  try { await api('/api/logout', { method: 'POST' }); } catch { /* already signed out */ }
   location.reload();
 });
 
-// ---------------------------------------------------------------- navegacao
+// ------------------------------------------------------------------ navigation
 
 $$('.nav-btn').forEach((b) => {
   b.addEventListener('click', () => {
@@ -149,9 +149,9 @@ $$('.nav-btn').forEach((b) => {
   });
 });
 
-// ---------------------------------------------------------------- visao geral
+// -------------------------------------------------------------------- overview
 
-async function carregarStatus() {
+async function loadStatus() {
   const s = await api('/api/status');
 
   $('#kpi-confirmed').textContent = s.verdicts.confirmed;
@@ -163,167 +163,167 @@ async function carregarStatus() {
   pill.textContent = s.pending_count;
   pill.hidden = s.pending_count === 0;
 
-  $('#ciclo-id').textContent = s.last_scan.scan_id || 'nenhum ciclo ainda';
-  const resumo = $('#ciclo-resumo');
-  limpar(resumo);
+  $('#cycle-id').textContent = s.last_scan.scan_id || 'no cycle yet';
+  const summary = $('#cycle-summary');
+  clear(summary);
   [
-    ['Quando', fmtData(s.last_scan.finished_at)],
-    ['Modo', s.last_scan.mode || '—'],
+    ['When', fmtDate(s.last_scan.finished_at)],
+    ['Mode', s.last_scan.mode || '—'],
     ['Status', s.last_scan.status || '—'],
-    ['Considerados', s.last_scan.files_considered],
-    ['Escaneados', s.last_scan.files_scanned],
-    ['Raízes', (s.roots || []).join(', ')],
-  ].forEach(([rotulo, valor]) => {
+    ['Considered', s.last_scan.files_considered],
+    ['Scanned', s.last_scan.files_scanned],
+    ['Roots', (s.roots || []).join(', ')],
+  ].forEach(([label, value]) => {
     const d = el('div');
-    d.appendChild(el('small', { class: 'muted' }, rotulo));
-    d.appendChild(el('div', {}, String(valor ?? '—')));
-    resumo.appendChild(d);
+    d.appendChild(el('small', { class: 'muted' }, label));
+    d.appendChild(el('div', {}, String(value ?? '—')));
+    summary.appendChild(d);
   });
 
-  // Cobertura reduzida e um aviso de primeira classe, nao um detalhe.
-  const cob = $('#banner-cobertura');
+  // Reduced coverage is a first-class warning, not a detail.
+  const cov = $('#banner-coverage');
   if (s.engines.unavailable > 0) {
-    cob.textContent =
-      `${s.engines.unavailable} de ${s.engines.available + s.engines.unavailable} engines ` +
-      `estão indisponíveis. A cobertura deste site está reduzida — veja a aba Engines.`;
-    cob.hidden = false;
+    cov.textContent =
+      `${s.engines.unavailable} of ${s.engines.available + s.engines.unavailable} engines ` +
+      `are unavailable. This site's coverage is reduced — see the Engines tab.`;
+    cov.hidden = false;
   } else {
-    cob.hidden = true;
+    cov.hidden = true;
   }
 
-  const obs = $('#banner-observacao');
+  const obs = $('#banner-observation');
   if (!s.automatic_action.allowed) {
-    obs.textContent = `Nenhuma ação automática será executada: ${s.automatic_action.reason}.`;
+    obs.textContent = `No automatic action will be taken: ${s.automatic_action.reason}.`;
     obs.hidden = false;
   } else {
     obs.hidden = true;
   }
 
   $('#side-foot').textContent =
-    `${(s.roots || []).join(', ')}\nÚltimo ciclo: ${fmtData(s.last_scan.finished_at)}`;
+    `${(s.roots || []).join(', ')}\nLast cycle: ${fmtDate(s.last_scan.finished_at)}`;
   $('#dash-sub').textContent =
     s.automatic_action.observation_mode
-      ? 'Modo observação ligado — a ferramenta relata, mas não move nada.'
-      : 'Ação automática habilitada para vereditos confirmados.';
+      ? 'Observation mode is on — the tool reports, but moves nothing.'
+      : 'Automatic action is enabled for confirmed verdicts.';
 }
 
-async function carregarEnginesResumo() {
+async function loadEngineSummary() {
   const { engines } = await api('/api/engines');
   const box = $('#dash-engines');
-  limpar(box);
+  clear(box);
   engines.forEach((e) => {
-    const linha = el('div', { class: 'engine-line' });
-    linha.appendChild(el('span', {
+    const line = el('div', { class: 'engine-line' });
+    line.appendChild(el('span', {
       class: 'badge ' + (e.available ? 'b-good' : 'b-muted'),
-    }, e.available ? 'ok' : 'fora'));
-    linha.appendChild(el('span', { class: 'nome' }, e.slug));
-    linha.appendChild(el('span', { class: 'muted small' }, `peso ${e.weight}`));
-    linha.appendChild(el('span', { class: 'motivo' },
-      e.available ? (e.version || '') : (e.unavailable_reason || 'indisponível')));
-    box.appendChild(linha);
+    }, e.available ? 'ok' : 'down'));
+    line.appendChild(el('span', { class: 'name' }, e.slug));
+    line.appendChild(el('span', { class: 'muted small' }, `weight ${e.weight}`));
+    line.appendChild(el('span', { class: 'reason' },
+      e.available ? (e.version || '') : (e.unavailable_reason || 'unavailable')));
+    box.appendChild(line);
   });
 }
 
 $('#btn-scan').addEventListener('click', async (ev) => {
   ev.target.disabled = true;
-  ev.target.textContent = 'Escaneando…';
+  ev.target.textContent = 'Scanning…';
   try {
     const r = await api('/api/scan', { method: 'POST', body: JSON.stringify({ full: false }) });
-    toast(`Ciclo ${r.scan_id} concluído: ${r.files_scanned} arquivo(s) escaneado(s).`);
-    await carregarTudo();
+    toast(`Cycle ${r.scan_id} finished: ${r.files_scanned} file(s) scanned.`);
+    await loadEverything();
   } catch (e) {
     toast(e.message, true);
   } finally {
     ev.target.disabled = false;
-    ev.target.textContent = 'Escanear agora';
+    ev.target.textContent = 'Scan now';
   }
 });
 
-// ---------------------------------------------------------------- achados
+// -------------------------------------------------------------------- findings
 
-async function carregarAchados() {
-  const pendentes = $('#f-pendentes').checked ? '?pending=1' : '';
-  const { verdicts } = await api('/api/verdicts' + pendentes);
-  const lista = $('#lista-achados');
-  limpar(lista);
+async function loadFindings() {
+  const pending = $('#f-pending').checked ? '?pending=1' : '';
+  const { verdicts } = await api('/api/verdicts' + pending);
+  const list = $('#findings-list');
+  clear(list);
 
   if (!verdicts || verdicts.length === 0) {
-    lista.appendChild(el('div', { class: 'card empty' },
-      pendentes ? 'Nenhum achado aguardando decisão.' : 'Nenhum achado registrado.'));
+    list.appendChild(el('div', { class: 'card empty' },
+      pending ? 'No finding is waiting for a decision.' : 'No finding recorded.'));
     return;
   }
-  verdicts.forEach((v) => lista.appendChild(cardVeredito(v)));
+  verdicts.forEach((v) => list.appendChild(verdictCard(v)));
 }
 
-function cardVeredito(v) {
+function verdictCard(v) {
   const card = el('div', { class: 'card verdict ' + v.level });
 
-  const cab = el('div', { class: 'chart-head' });
-  cab.appendChild(el('span', { class: 'badge ' + CLASSE_NIVEL[v.level] },
-    ROTULO_NIVEL[v.level] || v.level));
-  cab.appendChild(el('span', { class: 'muted small' }, `score ${v.score.toFixed(2)}`));
-  cab.appendChild(el('span', { class: 'spacer' }));
-  cab.appendChild(el('span', { class: 'muted small' }, fmtData(v.created_at)));
-  card.appendChild(cab);
+  const head = el('div', { class: 'chart-head' });
+  head.appendChild(el('span', { class: 'badge ' + LEVEL_CLASS[v.level] },
+    LEVEL_LABEL[v.level] || v.level));
+  head.appendChild(el('span', { class: 'muted small' }, `score ${v.score.toFixed(2)}`));
+  head.appendChild(el('span', { class: 'spacer' }));
+  head.appendChild(el('span', { class: 'muted small' }, fmtDate(v.created_at)));
+  card.appendChild(head);
 
   card.appendChild(el('div', { class: 'path' }, v.file_path));
 
-  const barra = el('div', { class: 'score-bar' });
-  const preench = el('i');
-  preench.style.width = Math.round(v.score * 100) + '%';
-  barra.appendChild(preench);
-  card.appendChild(barra);
+  const bar = el('div', { class: 'score-bar' });
+  const fill = el('i');
+  fill.style.width = Math.round(v.score * 100) + '%';
+  bar.appendChild(fill);
+  card.appendChild(bar);
 
-  // Os votos SAO o veredito. Sem eles o usuario precisaria confiar cegamente.
+  // The votes ARE the verdict. Without them the user would have to trust blindly.
   const t = el('table', { class: 'votes' });
-  (v.votes || []).forEach((voto) => {
+  (v.votes || []).forEach((vote) => {
     const tr = el('tr');
-    tr.appendChild(el('td', { class: 'eng' }, voto.engine));
+    tr.appendChild(el('td', { class: 'eng' }, vote.engine));
     tr.appendChild(el('td', { class: 'calc' },
-      `${voto.weight.toFixed(2)} × ${voto.confidence} = ${voto.effective_weight.toFixed(2)}`));
-    tr.appendChild(el('td', {}, voto.rule));
-    tr.appendChild(el('td', { class: 'muted' }, voto.category));
+      `${vote.weight.toFixed(2)} × ${vote.confidence} = ${vote.effective_weight.toFixed(2)}`));
+    tr.appendChild(el('td', {}, vote.rule));
+    tr.appendChild(el('td', { class: 'muted' }, vote.category));
     t.appendChild(tr);
   });
   card.appendChild(t);
 
   if (v.abstentions && v.abstentions.length) {
     card.appendChild(el('p', { class: 'muted small' },
-      `Abstenções: ${v.abstentions.join(', ')} — a cobertura deste ciclo foi reduzida.`));
+      `Abstentions: ${v.abstentions.join(', ')} — this cycle's coverage was reduced.`));
   }
   if (v.clean_reason) {
     card.appendChild(el('p', { class: 'small c-good' },
-      `Veto aplicado: ${v.clean_reason}. Este arquivo nunca será quarentenado.`));
+      `Veto applied: ${v.clean_reason}. This file will never be quarantined.`));
   }
   if (v.action_taken && v.action_taken !== 'none') {
     const txt = v.action_error ? `${v.action_taken} — ${v.action_error}` : v.action_taken;
-    card.appendChild(el('p', { class: 'small muted' }, `Ação: ${txt}`));
+    card.appendChild(el('p', { class: 'small muted' }, `Action: ${txt}`));
   }
 
   if (!v.acknowledged_by_user && v.level !== 'clean' && !v.clean_reason) {
-    const acoes = el('div', { class: 'actions' });
-    acoes.appendChild(botaoDecisao(v, 'quarantine', 'Quarentenar', 'btn danger'));
-    acoes.appendChild(botaoDecisao(v, 'ignore', 'Ignorar uma vez', 'btn'));
-    acoes.appendChild(botaoDecisao(v, 'whitelist', 'Adicionar à whitelist', 'btn'));
-    card.appendChild(acoes);
+    const actions = el('div', { class: 'actions' });
+    actions.appendChild(decisionButton(v, 'quarantine', 'Quarantine', 'btn danger'));
+    actions.appendChild(decisionButton(v, 'ignore', 'Ignore once', 'btn'));
+    actions.appendChild(decisionButton(v, 'whitelist', 'Add to the whitelist', 'btn'));
+    card.appendChild(actions);
   }
   return card;
 }
 
-function botaoDecisao(v, acao, rotulo, classe) {
-  const b = el('button', { class: classe }, rotulo);
+function decisionButton(v, action, label, cls) {
+  const b = el('button', { class: cls }, label);
   b.addEventListener('click', async () => {
     b.disabled = true;
     try {
       const r = await api(`/api/verdicts/${encodeURIComponent(v.verdict_id)}/decide`, {
-        method: 'POST', body: JSON.stringify({ action: acao }),
+        method: 'POST', body: JSON.stringify({ action }),
       });
-      if (acao === 'quarantine') {
-        toast(`Quarentenado (ref ${r.quarantine_ref}). O arquivo continua restaurável.`);
+      if (action === 'quarantine') {
+        toast(`Quarantined (ref ${r.quarantine_ref}). The file is still restorable.`);
       } else {
-        toast('Decisão registrada.');
+        toast('Decision recorded.');
       }
-      await carregarTudo();
+      await loadEverything();
     } catch (e) {
       toast(e.message, true);
       b.disabled = false;
@@ -332,19 +332,19 @@ function botaoDecisao(v, acao, rotulo, classe) {
   return b;
 }
 
-$('#f-pendentes').addEventListener('change', carregarAchados);
+$('#f-pending').addEventListener('change', loadFindings);
 
-// ---------------------------------------------------------------- quarentena
+// ------------------------------------------------------------------ quarantine
 
-async function carregarQuarentena() {
-  const todos = $('#q-todos').checked ? '?all=1' : '';
-  const { items } = await api('/api/quarantine' + todos);
+async function loadQuarantine() {
+  const all = $('#q-all').checked ? '?all=1' : '';
+  const { items } = await api('/api/quarantine' + all);
   const tb = $('#tab-quar tbody');
-  limpar(tb);
+  clear(tb);
 
   if (!items || items.length === 0) {
     const tr = el('tr');
-    tr.appendChild(el('td', { colspan: '6', class: 'empty' }, 'O cofre está vazio.'));
+    tr.appendChild(el('td', { colspan: '6', class: 'empty' }, 'The vault is empty.'));
     tb.appendChild(tr);
     return;
   }
@@ -353,8 +353,8 @@ async function carregarQuarentena() {
     const tr = el('tr');
     tr.appendChild(el('td', { class: 'path' }, it.Ref));
     tr.appendChild(el('td', { class: 'path' }, it.OriginalPath));
-    tr.appendChild(el('td', {}, fmtData(it.QuarantinedAt)));
-    tr.appendChild(el('td', {}, fmtDia(it.RetentionUntil)));
+    tr.appendChild(el('td', {}, fmtDate(it.QuarantinedAt)));
+    tr.appendChild(el('td', {}, fmtDay(it.RetentionUntil)));
 
     const st = el('td');
     st.appendChild(el('span', {
@@ -362,55 +362,55 @@ async function carregarQuarentena() {
     }, it.Status));
     tr.appendChild(st);
 
-    const acoes = el('td');
+    const actions = el('td');
     if (it.Status === 'quarantined') {
-      const restaurar = el('button', { class: 'btn sm' }, 'Restaurar');
-      restaurar.addEventListener('click', async () => {
-        restaurar.disabled = true;
+      const restore = el('button', { class: 'btn sm' }, 'Restore');
+      restore.addEventListener('click', async () => {
+        restore.disabled = true;
         try {
           const r = await api(`/api/quarantine/${encodeURIComponent(it.Ref)}/restore`, { method: 'POST' });
-          toast(`Restaurado byte a byte em ${r.restored_to}`);
-          await carregarTudo();
+          toast(`Restored byte for byte at ${r.restored_to}`);
+          await loadEverything();
         } catch (e) {
           toast(e.message, true);
-          restaurar.disabled = false;
+          restore.disabled = false;
         }
       });
-      acoes.appendChild(restaurar);
+      actions.appendChild(restore);
 
-      const purgar = el('button', { class: 'btn sm danger' }, 'Purgar');
-      purgar.addEventListener('click', () => confirmarPurga(it));
-      acoes.appendChild(purgar);
+      const purge = el('button', { class: 'btn sm danger' }, 'Purge');
+      purge.addEventListener('click', () => confirmPurge(it));
+      actions.appendChild(purge);
     }
-    tr.appendChild(acoes);
+    tr.appendChild(actions);
     tb.appendChild(tr);
   });
 }
 
-$('#q-todos').addEventListener('change', carregarQuarentena);
+$('#q-all').addEventListener('change', loadQuarantine);
 
-function confirmarPurga(item) {
+function confirmPurge(item) {
   const modal = $('#modal');
-  $('#modal-title').textContent = 'Purgar definitivamente';
+  $('#modal-title').textContent = 'Purge permanently';
   $('#modal-body').textContent =
-    `Isto apaga a cópia de ${item.OriginalPath} do cofre. É a única operação ` +
-    `irreversível do SentinelHost: depois dela o arquivo não pode mais ser restaurado.`;
+    `This deletes the copy of ${item.OriginalPath} from the vault. It is ` +
+    `SentinelHost's only irreversible operation: after it the file can no longer be restored.`;
   $('#modal-input').value = '';
   modal.hidden = false;
   $('#modal-input').focus();
 
   $('#modal-ok').onclick = async () => {
-    if ($('#modal-input').value !== 'purgar') {
-      toast('Digite "purgar" para confirmar.', true);
+    if ($('#modal-input').value !== 'purge') {
+      toast('Type "purge" to confirm.', true);
       return;
     }
     try {
       await api(`/api/quarantine/${encodeURIComponent(item.Ref)}/purge`, {
-        method: 'POST', body: JSON.stringify({ confirm: 'purgar' }),
+        method: 'POST', body: JSON.stringify({ confirm: 'purge' }),
       });
-      toast('Item purgado definitivamente.');
+      toast('The item was purged permanently.');
       modal.hidden = true;
-      await carregarTudo();
+      await loadEverything();
     } catch (e) {
       toast(e.message, true);
     }
@@ -418,55 +418,55 @@ function confirmarPurga(item) {
   $('#modal-cancel').onclick = () => { modal.hidden = true; };
 }
 
-// ---------------------------------------------------------------- engines
+// --------------------------------------------------------------------- engines
 
-async function carregarEngines() {
+async function loadEngines() {
   const { engines } = await api('/api/engines');
-  const lista = $('#lista-engines');
-  limpar(lista);
+  const list = $('#engines-list');
+  clear(list);
 
   engines.forEach((e) => {
     const card = el('div', { class: 'card' });
 
-    const cab = el('div', { class: 'chart-head' });
-    cab.appendChild(el('h2', {}, e.name || e.slug));
-    cab.appendChild(el('span', {
+    const head = el('div', { class: 'chart-head' });
+    head.appendChild(el('h2', {}, e.name || e.slug));
+    head.appendChild(el('span', {
       class: 'badge ' + (e.available ? 'b-good' : 'b-muted'),
-    }, e.available ? 'disponível' : 'indisponível'));
-    cab.appendChild(el('span', { class: 'spacer' }));
-    cab.appendChild(el('span', { class: 'muted small' }, `peso ${e.weight}`));
-    card.appendChild(cab);
+    }, e.available ? 'available' : 'unavailable'));
+    head.appendChild(el('span', { class: 'spacer' }));
+    head.appendChild(el('span', { class: 'muted small' }, `weight ${e.weight}`));
+    card.appendChild(head);
 
     if (!e.available && e.unavailable_reason) {
-      // FR-001: o motivo e obrigatorio. "Indisponivel" sozinho transforma um
-      // problema resolvivel em misterio.
+      // FR-001: the reason is mandatory. "Unavailable" on its own turns a solvable
+      // problem into a mystery.
       card.appendChild(el('p', { class: 'small' }, e.unavailable_reason));
-      const inst = el('button', { class: 'btn sm' }, 'Instalar no meu espaço');
-      inst.addEventListener('click', async () => {
-        inst.disabled = true;
-        inst.textContent = 'Instalando…';
+      const install = el('button', { class: 'btn sm' }, 'Install in my space');
+      install.addEventListener('click', async () => {
+        install.disabled = true;
+        install.textContent = 'Installing…';
         try {
           await api(`/api/engines/${encodeURIComponent(e.slug)}/install`, { method: 'POST' });
-          toast(`${e.slug} instalado.`);
-          await carregarTudo();
+          toast(`${e.slug} installed.`);
+          await loadEverything();
         } catch (err) {
           toast(err.message, true);
-          inst.disabled = false;
-          inst.textContent = 'Instalar no meu espaço';
+          install.disabled = false;
+          install.textContent = 'Install in my space';
         }
       });
-      card.appendChild(inst);
+      card.appendChild(install);
     } else if (e.version) {
       card.appendChild(el('p', { class: 'small muted' }, e.version));
     }
 
     const meta = el('div', { class: 'row3' });
     [
-      ['Licença', e.license],
-      ['Custo', e.cost],
-      ['Assinaturas', fmtData(e.signatures_updated_at)],
-      ['Última execução', fmtData(e.last_run_at)],
-      ['Último status', e.last_run_status || '—'],
+      ['License', e.license],
+      ['Cost', e.cost],
+      ['Signatures', fmtDate(e.signatures_updated_at)],
+      ['Last run', fmtDate(e.last_run_at)],
+      ['Last status', e.last_run_status || '—'],
     ].forEach(([k, v]) => {
       const d = el('div');
       d.appendChild(el('small', { class: 'muted' }, k));
@@ -474,20 +474,20 @@ async function carregarEngines() {
       meta.appendChild(d);
     });
     card.appendChild(meta);
-    lista.appendChild(card);
+    list.appendChild(card);
   });
 }
 
-// ---------------------------------------------------------------- configuracao
+// --------------------------------------------------------------- configuration
 
 let CFG = null;
 
-async function carregarConfig() {
+async function loadConfig() {
   const r = await api('/api/config');
   CFG = r.config;
-  $('#cfg-path').textContent = 'Arquivo: ' + r.path;
+  $('#cfg-path').textContent = 'File: ' + r.path;
 
-  // Agendamento
+  // Schedule
   $('#s-incremental').value = CFG.schedule.incremental || '';
   $('#s-full').value = CFG.schedule.full_cron || '';
   $('#s-sig').value = CFG.schedule.signatures_cron || '';
@@ -500,13 +500,13 @@ async function carregarConfig() {
 
   const cron = await api('/api/cron-line');
   $('#cron-box').textContent =
-    `# ciclo incremental (${cron.incremental})\n` +
+    `# incremental cycle (${cron.incremental})\n` +
     `0 * * * * sentinelhost scan --config ${cron.config_path} --quiet\n\n` +
-    `# scan completo\n` +
+    `# full scan\n` +
     `${cron.full_cron} sentinelhost scan --config ${cron.config_path} --full --quiet\n\n` +
     `# ${cron.hint}`;
 
-  // Alertas
+  // Alerts
   const e = CFG.alerts.email;
   $('#e-enabled').checked = !!e.enabled;
   $('#e-host').value = e.host || '';
@@ -523,38 +523,38 @@ async function carregarConfig() {
 
   renderHooks(CFG.alerts.webhooks || []);
 
-  // Configuracoes
-  $('#c-observacao').checked = !!CFG.general.observation_mode;
-  $('#c-graca').value = CFG.general.grace_period_days;
+  // Settings
+  $('#c-observation').checked = !!CFG.general.observation_mode;
+  $('#c-grace').value = CFG.general.grace_period_days;
   $('#c-confirmed').value = CFG.verdict.confirmed_at;
   $('#c-likely').value = CFG.verdict.likely_at;
   $('#c-suspicious').value = CFG.verdict.suspicious_at;
-  $('#c-retencao').value = CFG.quarantine.retention_days;
+  $('#c-retention').value = CFG.quarantine.retention_days;
   $('#c-autopurge').checked = !!CFG.quarantine.auto_purge;
   $('#c-whitelist').value = (CFG.verdict.whitelist || []).join('\n');
   $('#c-exclude').value = (CFG.limits.exclude || []).join('\n');
 }
 
 function renderHooks(hooks) {
-  const box = $('#lista-hooks');
-  limpar(box);
-  hooks.forEach((h, i) => box.appendChild(cardHook(h, i)));
+  const box = $('#hooks-list');
+  clear(box);
+  hooks.forEach((h, i) => box.appendChild(hookCard(h, i)));
   if (hooks.length === 0) {
-    box.appendChild(el('p', { class: 'muted small' }, 'Nenhum webhook cadastrado.'));
+    box.appendChild(el('p', { class: 'muted small' }, 'No webhook registered.'));
   }
 }
 
-function cardHook(h, i) {
+function hookCard(h, i) {
   const card = el('div', { class: 'hook', dataset: { idx: String(i) } });
 
-  const linha = el('div', { class: 'row2' });
-  linha.appendChild(campo('ID', 'h-id', h.id));
-  linha.appendChild(campo('URL', 'h-url', h.url));
-  linha.appendChild(campo('Segredo (HMAC)', 'h-secret', h.secret, 'password'));
-  card.appendChild(linha);
+  const line = el('div', { class: 'row2' });
+  line.appendChild(field('ID', 'h-id', h.id));
+  line.appendChild(field('URL', 'h-url', h.url));
+  line.appendChild(field('Secret (HMAC)', 'h-secret', h.secret, 'password'));
+  card.appendChild(line);
 
-  const evs = el('fieldset', { class: 'niveis' });
-  evs.appendChild(el('legend', {}, 'Eventos assinados'));
+  const evs = el('fieldset', { class: 'levels' });
+  evs.appendChild(el('legend', {}, 'Signed events'));
   ['verdict.confirmed', 'verdict.likely', 'verdict.suspicious',
     'quarantine.action', 'scan.completed', 'engine.failed'].forEach((ev) => {
     const lbl = el('label', { class: 'inline' });
@@ -566,57 +566,57 @@ function cardHook(h, i) {
   });
   card.appendChild(evs);
 
-  const acoes = el('div', { class: 'actions' });
-  const lblAtivo = el('label', { class: 'inline' });
-  const cbAtivo = el('input', { type: 'checkbox', class: 'h-enabled' });
-  cbAtivo.checked = !!h.enabled;
-  lblAtivo.appendChild(cbAtivo);
-  lblAtivo.appendChild(document.createTextNode(' habilitado'));
-  acoes.appendChild(lblAtivo);
+  const actions = el('div', { class: 'actions' });
+  const enabledLabel = el('label', { class: 'inline' });
+  const enabledBox = el('input', { type: 'checkbox', class: 'h-enabled' });
+  enabledBox.checked = !!h.enabled;
+  enabledLabel.appendChild(enabledBox);
+  enabledLabel.appendChild(document.createTextNode(' enabled'));
+  actions.appendChild(enabledLabel);
 
-  const teste = el('button', { class: 'btn sm' }, 'Enviar teste');
-  teste.addEventListener('click', () => testarWebhook(h.id, card));
-  acoes.appendChild(teste);
+  const test = el('button', { class: 'btn sm' }, 'Send a test');
+  test.addEventListener('click', () => testWebhook(h.id, card));
+  actions.appendChild(test);
 
-  const remover = el('button', { class: 'btn sm danger' }, 'Remover');
-  remover.addEventListener('click', () => card.remove());
-  acoes.appendChild(remover);
-  card.appendChild(acoes);
+  const remove = el('button', { class: 'btn sm danger' }, 'Remove');
+  remove.addEventListener('click', () => card.remove());
+  actions.appendChild(remove);
+  card.appendChild(actions);
 
   card.appendChild(el('div', { class: 'result', hidden: 'hidden' }));
   return card;
 }
 
-function campo(rotulo, classe, valor, tipo = 'text') {
-  const l = el('label', {}, rotulo);
-  const i = el('input', { class: classe, type: tipo });
-  i.value = valor || '';
+function field(label, cls, value, type = 'text') {
+  const l = el('label', {}, label);
+  const i = el('input', { class: cls, type });
+  i.value = value || '';
   l.appendChild(i);
   return l;
 }
 
 $('#btn-add-hook').addEventListener('click', () => {
-  $('#lista-hooks').appendChild(cardHook(
+  $('#hooks-list').appendChild(hookCard(
     { id: '', url: '', secret: '', events: ['verdict.confirmed'], enabled: true },
     $$('.hook').length));
 });
 
-// ---------------------------------------------------------------- salvamentos
+// ----------------------------------------------------------------------- saves
 
-async function salvar(patch, msgOK) {
+async function save(patch, okMsg) {
   try {
     const r = await api('/api/config', { method: 'PUT', body: JSON.stringify(patch) });
-    toast(msgOK);
+    toast(okMsg);
     if (r.warnings && r.warnings.length) {
-      r.warnings.forEach((a) => toast('Aviso — ' + a, true));
+      r.warnings.forEach((a) => toast('Warning — ' + a, true));
     }
-    await carregarConfig();
+    await loadConfig();
   } catch (e) {
     toast(e.message, true);
   }
 }
 
-$('#btn-salvar-agenda').addEventListener('click', () => salvar({
+$('#btn-save-schedule').addEventListener('click', () => save({
   incremental: $('#s-incremental').value,
   full_cron: $('#s-full').value,
   signatures_cron: $('#s-sig').value,
@@ -626,9 +626,9 @@ $('#btn-salvar-agenda').addEventListener('click', () => salvar({
   engine_timeout: $('#s-timeout').value,
   batch_size: Number($('#s-batch').value),
   batch_pause: $('#s-pause').value,
-}, 'Agendamento salvo. Vale a partir do próximo ciclo.'));
+}, 'The schedule was saved. It applies from the next cycle on.'));
 
-$('#btn-salvar-email').addEventListener('click', () => salvar({
+$('#btn-save-email').addEventListener('click', () => save({
   email: {
     enabled: $('#e-enabled').checked,
     host: $('#e-host').value,
@@ -643,9 +643,9 @@ $('#btn-salvar-email').addEventListener('click', () => salvar({
     digest_at: $('#e-digest-at').value,
     panel_url: $('#e-panel').value,
   },
-}, 'Configuração de e-mail salva.'));
+}, 'The e-mail configuration was saved.'));
 
-$('#btn-salvar-hooks').addEventListener('click', () => {
+$('#btn-save-hooks').addEventListener('click', () => {
   const hooks = $$('.hook').map((card) => ({
     id: $('.h-id', card).value.trim(),
     url: $('.h-url', card).value.trim(),
@@ -653,35 +653,35 @@ $('#btn-salvar-hooks').addEventListener('click', () => {
     enabled: $('.h-enabled', card).checked,
     events: $$('.h-ev', card).filter((cb) => cb.checked).map((cb) => cb.value),
   }));
-  salvar({ webhooks: hooks }, 'Webhooks salvos.');
+  save({ webhooks: hooks }, 'The webhooks were saved.');
 });
 
-$('#btn-salvar-config').addEventListener('click', () => salvar({
-  observation_mode: $('#c-observacao').checked,
-  grace_period_days: Number($('#c-graca').value),
+$('#btn-save-config').addEventListener('click', () => save({
+  observation_mode: $('#c-observation').checked,
+  grace_period_days: Number($('#c-grace').value),
   confirmed_at: Number($('#c-confirmed').value),
   likely_at: Number($('#c-likely').value),
   suspicious_at: Number($('#c-suspicious').value),
-  retention_days: Number($('#c-retencao').value),
+  retention_days: Number($('#c-retention').value),
   auto_purge: $('#c-autopurge').checked,
   whitelist: $('#c-whitelist').value.split('\n').map((s) => s.trim()).filter(Boolean),
   exclude: $('#c-exclude').value.split('\n').map((s) => s.trim()).filter(Boolean),
-}, 'Configurações salvas.'));
+}, 'The settings were saved.'));
 
-// ---------------------------------------------------------------- testes
+// ----------------------------------------------------------------------- tests
 
 $('#btn-test-email').addEventListener('click', async (ev) => {
   const box = $('#res-email');
   ev.target.disabled = true;
   box.hidden = false;
   box.className = 'result';
-  box.textContent = 'Enviando…';
+  box.textContent = 'Sending…';
   try {
     const r = await api('/api/alert/test', {
       method: 'POST', body: JSON.stringify({ channel: 'email' }),
     });
-    // O erro REAL vai para a tela: descobrir que a hospedagem bloqueia a
-    // porta 587 e o proposito inteiro deste botao.
+    // The REAL error goes to the screen: finding out that the hosting blocks port
+    // 587 is this button's entire purpose.
     box.className = 'result ' + (r.ok ? 'ok' : 'bad');
     box.textContent = r.message + (r.error ? '\n' + r.error : '');
   } catch (e) {
@@ -692,18 +692,18 @@ $('#btn-test-email').addEventListener('click', async (ev) => {
   }
 });
 
-async function testarWebhook(id, card) {
+async function testWebhook(id, card) {
   const box = $('.result', card);
   box.hidden = false;
   box.className = 'result';
-  box.textContent = 'Enviando…';
+  box.textContent = 'Sending…';
   try {
     const r = await api('/api/alert/test', {
       method: 'POST', body: JSON.stringify({ channel: 'webhook', id }),
     });
     box.className = 'result ' + (r.ok ? 'ok' : 'bad');
     let txt = r.message;
-    if (r.response_body) txt += '\n\nresposta: ' + r.response_body;
+    if (r.response_body) txt += '\n\nresponse: ' + r.response_body;
     box.textContent = txt;
   } catch (e) {
     box.className = 'result bad';
@@ -711,25 +711,25 @@ async function testarWebhook(id, card) {
   }
 }
 
-// ---------------------------------------------------------------- carga geral
+// ------------------------------------------------------------------ full reload
 
-async function carregarTudo() {
-  const tarefas = [
-    ['visão geral', carregarStatus],
-    ['engines', carregarEnginesResumo],
-    ['achados', carregarAchados],
-    ['quarentena', carregarQuarentena],
-    ['engines', carregarEngines],
-    ['configuração', carregarConfig],
+async function loadEverything() {
+  const tasks = [
+    ['the overview', loadStatus],
+    ['the engines', loadEngineSummary],
+    ['the findings', loadFindings],
+    ['the quarantine', loadQuarantine],
+    ['the engines', loadEngines],
+    ['the configuration', loadConfig],
   ];
-  // Uma area que falha nao pode apagar o painel inteiro: o usuario ainda
-  // precisa ver as outras.
-  for (const [nome, fn] of tarefas) {
+  // One area that fails must not wipe out the whole panel: the user still needs to
+  // see the others.
+  for (const [name, fn] of tasks) {
     try {
       await fn();
     } catch (e) {
-      if (e.message !== 'sessao expirada') {
-        toast(`Não foi possível carregar ${nome}: ${e.message}`, true);
+      if (e.message !== 'session expired') {
+        toast(`Could not load ${name}: ${e.message}`, true);
       }
     }
   }

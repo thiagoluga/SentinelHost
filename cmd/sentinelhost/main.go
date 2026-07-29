@@ -1,7 +1,6 @@
-// Comando sentinelhost: orquestrador de scanners de malware para hospedagem
-// compartilhada.
+// Command sentinelhost: a malware-scanner orchestrator for shared hosting.
 //
-// Um binario unico, estatico, sem dependencias obrigatorias (Principio VII).
+// A single, static binary with no mandatory dependencies (Principle VII).
 package main
 
 import (
@@ -19,17 +18,17 @@ var (
 	buildDate = "unknown"
 )
 
-// Codigos de saida. Estaveis, porque cron e scripts do usuario dependem deles.
+// Exit codes. Stable, because the user's cron and scripts depend on them.
 const (
 	exitOK = 0
-	// exitFindings: o ciclo rodou e encontrou algo que merece atencao. NAO e
-	// erro: e o comportamento normal de um scanner que achou coisa. Separar
-	// dos codigos de erro permite ao cron do usuario distinguir "achou
-	// malware" de "a ferramenta quebrou".
+	// exitFindings: the cycle ran and found something that deserves attention. It
+	// is NOT an error: it is the normal behaviour of a scanner that found
+	// something. Keeping it apart from the error codes lets the user's cron tell
+	// "found malware" from "the tool broke".
 	exitFindings = 1
 	exitError    = 2
-	// exitLocked: outra instancia esta rodando. Codigo proprio para que o
-	// cron nao trate concorrencia normal como falha.
+	// exitLocked: another instance is running. Its own code, so the cron does not
+	// treat normal concurrency as a failure.
 	exitLocked = 3
 	exitUsage  = 64
 )
@@ -44,9 +43,9 @@ func run() int {
 		return exitUsage
 	}
 
-	// Ctrl-C e SIGTERM (a hospedagem matando o processo) cancelam o contexto
-	// em vez de matar na hora: o ciclo precisa fechar o relatorio, liberar o
-	// lock e nao deixar arquivo no meio do caminho entre disco e cofre.
+	// Ctrl-C and SIGTERM (the hosting killing the process) cancel the context
+	// instead of killing right away: the cycle needs to close the report, release
+	// the lock and not leave a file halfway between the disk and the vault.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -80,7 +79,7 @@ func run() int {
 		usage()
 		return exitOK
 	default:
-		fmt.Fprintf(os.Stderr, "comando desconhecido: %s\n\n", cmd)
+		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", cmd)
 		usage()
 		return exitUsage
 	}
@@ -90,43 +89,44 @@ func run() int {
 			fmt.Fprintln(os.Stderr, err)
 			return exitLocked
 		}
-		fmt.Fprintf(os.Stderr, "erro: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return exitError
 	}
 	return exitOK
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `SentinelHost — orquestrador de scanners de malware para hospedagem compartilhada.
+	fmt.Fprint(os.Stderr, `SentinelHost — a malware-scanner orchestrator for shared hosting.
 
-Ele nao tem motor de deteccao proprio: executa os engines disponiveis no seu
-ambiente, normaliza as saidas e consolida tudo num veredito por consenso.
+It has no detection engine of its own: it runs the engines available in your
+environment, normalizes their output and consolidates everything into one
+consensus verdict.
 
-USO
-  sentinelhost <comando> [opcoes]
+USAGE
+  sentinelhost <command> [options]
 
-COMANDOS
-  scan          Roda um ciclo agora e mostra o relatorio
-  daemon        Fica rodando ciclos no intervalo configurado
-  serve         Sobe o painel web (127.0.0.1 por padrao)
-  quarantine    Lista, restaura e purga itens do cofre
-  engines       Mostra os engines, disponibilidade e motivo
-  config        Mostra, valida e inicializa a configuracao
-  alert         Envia entrega de teste por e-mail ou webhook
-  cron-line     Imprime a linha de cron pronta para colar no cPanel
-  doctor        Diagnostica o ambiente e o que falta para cada engine
-  version       Mostra a versao
+COMMANDS
+  scan          Run a cycle now and show the report
+  daemon        Keep running cycles at the configured interval
+  serve         Start the web panel (127.0.0.1 by default)
+  quarantine    List, restore and purge items in the vault
+  engines       Show the engines, their availability and the reason
+  config        Show, validate and initialize the configuration
+  alert         Send a test delivery by e-mail or webhook
+  cron-line     Print the cron line ready to paste into cPanel
+  doctor        Diagnose the environment and what each engine is missing
+  version       Show the version
 
-OPCOES GLOBAIS
-  --config <arquivo>   Caminho do TOML (padrao: ~/.sentinelhost/config.toml)
+GLOBAL OPTIONS
+  --config <file>   Path to the TOML (default: ~/.sentinelhost/config.toml)
 
-CODIGOS DE SAIDA
-  0   nada a relatar
-  1   o ciclo encontrou achados (nao e erro)
-  2   erro de execucao
-  3   outra instancia ja esta rodando
-  64  uso incorreto
+EXIT CODES
+  0   nothing to report
+  1   the cycle found findings (not an error)
+  2   execution error
+  3   another instance is already running
+  64  incorrect usage
 
-Comece por:  sentinelhost config init --root ~/public_html
+Start with:  sentinelhost config init --root ~/public_html
 `)
 }

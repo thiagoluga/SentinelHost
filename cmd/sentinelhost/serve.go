@@ -13,18 +13,18 @@ import (
 
 func cmdServe(ctx context.Context, args []string) error {
 	fs, cfgPath := flagSet("serve")
-	listen := fs.String("listen", "", "endereco de escuta (sobrepoe o TOML)")
+	listen := fs.String("listen", "", "listen address (overrides the TOML)")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `sentinelhost serve — sobe o painel web embutido.
+		fmt.Fprint(os.Stderr, `sentinelhost serve — starts the embedded web panel.
 
-O painel escuta em 127.0.0.1 por padrao. Para acessar de outra maquina, use um
-tunel SSH em vez de expor a porta:
+The panel listens on 127.0.0.1 by default. To reach it from another machine, use
+an SSH tunnel instead of exposing the port:
 
-  ssh -L 8787:127.0.0.1:8787 usuario@servidor
+  ssh -L 8787:127.0.0.1:8787 user@server
 
-No primeiro acesso o painel pede que voce defina a senha.
+On first access the panel asks you to set the password.
 
-OPCOES
+OPTIONS
 `)
 		fs.PrintDefaults()
 	}
@@ -42,7 +42,7 @@ OPCOES
 		a.cfg.Web.Listen = *listen
 	}
 	if !a.cfg.Web.Enabled {
-		return fmt.Errorf("o painel esta desabilitado na configuracao (web.enabled = false)")
+		return fmt.Errorf("the panel is disabled in the configuration (web.enabled = false)")
 	}
 
 	dispatcher := alert.NewDispatcher(ctx, a.cfg, a.store)
@@ -50,16 +50,16 @@ OPCOES
 	srv := web.New(a.cfg, a.store, a.registry, a.vault, dispatcher, runner)
 
 	url := "http://" + a.cfg.Web.Listen
-	fmt.Printf("Painel do SentinelHost em %s\n", url)
+	fmt.Printf("SentinelHost panel at %s\n", url)
 	if !strings.HasPrefix(a.cfg.Web.Listen, "127.0.0.1") && !strings.HasPrefix(a.cfg.Web.Listen, "localhost") {
-		// Expor o painel e escolha legitima do usuario, mas ela precisa ser
-		// consciente: a senha unica e a unica barreira que sobra.
+		// Exposing the panel is a legitimate choice of the user's, but it has to be
+		// a conscious one: the single password is the only barrier left.
 		fmt.Fprintf(os.Stderr,
-			"\nATENCAO: o painel esta aceitando conexoes de fora de localhost.\n"+
-				"Garanta que a porta esta protegida, ou prefira um tunel SSH:\n"+
-				"  ssh -L 8787:127.0.0.1:8787 usuario@servidor\n\n")
+			"\nWARNING: the panel is accepting connections from outside localhost.\n"+
+				"Make sure the port is protected, or prefer an SSH tunnel:\n"+
+				"  ssh -L 8787:127.0.0.1:8787 user@server\n\n")
 	}
-	fmt.Println("Ctrl-C para encerrar.")
+	fmt.Println("Ctrl-C to stop.")
 
 	return srv.ListenAndServe(ctx)
 }

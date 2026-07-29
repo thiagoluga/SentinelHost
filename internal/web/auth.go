@@ -18,12 +18,12 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/store"
 )
 
-// Parametros do argon2id.
+// argon2id parameters.
 //
-// 64 MiB e 1 iteracao com 4 threads e o perfil "interativo" recomendado pela
-// RFC 9106. Numa hospedagem compartilhada, memoria e o recurso mais escasso —
-// mas essa e exatamente a proteção que torna o hash caro de quebrar, e um
-// login por sessao de 12 horas nao pesa no orcamento da conta.
+// 64 MiB and 1 iteration with 4 threads is the "interactive" profile RFC 9106
+// recommends. On shared hosting, memory is the scarcest resource — but that is
+// exactly the protection that makes the hash expensive to crack, and one login per
+// 12-hour session does not weigh on the account's budget.
 const (
 	argonTime    = 1
 	argonMemory  = 64 * 1024
@@ -34,59 +34,59 @@ const (
 
 const sessionCookie = "sentinelhost_session"
 
-// ErrNoPassword indica que a senha ainda nao foi definida.
-var ErrNoPassword = errors.New("senha do painel ainda nao definida")
+// ErrNoPassword means the password has not been set yet.
+var ErrNoPassword = errors.New("the panel password has not been set yet")
 
-// hashPassword gera um hash argon2id no formato PHC.
-func hashPassword(senha string) (string, error) {
+// hashPassword generates an argon2id hash in the PHC format.
+func hashPassword(password string) (string, error) {
 	salt := make([]byte, saltLen)
 	if _, err := rand.Read(salt); err != nil {
-		return "", fmt.Errorf("gerando salt: %w", err)
+		return "", fmt.Errorf("generating the salt: %w", err)
 	}
-	key := argon2.IDKey([]byte(senha), salt, argonTime, argonMemory, argonThreads, argonKeyLen)
+	key := argon2.IDKey([]byte(password), salt, argonTime, argonMemory, argonThreads, argonKeyLen)
 	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s",
 		argonMemory, argonTime, argonThreads,
 		base64.RawStdEncoding.EncodeToString(salt),
 		base64.RawStdEncoding.EncodeToString(key)), nil
 }
 
-// verifyPassword confere a senha contra o hash.
+// verifyPassword checks the password against the hash.
 //
-// A comparacao e em tempo constante. Comparar hash com `==` vazaria, pelo
-// tempo de resposta, quantos bytes iniciais o atacante acertou.
-func verifyPassword(senha, phc string) bool {
-	partes := strings.Split(phc, "$")
-	if len(partes) != 6 || partes[1] != "argon2id" {
+// The comparison runs in constant time. Comparing a hash with `==` would leak,
+// through the response time, how many leading bytes the attacker got right.
+func verifyPassword(password, phc string) bool {
+	parts := strings.Split(phc, "$")
+	if len(parts) != 6 || parts[1] != "argon2id" {
 		return false
 	}
 	var m, t uint32
 	var p uint8
-	if _, err := fmt.Sscanf(partes[3], "m=%d,t=%d,p=%d", &m, &t, &p); err != nil {
+	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &m, &t, &p); err != nil {
 		return false
 	}
-	salt, err := base64.RawStdEncoding.DecodeString(partes[4])
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
 	if err != nil {
 		return false
 	}
-	esperado, err := base64.RawStdEncoding.DecodeString(partes[5])
+	expected, err := base64.RawStdEncoding.DecodeString(parts[5])
 	if err != nil {
 		return false
 	}
-	// Exige exatamente o tamanho que hashPassword produz, e deriva com a
-	// constante — sem nenhuma conversao de int para uint32.
+	// Require exactly the length hashPassword produces, and derive with the
+	// constant — with no int-to-uint32 conversion at all.
 	//
-	// Nao e rigor formal: derivar com um tamanho vindo do proprio hash
-	// armazenado deixaria um banco adulterado escolher o parametro, e uma
-	// conversao truncada faria o argon2 gerar uma chave de tamanho diferente
-	// do esperado, comparando coisas incomparaveis.
-	if len(esperado) != argonKeyLen {
+	// This is not formalism: deriving with a length taken from the stored hash
+	// itself would let a tampered database pick the parameter, and a truncated
+	// conversion would make argon2 generate a key of a different length than
+	// expected, comparing incomparable things.
+	if len(expected) != argonKeyLen {
 		return false
 	}
-	calculado := argon2.IDKey([]byte(senha), salt, t, m, p, argonKeyLen)
-	return subtle.ConstantTimeCompare(calculado, esperado) == 1
+	computed := argon2.IDKey([]byte(password), salt, t, m, p, argonKeyLen)
+	return subtle.ConstantTimeCompare(computed, expected) == 1
 }
 
-// newToken gera um token de sessao.
+// newToken generates a session token.
 func newToken() (string, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
@@ -95,57 +95,57 @@ func newToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
-// rateLimiter limita tentativas de login por IP.
+// rateLimiter caps login attempts per IP.
 //
-// Sem ele, um painel exposto (mesmo por engano) vira alvo de forca bruta, e a
-// senha unica do painel e a unica coisa entre o atacante e um botao que move
-// arquivos do site.
+// Without it, an exposed panel (even by accident) becomes a brute-force target,
+// and the panel's single password is the only thing between the attacker and a
+// button that moves the site's files.
 type rateLimiter struct {
 	mu       sync.Mutex
 	perMin   int
-	janela   time.Duration
-	tentando map[string][]time.Time
+	window   time.Duration
+	attempts map[string][]time.Time
 }
 
 func newRateLimiter(perMin int) *rateLimiter {
 	if perMin <= 0 {
 		perMin = 10
 	}
-	return &rateLimiter{perMin: perMin, janela: time.Minute, tentando: map[string][]time.Time{}}
+	return &rateLimiter{perMin: perMin, window: time.Minute, attempts: map[string][]time.Time{}}
 }
 
-// allow registra uma tentativa e diz se ela e permitida.
-func (r *rateLimiter) allow(ip string, agora time.Time) bool {
+// allow records an attempt and says whether it is permitted.
+func (r *rateLimiter) allow(ip string, now time.Time) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	corte := agora.Add(-r.janela)
-	recentes := r.tentando[ip][:0]
-	for _, t := range r.tentando[ip] {
-		if t.After(corte) {
-			recentes = append(recentes, t)
+	cutoff := now.Add(-r.window)
+	recent := r.attempts[ip][:0]
+	for _, t := range r.attempts[ip] {
+		if t.After(cutoff) {
+			recent = append(recent, t)
 		}
 	}
-	if len(recentes) >= r.perMin {
-		r.tentando[ip] = recentes
+	if len(recent) >= r.perMin {
+		r.attempts[ip] = recent
 		return false
 	}
-	r.tentando[ip] = append(recentes, agora)
+	r.attempts[ip] = append(recent, now)
 	return true
 }
 
-// reset limpa o historico de um IP apos login bem-sucedido.
+// reset clears an IP's history after a successful login.
 func (r *rateLimiter) reset(ip string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	delete(r.tentando, ip)
+	delete(r.attempts, ip)
 }
 
-// clientIP extrai o IP da requisicao.
+// clientIP extracts the request's IP.
 //
-// NAO confia em X-Forwarded-For: o painel escuta em localhost por padrao, e
-// aceitar um cabecalho que o cliente controla permitiria a qualquer atacante
-// zerar o proprio limite de tentativas mandando um IP diferente por request.
+// It does NOT trust X-Forwarded-For: the panel listens on localhost by default,
+// and accepting a header the client controls would let any attacker reset their own
+// attempt limit by sending a different IP on every request.
 func clientIP(req *http.Request) string {
 	host, _, err := net.SplitHostPort(req.RemoteAddr)
 	if err != nil {
@@ -154,7 +154,7 @@ func clientIP(req *http.Request) string {
 	return host
 }
 
-// authenticated responde se a requisicao tem sessao valida.
+// authenticated answers whether the request has a valid session.
 func (s *Server) authenticated(req *http.Request) bool {
 	c, err := req.Cookie(sessionCookie)
 	if err != nil || c.Value == "" {
@@ -164,27 +164,27 @@ func (s *Server) authenticated(req *http.Request) bool {
 	return err == nil && ok
 }
 
-// passwordSet responde se ja existe senha definida.
+// passwordSet answers whether a password has already been set.
 func (s *Server) passwordSet(ctx context.Context) bool {
 	h, err := s.store.GetSetting(ctx, store.KeyPanelPasswordHash)
 	return err == nil && h != ""
 }
 
-// setCookie grava o cookie de sessao.
-func (s *Server) setCookie(w http.ResponseWriter, token string, expira time.Time, seguro bool) {
+// setCookie writes the session cookie.
+func (s *Server) setCookie(w http.ResponseWriter, token string, expires time.Time, secure bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    token,
 		Path:     "/",
-		Expires:  expira,
+		Expires:  expires,
 		HttpOnly: true,
-		// SameSite=Strict: o painel tem acoes que movem arquivos. Um link
-		// malicioso numa outra aba nao pode carregar credencial junto.
+		// SameSite=Strict: the panel has actions that move files. A malicious link
+		// in another tab must not be able to carry the credential along.
 		SameSite: http.SameSiteStrictMode,
-		// Secure so quando ha TLS de verdade. Marcar Secure num painel
-		// acessado por http://127.0.0.1 faria o navegador descartar o cookie
-		// e o login nunca funcionaria.
-		Secure: seguro,
+		// Secure only when there is real TLS. Marking Secure on a panel accessed
+		// over http://127.0.0.1 would make the browser drop the cookie and the
+		// login would never work.
+		Secure: secure,
 	})
 }
 

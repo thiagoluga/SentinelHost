@@ -15,11 +15,11 @@ import (
 	sexec "github.com/thiagoluga/SentinelHost/internal/exec"
 )
 
-// engines: lista os engines com disponibilidade e motivo (FR-001).
+// engines: lists the engines with their availability and reason (FR-001).
 func cmdEngines(ctx context.Context, args []string) error {
 	fs, cfgPath := flagSet("engines")
-	install := fs.String("install", "", "instala um engine no espaco do usuario (slug)")
-	update := fs.String("update", "", "atualiza as assinaturas de um engine (slug, ou 'all')")
+	install := fs.String("install", "", "install an engine in the user's space (slug)")
+	update := fs.String("update", "", "update an engine's signatures (slug, or 'all')")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -33,22 +33,22 @@ func cmdEngines(ctx context.Context, args []string) error {
 	if *install != "" {
 		ad, ok := a.registry.Get(*install)
 		if !ok {
-			return fmt.Errorf("engine %q nao existe neste binario", *install)
+			return fmt.Errorf("engine %q does not exist in this binary", *install)
 		}
-		fmt.Printf("Instalando %s no espaco do usuario...\n", *install)
+		fmt.Printf("Installing %s in the user's space...\n", *install)
 		if err := adapter.SafeInstall(ctx, ad, envFor(a.cfg, *install)); err != nil {
 			return err
 		}
-		fmt.Println("Pronto.")
+		fmt.Println("Done.")
 		return nil
 	}
 
 	if *update != "" {
-		alvos := []string{*update}
+		targets := []string{*update}
 		if *update == "all" {
-			alvos = a.registry.Slugs()
+			targets = a.registry.Slugs()
 		}
-		for _, slug := range alvos {
+		for _, slug := range targets {
 			ad, ok := a.registry.Get(slug)
 			if !ok {
 				continue
@@ -58,47 +58,47 @@ func cmdEngines(ctx context.Context, args []string) error {
 				fmt.Printf("  ✗ %-20s %v\n", slug, err)
 				continue
 			}
-			quando := "sem assinaturas separadas"
+			when := "no separate signatures"
 			if !t.IsZero() {
-				quando = t.Local().Format("2006-01-02 15:04")
+				when = t.Local().Format("2006-01-02 15:04")
 			}
-			fmt.Printf("  ✓ %-20s %s\n", slug, quando)
+			fmt.Printf("  ✓ %-20s %s\n", slug, when)
 		}
 		return nil
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ENGINE\tHABILITADO\tPESO\tDISPONIVEL\tMOTIVO / VERSAO")
+	fmt.Fprintln(w, "ENGINE\tENABLED\tWEIGHT\tAVAILABLE\tREASON / VERSION")
 	for _, slug := range a.registry.Slugs() {
 		ad, _ := a.registry.Get(slug)
 		probe := adapter.SafeProbe(ctx, ad, envFor(a.cfg, slug))
 
-		habilitado := "nao"
+		enabled := "no"
 		if a.cfg.EngineEnabled(slug) {
-			habilitado = "sim"
+			enabled = "yes"
 		}
-		disp, detalhe := "nao", probe.Reason
+		available, detail := "no", probe.Reason
 		if probe.Available {
-			disp, detalhe = "sim", probe.Version
+			available, detail = "yes", probe.Version
 		} else if probe.Installable {
-			detalhe += "  → sentinelhost engines --install " + slug
+			detail += "  → sentinelhost engines --install " + slug
 		}
-		fmt.Fprintf(w, "%s\t%s\t%.2f\t%s\t%s\n", slug, habilitado, a.cfg.WeightFor(slug), disp, detalhe)
+		fmt.Fprintf(w, "%s\t%s\t%.2f\t%s\t%s\n", slug, enabled, a.cfg.WeightFor(slug), available, detail)
 	}
 	return w.Flush()
 }
 
-// envFor monta o ambiente do adaptador para uso fora do ciclo (probe manual,
-// instalacao, atualizacao de assinaturas).
+// envFor assembles the adapter's environment for use outside the cycle (a manual
+// probe, an install, a signature update).
 //
-// O executor vai junto mesmo aqui: um probe que chamasse os/exec direto
-// escaparia dos limites de recursos, e `sentinelhost engines` roda no mesmo
-// servidor com a mesma cota que o ciclo.
+// The executor comes along even here: a probe that called os/exec directly would
+// escape the resource limits, and `sentinelhost engines` runs on the same server
+// under the same quota as the cycle.
 func envFor(cfg *config.Config, slug string) adapter.Environment {
 	e := cfg.Engines[slug]
 	binPath := e.Path
 	if slug == "wp-checksums" && binPath == "" && len(cfg.General.Roots) > 0 {
-		// Adaptador nativo: o que ele precisa saber e onde procurar.
+		// A native adapter: what it needs to know is where to look.
 		binPath = cfg.General.Roots[0]
 	}
 	return adapter.Environment{
@@ -113,12 +113,12 @@ func envFor(cfg *config.Config, slug string) adapter.Environment {
 	}
 }
 
-// alert: entrega de teste (FR-012).
+// alert: test delivery (FR-012).
 func cmdAlert(ctx context.Context, args []string) error {
 	fs, cfgPath := flagSet("alert")
-	testarEmail := fs.Bool("test-email", false, "envia um e-mail de teste")
-	testarWebhook := fs.String("test-webhook", "", "envia uma entrega de teste ao webhook (id)")
-	digest := fs.Bool("digest", false, "envia o resumo do periodo agora")
+	testEmail := fs.Bool("test-email", false, "send a test e-mail")
+	testWebhook := fs.String("test-webhook", "", "send a test delivery to the webhook (id)")
+	digest := fs.Bool("digest", false, "send the period's summary now")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -132,33 +132,33 @@ func cmdAlert(ctx context.Context, args []string) error {
 	d := alert.NewDispatcher(ctx, a.cfg, a.store)
 
 	switch {
-	case *testarEmail:
+	case *testEmail:
 		res := d.TestEmail(ctx)
 		fmt.Println(res)
 		if !res.OK {
-			return fmt.Errorf("a entrega de teste falhou")
+			return fmt.Errorf("the test delivery failed")
 		}
-	case *testarWebhook != "":
-		res := d.TestWebhook(ctx, *testarWebhook)
+	case *testWebhook != "":
+		res := d.TestWebhook(ctx, *testWebhook)
 		fmt.Println(res)
 		if res.Body != "" {
-			fmt.Printf("resposta: %s\n", res.Body)
+			fmt.Printf("response: %s\n", res.Body)
 		}
 		if !res.OK {
-			return fmt.Errorf("a entrega de teste falhou")
+			return fmt.Errorf("the test delivery failed")
 		}
 	case *digest:
 		if err := d.SendDigestNow(ctx, time.Now().AddDate(0, 0, -1)); err != nil {
 			return err
 		}
-		fmt.Println("Resumo enviado (se havia o que resumir).")
+		fmt.Println("Summary sent (if there was anything to summarize).")
 	default:
-		return fmt.Errorf("uso: sentinelhost alert --test-email | --test-webhook <id> | --digest")
+		return fmt.Errorf("usage: sentinelhost alert --test-email | --test-webhook <id> | --digest")
 	}
 	return nil
 }
 
-// cron-line: gera a linha pronta para colar no cPanel (FR-009).
+// cron-line: produces the line ready to paste into cPanel (FR-009).
 func cmdCronLine(args []string) error {
 	fs, cfgPath := flagSet("cron-line")
 	if err := fs.Parse(args); err != nil {
@@ -176,38 +176,38 @@ func cmdCronLine(args []string) error {
 		return err
 	}
 
-	intervalo := cfg.Schedule.Incremental.Duration
-	agenda := "0 * * * *"
-	descricao := "de hora em hora"
+	interval := cfg.Schedule.Incremental.Duration
+	schedule := "0 * * * *"
+	description := "hourly"
 	switch {
-	case intervalo <= 15*time.Minute:
-		agenda, descricao = "*/15 * * * *", "a cada 15 minutos"
-	case intervalo <= 30*time.Minute:
-		agenda, descricao = "*/30 * * * *", "a cada 30 minutos"
-	case intervalo >= 6*time.Hour:
-		agenda, descricao = "0 */6 * * *", "a cada 6 horas"
+	case interval <= 15*time.Minute:
+		schedule, description = "*/15 * * * *", "every 15 minutes"
+	case interval <= 30*time.Minute:
+		schedule, description = "*/30 * * * *", "every 30 minutes"
+	case interval >= 6*time.Hour:
+		schedule, description = "0 */6 * * *", "every 6 hours"
 	}
 
-	fmt.Println("Cole estas linhas no gerenciador de cron do cPanel:")
+	fmt.Println("Paste these lines into the cPanel cron manager:")
 	fmt.Println()
-	fmt.Printf("# scan incremental (%s)\n", descricao)
-	fmt.Printf("%s %s scan --config %s --quiet\n", agenda, bin, *cfgPath)
+	fmt.Printf("# incremental scan (%s)\n", description)
+	fmt.Printf("%s %s scan --config %s --quiet\n", schedule, bin, *cfgPath)
 	fmt.Println()
-	fmt.Printf("# scan completo (%s)\n", cfg.Schedule.FullCron)
+	fmt.Printf("# full scan (%s)\n", cfg.Schedule.FullCron)
 	fmt.Printf("%s %s scan --config %s --full --quiet\n", cfg.Schedule.FullCron, bin, *cfgPath)
 	fmt.Println()
-	fmt.Printf("# atualizacao de assinaturas (%s)\n", cfg.Schedule.SignaturesCron)
+	fmt.Printf("# signature update (%s)\n", cfg.Schedule.SignaturesCron)
 	fmt.Printf("%s %s engines --update all --config %s\n", cfg.Schedule.SignaturesCron, bin, *cfgPath)
 	fmt.Println()
-	fmt.Println("Observacoes:")
-	fmt.Println("  • --quiet faz o cron so mandar e-mail quando houver achados.")
-	fmt.Println("  • O lock de instancia unica impede que dois ciclos se atropelem;")
-	fmt.Println("    o segundo sai com codigo 3 sem fazer nada.")
-	fmt.Println("  • Codigo de saida 1 significa 'achou algo', nao 'quebrou'.")
+	fmt.Println("Notes:")
+	fmt.Println("  • --quiet makes the cron send e-mail only when there are findings.")
+	fmt.Println("  • The single-instance lock keeps two cycles from running over each")
+	fmt.Println("    other; the second exits with code 3 without doing anything.")
+	fmt.Println("  • Exit code 1 means 'found something', not 'broke'.")
 	return nil
 }
 
-// doctor: diagnostico do ambiente (T039).
+// doctor: environment diagnosis (T039).
 func cmdDoctor(ctx context.Context, args []string) error {
 	fs, cfgPath := flagSet("doctor")
 	if err := fs.Parse(args); err != nil {
@@ -216,17 +216,17 @@ func cmdDoctor(ctx context.Context, args []string) error {
 
 	fmt.Printf("SentinelHost %s (%s/%s, Go %s)\n\n", version, runtime.GOOS, runtime.GOARCH, runtime.Version())
 
-	cfg, existe, err := config.LoadOrDefault(*cfgPath)
+	cfg, exists, err := config.LoadOrDefault(*cfgPath)
 	if err != nil {
-		fmt.Printf("  ✗ configuracao: %v\n", err)
+		fmt.Printf("  ✗ configuration: %v\n", err)
 		return err
 	}
-	if !existe {
-		fmt.Printf("  ! configuracao ainda nao criada em %s\n", *cfgPath)
-		fmt.Printf("    rode: sentinelhost config init --root ~/public_html\n")
+	if !exists {
+		fmt.Printf("  ! the configuration has not been created at %s yet\n", *cfgPath)
+		fmt.Printf("    run: sentinelhost config init --root ~/public_html\n")
 		return nil
 	}
-	fmt.Printf("  ✓ configuracao: %s\n", *cfgPath)
+	fmt.Printf("  ✓ configuration: %s\n", *cfgPath)
 
 	res := cfg.Validate()
 	for _, p := range res.Warnings() {
@@ -236,24 +236,24 @@ func cmdDoctor(ctx context.Context, args []string) error {
 		fmt.Printf("  ✗ %s: %s\n", p.Field, p.Message)
 	}
 
-	fmt.Printf("\nRAIZES\n")
+	fmt.Printf("\nROOTS\n")
 	for _, r := range cfg.General.Roots {
 		if info, err := os.Stat(r); err != nil {
 			fmt.Printf("  ✗ %s — %v\n", r, err)
 		} else if !info.IsDir() {
-			fmt.Printf("  ✗ %s — nao e diretorio\n", r)
+			fmt.Printf("  ✗ %s — not a directory\n", r)
 		} else {
 			fmt.Printf("  ✓ %s\n", r)
 		}
 	}
 
-	fmt.Printf("\nDIRETORIO DE DADOS\n")
+	fmt.Printf("\nDATA DIRECTORY\n")
 	if err := cfg.EnsureDataDirs(); err != nil {
 		fmt.Printf("  ✗ %s — %v\n", cfg.General.DataDir, err)
 	} else {
 		fmt.Printf("  ✓ %s\n", cfg.General.DataDir)
-		fmt.Printf("    cofre:  %s\n", cfg.QuarantineDir())
-		fmt.Printf("    banco:  %s\n", cfg.DatabasePath())
+		fmt.Printf("    vault:    %s\n", cfg.QuarantineDir())
+		fmt.Printf("    database: %s\n", cfg.DatabasePath())
 	}
 
 	fmt.Printf("\nENGINES\n")
@@ -261,12 +261,12 @@ func cmdDoctor(ctx context.Context, args []string) error {
 		fmt.Printf("  ✗ %v\n", err)
 	}
 
-	fmt.Printf("\nACAO AUTOMATICA\n")
-	permitido, motivo := cfg.AutomaticActionAllowed(time.Now())
-	if permitido {
-		fmt.Printf("  ✓ liberada: vereditos confirmados serao quarentenados\n")
+	fmt.Printf("\nAUTOMATIC ACTION\n")
+	allowed, reason := cfg.AutomaticActionAllowed(time.Now())
+	if allowed {
+		fmt.Printf("  ✓ allowed: confirmed verdicts will be quarantined\n")
 	} else {
-		fmt.Printf("  ! bloqueada: %s\n", motivo)
+		fmt.Printf("  ! blocked: %s\n", reason)
 	}
 	return nil
 }

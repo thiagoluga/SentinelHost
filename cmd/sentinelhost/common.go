@@ -17,10 +17,10 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/store"
 )
 
-// errLocked propaga o codigo de saida proprio de concorrencia.
+// errLocked carries concurrency's own exit code.
 var errLocked = lock.ErrLocked
 
-// app reune tudo que os comandos precisam.
+// app gathers everything the commands need.
 type app struct {
 	cfg      *config.Config
 	store    *store.Store
@@ -34,11 +34,11 @@ func (a *app) Close() {
 	}
 }
 
-// registry monta o registro com os adaptadores do MVP.
+// newRegistry assembles the registry with the MVP's adapters.
 //
-// Registrar aqui, e nao num init() de cada pacote, mantem explicito quais
-// engines este binario conhece — util quando o usuario pergunta por que um
-// engine "nao aparece".
+// Registering here, rather than in each package's init(), keeps it explicit which
+// engines this binary knows about — useful when the user asks why an engine "does
+// not show up".
 func newRegistry() *adapter.Registry {
 	r := adapter.NewRegistry()
 	r.MustRegister(wpchecksums.New())
@@ -47,12 +47,12 @@ func newRegistry() *adapter.Registry {
 	return r
 }
 
-// openApp carrega config e abre o banco.
+// openApp loads the config and opens the database.
 func openApp(ctx context.Context, configPath string) (*app, error) {
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		if errors.Is(err, config.ErrNotFound) {
-			return nil, fmt.Errorf("%w\n\nRode primeiro:  sentinelhost config init --root <caminho do site>", err)
+			return nil, fmt.Errorf("%w\n\nRun this first:  sentinelhost config init --root <path to the site>", err)
 		}
 		return nil, err
 	}
@@ -61,10 +61,10 @@ func openApp(ctx context.Context, configPath string) (*app, error) {
 	if res.HasErrors() {
 		return nil, res.Err()
 	}
-	// Avisos nao impedem a execucao: a ferramenta que se recusa a rodar
-	// protege menos que a que roda avisando.
+	// Warnings do not block execution: a tool that refuses to run protects less
+	// than one that runs while warning.
 	for _, p := range res.Warnings() {
-		fmt.Fprintf(os.Stderr, "aviso: %s: %s\n", p.Field, p.Message)
+		fmt.Fprintf(os.Stderr, "warning: %s: %s\n", p.Field, p.Message)
 	}
 
 	if err := cfg.EnsureDataDirs(); err != nil {
@@ -83,38 +83,38 @@ func openApp(ctx context.Context, configPath string) (*app, error) {
 	}, nil
 }
 
-// flagSet cria um conjunto de flags com --config ja incluida.
-func flagSet(nome string) (*flag.FlagSet, *string) {
-	fs := flag.NewFlagSet(nome, flag.ContinueOnError)
-	cfgPath := fs.String("config", config.DefaultConfigPath(), "caminho do arquivo de configuracao TOML")
+// flagSet creates a flag set with --config already included.
+func flagSet(name string) (*flag.FlagSet, *string) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	cfgPath := fs.String("config", config.DefaultConfigPath(), "path to the TOML configuration file")
 	return fs, cfgPath
 }
 
-// parseArgs interpreta flags que aparecem DEPOIS de argumentos posicionais.
+// parseArgs interprets flags that appear AFTER positional arguments.
 //
-// O flag da biblioteca padrao para de parsear no primeiro argumento que nao
-// comeca com traco. Isso faz
+// The standard library's flag stops parsing at the first argument that does not
+// start with a dash. That makes
 //
-//	sentinelhost quarantine restore q_123 --config /caminho/config.toml
+//	sentinelhost quarantine restore q_123 --config /path/config.toml
 //
-// ignorar o --config em silencio e cair no caminho padrao — que e exatamente a
-// forma documentada no quickstart para quem tem a configuracao fora do lugar
-// padrao. O comando entao falha dizendo que nao achou a configuracao, ou pior,
-// age sobre a instancia errada.
+// ignore the --config silently and fall back to the default path — which is
+// exactly the form the quickstart documents for anyone whose configuration lives
+// outside the default place. The command then fails saying it could not find the
+// configuration, or worse, acts on the wrong instance.
 //
-// A solucao e o laco: parseia, tira o primeiro posicional, e parseia o resto.
-// Devolve os posicionais na ordem em que apareceram.
+// The fix is the loop: parse, take the first positional out, and parse the rest.
+// It returns the positionals in the order they appeared.
 func parseArgs(fs *flag.FlagSet, args []string) ([]string, error) {
-	var posicionais []string
+	var positional []string
 	for {
 		if err := fs.Parse(args); err != nil {
 			return nil, err
 		}
-		resto := fs.Args()
-		if len(resto) == 0 {
-			return posicionais, nil
+		rest := fs.Args()
+		if len(rest) == 0 {
+			return positional, nil
 		}
-		posicionais = append(posicionais, resto[0])
-		args = resto[1:]
+		positional = append(positional, rest[0])
+		args = rest[1:]
 	}
 }

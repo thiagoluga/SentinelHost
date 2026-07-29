@@ -6,108 +6,108 @@ import (
 	"testing"
 )
 
-// O flag da biblioteca padrao para de parsear no primeiro argumento que nao
-// comeca com traco. Isso fazia `quarantine restore <ref> --config /caminho`
-// ignorar o --config em SILENCIO e cair no caminho padrao — e a forma
-// documentada no quickstart e justamente essa.
+// The standard library's flag stops parsing at the first argument that does not
+// start with a dash. That made `quarantine restore <ref> --config /path` ignore
+// the --config SILENTLY and fall back to the default path — and the form the
+// quickstart documents is precisely that one.
 //
-// O sintoma era um erro enganoso ("configuracao nao encontrada") num comando
-// que recebeu a configuracao corretamente; o risco real era agir sobre a
-// instancia errada numa maquina com mais de um site.
+// The symptom was a misleading error ("configuration not found") in a command that
+// received the configuration correctly; the real risk was acting on the wrong
+// instance on a machine with more than one site.
 
-func novoFS() (*flag.FlagSet, *string, *bool) {
-	fs := flag.NewFlagSet("teste", flag.ContinueOnError)
+func newFS() (*flag.FlagSet, *string, *bool) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	cfg := fs.String("config", "/padrao/config.toml", "")
+	cfg := fs.String("config", "/default/config.toml", "")
 	force := fs.Bool("force", false, "")
 	return fs, cfg, force
 }
 
-func TestFlagDepoisDoPosicionalEhLida(t *testing.T) {
-	fs, cfg, _ := novoFS()
+func TestAFlagAfterThePositionalIsRead(t *testing.T) {
+	fs, cfg, _ := newFS()
 
-	pos, err := parseArgs(fs, []string{"q_123", "--config", "/meu/config.toml"})
+	pos, err := parseArgs(fs, []string{"q_123", "--config", "/mine/config.toml"})
 	if err != nil {
 		t.Fatalf("parseArgs: %v", err)
 	}
 	if len(pos) != 1 || pos[0] != "q_123" {
-		t.Fatalf("posicionais: %v", pos)
+		t.Fatalf("positionals: %v", pos)
 	}
-	if *cfg != "/meu/config.toml" {
-		t.Errorf("--config depois do posicional foi ignorada: %q", *cfg)
+	if *cfg != "/mine/config.toml" {
+		t.Errorf("--config after the positional was ignored: %q", *cfg)
 	}
 }
 
-func TestFlagAntesDoPosicionalContinuaFuncionando(t *testing.T) {
-	fs, cfg, _ := novoFS()
+func TestAFlagBeforeThePositionalKeepsWorking(t *testing.T) {
+	fs, cfg, _ := newFS()
 
-	pos, err := parseArgs(fs, []string{"--config", "/meu/config.toml", "q_123"})
+	pos, err := parseArgs(fs, []string{"--config", "/mine/config.toml", "q_123"})
 	if err != nil {
 		t.Fatalf("parseArgs: %v", err)
 	}
 	if len(pos) != 1 || pos[0] != "q_123" {
-		t.Fatalf("posicionais: %v", pos)
+		t.Fatalf("positionals: %v", pos)
 	}
-	if *cfg != "/meu/config.toml" {
+	if *cfg != "/mine/config.toml" {
 		t.Errorf("config: %q", *cfg)
 	}
 }
 
-func TestFlagsIntercaladasComPosicionais(t *testing.T) {
-	fs, cfg, force := novoFS()
+func TestFlagsInterleavedWithPositionals(t *testing.T) {
+	fs, cfg, force := newFS()
 
 	pos, err := parseArgs(fs, []string{"--force", "q_123", "--config", "/x.toml", "q_456"})
 	if err != nil {
 		t.Fatalf("parseArgs: %v", err)
 	}
 	if len(pos) != 2 || pos[0] != "q_123" || pos[1] != "q_456" {
-		t.Fatalf("posicionais: %v", pos)
+		t.Fatalf("positionals: %v", pos)
 	}
 	if !*force {
-		t.Error("--force antes do posicional foi perdida")
+		t.Error("--force before the positional was lost")
 	}
 	if *cfg != "/x.toml" {
-		t.Errorf("--config entre posicionais foi perdida: %q", *cfg)
+		t.Errorf("--config between positionals was lost: %q", *cfg)
 	}
 }
 
-func TestSemPosicionalUsaOPadrao(t *testing.T) {
-	fs, cfg, _ := novoFS()
+func TestWithNoPositionalTheDefaultIsUsed(t *testing.T) {
+	fs, cfg, _ := newFS()
 
 	pos, err := parseArgs(fs, []string{"--config", "/y.toml"})
 	if err != nil {
 		t.Fatalf("parseArgs: %v", err)
 	}
 	if len(pos) != 0 {
-		t.Errorf("nao deveria haver posicionais: %v", pos)
+		t.Errorf("there should be no positionals: %v", pos)
 	}
 	if *cfg != "/y.toml" {
 		t.Errorf("config: %q", *cfg)
 	}
 }
 
-func TestFlagDesconhecidaEhErro(t *testing.T) {
-	// Uma flag digitada errado nao pode virar argumento posicional em
-	// silencio: numa ferramenta que move arquivos, `--fofce` precisa falhar,
-	// nao ser tratado como o nome de uma referencia de quarentena.
-	fs, _, _ := novoFS()
+func TestAnUnknownFlagIsAnError(t *testing.T) {
+	// A mistyped flag must not silently become a positional argument: in a tool
+	// that moves files, `--fofce` has to fail, not be treated as the name of a
+	// quarantine reference.
+	fs, _, _ := newFS()
 
-	if _, err := parseArgs(fs, []string{"q_123", "--nao-existe"}); err == nil {
-		t.Fatal("flag desconhecida deveria ser erro")
+	if _, err := parseArgs(fs, []string{"q_123", "--does-not-exist"}); err == nil {
+		t.Fatal("an unknown flag should be an error")
 	}
 }
 
-func TestListaVaziaNaoQuebra(t *testing.T) {
-	fs, cfg, _ := novoFS()
+func TestAnEmptyListDoesNotBreak(t *testing.T) {
+	fs, cfg, _ := newFS()
 
 	pos, err := parseArgs(fs, nil)
 	if err != nil {
 		t.Fatalf("parseArgs: %v", err)
 	}
 	if len(pos) != 0 {
-		t.Errorf("posicionais: %v", pos)
+		t.Errorf("positionals: %v", pos)
 	}
-	if *cfg != "/padrao/config.toml" {
-		t.Errorf("o padrao deveria ter sido preservado: %q", *cfg)
+	if *cfg != "/default/config.toml" {
+		t.Errorf("the default should have been preserved: %q", *cfg)
 	}
 }

@@ -12,7 +12,7 @@ import (
 
 func cmdConfig(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("uso: sentinelhost config <init|show|validate|path>")
+		return fmt.Errorf("usage: sentinelhost config <init|show|validate|path>")
 	}
 	switch args[0] {
 	case "init":
@@ -25,26 +25,26 @@ func cmdConfig(ctx context.Context, args []string) error {
 		fmt.Println(config.DefaultConfigPath())
 		return nil
 	default:
-		return fmt.Errorf("subcomando desconhecido: %s (use init, show, validate ou path)", args[0])
+		return fmt.Errorf("unknown subcommand: %s (use init, show, validate or path)", args[0])
 	}
 }
 
 func configInit(args []string) error {
 	fs, cfgPath := flagSet("config init")
 	var roots multiFlag
-	fs.Var(&roots, "root", "raiz do site a vigiar (pode repetir)")
-	force := fs.Bool("force", false, "sobrescreve uma configuracao existente")
+	fs.Var(&roots, "root", "root of the site to watch (may be repeated)")
+	force := fs.Bool("force", false, "overwrite an existing configuration")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `sentinelhost config init — cria a configuracao inicial.
+		fmt.Fprint(os.Stderr, `sentinelhost config init — creates the initial configuration.
 
-Os padroes sao deliberadamente conservadores: modo observacao ligado, periodo
-de graca de 7 dias, nice 19, purga automatica desligada e painel so em
-localhost. A primeira experiencia tem que ser "nao quebrou nada".
+The defaults are deliberately conservative: observation mode on, a 7-day grace
+period, nice 19, automatic purge off and the panel on localhost only. The first
+experience has to be "it broke nothing".
 
-EXEMPLO
+EXAMPLE
   sentinelhost config init --root ~/public_html
 
-OPCOES
+OPTIONS
 `)
 		fs.PrintDefaults()
 	}
@@ -52,22 +52,22 @@ OPCOES
 		return err
 	}
 	if len(roots) == 0 {
-		return fmt.Errorf("informe ao menos uma raiz: --root ~/public_html")
+		return fmt.Errorf("give at least one root: --root ~/public_html")
 	}
 
 	if _, err := os.Stat(*cfgPath); err == nil && !*force {
-		return fmt.Errorf("ja existe configuracao em %s (use --force para sobrescrever)", *cfgPath)
+		return fmt.Errorf("a configuration already exists at %s (use --force to overwrite)", *cfgPath)
 	}
 
 	cfg := config.Default()
 	cfg.SetPath(*cfgPath)
 	for _, r := range roots {
-		abs, err := filepath.Abs(expandirTil(r))
+		abs, err := filepath.Abs(expandTilde(r))
 		if err != nil {
-			return fmt.Errorf("raiz %q invalida: %w", r, err)
+			return fmt.Errorf("invalid root %q: %w", r, err)
 		}
 		if _, err := os.Stat(abs); err != nil {
-			return fmt.Errorf("a raiz %s nao existe ou nao esta acessivel: %w", abs, err)
+			return fmt.Errorf("the root %s does not exist or is not accessible: %w", abs, err)
 		}
 		cfg.General.Roots = append(cfg.General.Roots, abs)
 	}
@@ -82,14 +82,14 @@ OPCOES
 		return err
 	}
 
-	fmt.Printf("Configuracao criada em %s\n\n", *cfgPath)
-	fmt.Printf("  raizes vigiadas:   %s\n", strings.Join(cfg.General.Roots, ", "))
-	fmt.Printf("  diretorio de dados: %s\n", cfg.General.DataDir)
-	fmt.Printf("  modo observacao:    ligado (nada sera movido)\n")
-	fmt.Printf("  periodo de graca:   %d dias\n", cfg.General.GracePeriodDays)
-	fmt.Printf("\nProximo passo:\n  sentinelhost scan\n")
-	fmt.Printf("\nDepois de conferir os resultados, desligue o modo observacao no TOML\n")
-	fmt.Printf("ou no painel para que a quarentena automatica passe a agir.\n")
+	fmt.Printf("Configuration created at %s\n\n", *cfgPath)
+	fmt.Printf("  watched roots:    %s\n", strings.Join(cfg.General.Roots, ", "))
+	fmt.Printf("  data directory:   %s\n", cfg.General.DataDir)
+	fmt.Printf("  observation mode: on (nothing will be moved)\n")
+	fmt.Printf("  grace period:     %d days\n", cfg.General.GracePeriodDays)
+	fmt.Printf("\nNext step:\n  sentinelhost scan\n")
+	fmt.Printf("\nAfter reviewing the results, turn observation mode off in the TOML\n")
+	fmt.Printf("or in the panel so the automatic quarantine starts acting.\n")
 	return nil
 }
 
@@ -98,14 +98,14 @@ func configShow(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	data, err := os.ReadFile(*cfgPath) // caminho informado pelo proprio usuario
+	data, err := os.ReadFile(*cfgPath) // path given by the user themselves
 	if err != nil {
 		return err
 	}
-	// A configuracao guarda senha de SMTP e segredos de webhook. Imprimir
-	// tudo na tela e o jeito mais facil de vazar um segredo num print de tela
-	// ou num log de suporte.
-	fmt.Print(mascararSegredos(string(data)))
+	// The configuration holds the SMTP password and webhook secrets. Printing
+	// everything on screen is the easiest way to leak a secret in a screenshot or
+	// in a support log.
+	fmt.Print(maskSecrets(string(data)))
 	return nil
 }
 
@@ -121,41 +121,41 @@ func configValidate(args []string) error {
 	res := cfg.Validate()
 
 	for _, p := range res.Warnings() {
-		fmt.Printf("aviso  %s: %s\n", p.Field, p.Message)
+		fmt.Printf("warning  %s: %s\n", p.Field, p.Message)
 	}
 	for _, p := range res.Errors() {
-		fmt.Printf("ERRO   %s: %s\n", p.Field, p.Message)
+		fmt.Printf("ERROR    %s: %s\n", p.Field, p.Message)
 	}
 	if res.HasErrors() {
-		return fmt.Errorf("a configuracao tem %d erro(s)", len(res.Errors()))
+		return fmt.Errorf("the configuration has %d error(s)", len(res.Errors()))
 	}
 	if len(res.Warnings()) == 0 {
-		fmt.Println("Configuracao valida, sem avisos.")
+		fmt.Println("The configuration is valid, with no warnings.")
 	} else {
-		fmt.Printf("\nConfiguracao valida, com %d aviso(s).\n", len(res.Warnings()))
+		fmt.Printf("\nThe configuration is valid, with %d warning(s).\n", len(res.Warnings()))
 	}
 	return nil
 }
 
-// mascararSegredos esconde valores de campos sensiveis.
-func mascararSegredos(toml string) string {
-	sensiveis := []string{"password", "secret"}
-	linhas := strings.Split(toml, "\n")
-	for i, l := range linhas {
+// maskSecrets hides the values of sensitive fields.
+func maskSecrets(toml string) string {
+	sensitive := []string{"password", "secret"}
+	lines := strings.Split(toml, "\n")
+	for i, l := range lines {
 		trim := strings.TrimSpace(l)
-		for _, campo := range sensiveis {
-			if strings.HasPrefix(trim, campo+" ") || strings.HasPrefix(trim, campo+"=") {
-				chave, _, ok := strings.Cut(l, "=")
+		for _, field := range sensitive {
+			if strings.HasPrefix(trim, field+" ") || strings.HasPrefix(trim, field+"=") {
+				key, _, ok := strings.Cut(l, "=")
 				if ok && strings.TrimSpace(strings.Trim(strings.SplitN(l, "=", 2)[1], ` "`)) != "" {
-					linhas[i] = chave + `= "***"`
+					lines[i] = key + `= "***"`
 				}
 			}
 		}
 	}
-	return strings.Join(linhas, "\n")
+	return strings.Join(lines, "\n")
 }
 
-func expandirTil(p string) string {
+func expandTilde(p string) string {
 	if !strings.HasPrefix(p, "~") {
 		return p
 	}
@@ -172,7 +172,7 @@ func expandirTil(p string) string {
 	return p
 }
 
-// multiFlag aceita uma flag repetida.
+// multiFlag accepts a repeated flag.
 type multiFlag []string
 
 func (m *multiFlag) String() string { return strings.Join(*m, ",") }

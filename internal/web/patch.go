@@ -4,12 +4,11 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/config"
 )
 
-// configPatch e a alteracao parcial vinda do painel.
+// configPatch is the partial change coming from the panel.
 //
-// Todos os campos sao ponteiros de proposito: assim da para distinguir
-// "o usuario nao mexeu neste campo" de "o usuario zerou este campo". Sem essa
-// distincao, salvar a aba de alertas apagaria a whitelist configurada na aba
-// de configuracoes.
+// Every field is a pointer on purpose: that is what tells "the user did not touch
+// this field" apart from "the user cleared this field". Without that distinction,
+// saving the alerts tab would wipe the whitelist configured in the settings tab.
 type configPatch struct {
 	ObservationMode *bool     `json:"observation_mode,omitempty"`
 	GracePeriodDays *int      `json:"grace_period_days,omitempty"`
@@ -71,7 +70,7 @@ type webhookPatch struct {
 	Events  []string `json:"events"`
 }
 
-// apply aplica o patch sobre uma copia da configuracao.
+// apply applies the patch to a copy of the configuration.
 func (p configPatch) apply(c *config.Config) {
 	setBool(&c.General.ObservationMode, p.ObservationMode)
 	setInt(&c.General.GracePeriodDays, p.GracePeriodDays)
@@ -112,8 +111,9 @@ func (p configPatch) apply(c *config.Config) {
 		setString(&e.Host, p.Email.Host)
 		setInt(&e.Port, p.Email.Port)
 		setString(&e.Username, p.Email.Username)
-		// Senha mascarada nao sobrescreve a real: o painel devolve "********"
-		// no GET, e reenviar isso no PUT apagaria a senha de verdade.
+		// A masked password does not overwrite the real one: the panel returns
+		// "********" on GET, and sending that back on PUT would wipe the real
+		// password.
 		if p.Email.Password != nil && *p.Email.Password != "********" {
 			e.Password = *p.Email.Password
 		}
@@ -127,32 +127,32 @@ func (p configPatch) apply(c *config.Config) {
 	}
 
 	if p.Webhooks != nil {
-		antigos := map[string]string{}
+		previous := map[string]string{}
 		for _, w := range c.Alerts.Webhooks {
-			antigos[w.ID] = w.Secret
+			previous[w.ID] = w.Secret
 		}
-		novos := make([]config.Webhook, 0, len(*p.Webhooks))
+		updated := make([]config.Webhook, 0, len(*p.Webhooks))
 		for _, wp := range *p.Webhooks {
-			segredo := wp.Secret
-			if segredo == "********" {
-				// Mesmo raciocinio da senha: preserva o segredo existente.
-				segredo = antigos[wp.ID]
+			secret := wp.Secret
+			if secret == "********" {
+				// Same reasoning as the password: preserve the existing secret.
+				secret = previous[wp.ID]
 			}
-			novos = append(novos, config.Webhook{
+			updated = append(updated, config.Webhook{
 				ID: wp.ID, Enabled: wp.Enabled, URL: wp.URL,
-				Secret: segredo, Events: wp.Events,
+				Secret: secret, Events: wp.Events,
 			})
 		}
-		c.Alerts.Webhooks = novos
+		c.Alerts.Webhooks = updated
 	}
 }
 
-// fields lista os campos tocados, para o log de auditoria.
+// fields lists the fields that were touched, for the audit log.
 func (p configPatch) fields() []string {
 	var out []string
-	add := func(nome string, tocado bool) {
-		if tocado {
-			out = append(out, nome)
+	add := func(name string, touched bool) {
+		if touched {
+			out = append(out, name)
 		}
 	}
 	add("observation_mode", p.ObservationMode != nil)
@@ -200,11 +200,11 @@ func setStrings(dst *[]string, v *[]string) {
 	}
 }
 
-// setDuration ignora valores invalidos em vez de zerar o campo.
+// setDuration ignores invalid values instead of zeroing the field.
 //
-// Zerar um timeout por causa de um typo do usuario removeria um limite de
-// recurso obrigatorio — e a validacao seguinte reclamaria de um valor que o
-// usuario nunca digitou.
+// Zeroing a timeout because of a user's typo would remove a mandatory resource
+// limit — and the validation that follows would complain about a value the user
+// never typed.
 func setDuration(dst *config.Duration, v *string) {
 	if v == nil {
 		return

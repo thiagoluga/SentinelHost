@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,27 +9,27 @@
 </head>
 <body>
 
-<!-- Tela de autenticacao. O painel inteiro fica atras dela: nenhuma area e
-     acessivel sem sessao valida (restricao explicita da constituicao). -->
+<!-- Authentication screen. The whole panel sits behind it: no area is reachable
+     without a valid session (an explicit constraint of the constitution). -->
 <div id="gate" class="gate" hidden>
   <form class="gate-card" id="gate-form">
     <div class="logo-mark big">S</div>
     <h1 id="gate-title">SentinelHost</h1>
-    <p id="gate-sub" class="muted">Entre para acessar o painel.</p>
+    <p id="gate-sub" class="muted">Sign in to reach the panel.</p>
 
-    <label for="senha">Senha</label>
-    <input id="senha" type="password" autocomplete="current-password" required>
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="current-password" required>
 
-    <div id="senha2-wrap" hidden>
-      <label for="senha2">Repita a senha</label>
-      <input id="senha2" type="password" autocomplete="new-password">
+    <div id="password2-wrap" hidden>
+      <label for="password2">Repeat the password</label>
+      <input id="password2" type="password" autocomplete="new-password">
       <p class="muted small">
-        Esta senha e a unica coisa entre a internet e um botao que move arquivos
-        do seu site. Use pelo menos 10 caracteres.
+        This password is the only thing between the internet and a button that
+        moves your site's files. Use at least 10 characters.
       </p>
     </div>
 
-    <button class="btn primary" type="submit" id="gate-btn">Entrar</button>
+    <button class="btn primary" type="submit" id="gate-btn">Sign in</button>
     <p class="err" id="gate-err" hidden></p>
   </form>
 </div>
@@ -38,232 +38,232 @@
 <aside class="side">
   <div class="logo">
     <div class="logo-mark">S</div>
-    <div><b>SentinelHost</b><small id="side-version">orquestrador</small></div>
+    <div><b>SentinelHost</b><small id="side-version">orchestrator</small></div>
   </div>
-  <button class="nav-btn active" data-tab="dash"><span class="ico">▦</span> Visão geral</button>
-  <button class="nav-btn" data-tab="findings"><span class="ico">⚠</span> Achados <span class="pill" id="pill-findings" hidden>0</span></button>
-  <button class="nav-btn" data-tab="quarantine"><span class="ico">🗄</span> Quarentena</button>
+  <button class="nav-btn active" data-tab="dash"><span class="ico">▦</span> Overview</button>
+  <button class="nav-btn" data-tab="findings"><span class="ico">⚠</span> Findings <span class="pill" id="pill-findings" hidden>0</span></button>
+  <button class="nav-btn" data-tab="quarantine"><span class="ico">🗄</span> Quarantine</button>
   <button class="nav-btn" data-tab="engines"><span class="ico">⚙</span> Engines</button>
-  <button class="nav-btn" data-tab="schedule"><span class="ico">🕐</span> Agendamento</button>
-  <button class="nav-btn" data-tab="alerts"><span class="ico">✉</span> Alertas</button>
-  <button class="nav-btn" data-tab="settings"><span class="ico">☰</span> Configurações</button>
-  <div class="side-foot" id="side-foot">carregando…</div>
-  <button class="btn sm ghost" id="btn-logout">Sair</button>
+  <button class="nav-btn" data-tab="schedule"><span class="ico">🕐</span> Schedule</button>
+  <button class="nav-btn" data-tab="alerts"><span class="ico">✉</span> Alerts</button>
+  <button class="nav-btn" data-tab="settings"><span class="ico">☰</span> Settings</button>
+  <div class="side-foot" id="side-foot">loading…</div>
+  <button class="btn sm ghost" id="btn-logout">Sign out</button>
 </aside>
 
 <main>
 
-<!-- ============ VISÃO GERAL ============ -->
+<!-- ============ OVERVIEW ============ -->
 <section class="tab active" id="tab-dash">
   <header class="page">
-    <div><h1>Visão geral</h1><p id="dash-sub">Estado atual do monitoramento</p></div>
+    <div><h1>Overview</h1><p id="dash-sub">Current state of the monitoring</p></div>
     <div class="spacer"></div>
-    <button class="btn" id="btn-scan">Escanear agora</button>
+    <button class="btn" id="btn-scan">Scan now</button>
   </header>
 
-  <!-- A cobertura vem SEMPRE junto do resumo. Um painel que mostra "0 ameaças"
-       sem dizer que metade dos engines está fora esconde exatamente o que o
-       usuário precisa para confiar no número. -->
-  <div class="banner" id="banner-cobertura" hidden></div>
-  <div class="banner info" id="banner-observacao" hidden></div>
+  <!-- The coverage ALWAYS travels with the summary. A panel that shows "0 threats"
+       without saying that half the engines are down hides exactly what the user
+       needs in order to trust the number. -->
+  <div class="banner" id="banner-coverage" hidden></div>
+  <div class="banner info" id="banner-observation" hidden></div>
 
   <div class="grid-4">
-    <div class="card kpi"><small>Confirmados</small><b class="c-crit" id="kpi-confirmed">–</b><span>quarentena automática</span></div>
-    <div class="card kpi"><small>Prováveis</small><b class="c-serious" id="kpi-likely">–</b><span>aguardam sua decisão</span></div>
-    <div class="card kpi"><small>Suspeitos</small><b class="c-warn" id="kpi-suspicious">–</b><span>apenas no relatório</span></div>
-    <div class="card kpi"><small>Em quarentena</small><b id="kpi-quarantine">–</b><span>todos restauráveis</span></div>
+    <div class="card kpi"><small>Confirmed</small><b class="c-crit" id="kpi-confirmed">–</b><span>automatic quarantine</span></div>
+    <div class="card kpi"><small>Likely</small><b class="c-serious" id="kpi-likely">–</b><span>waiting for your decision</span></div>
+    <div class="card kpi"><small>Suspicious</small><b class="c-warn" id="kpi-suspicious">–</b><span>report only</span></div>
+    <div class="card kpi"><small>In quarantine</small><b id="kpi-quarantine">–</b><span>all restorable</span></div>
   </div>
 
   <div class="card">
-    <div class="chart-head"><h2>Último ciclo</h2><span class="muted small" id="ciclo-id"></span></div>
-    <div class="row3" id="ciclo-resumo"></div>
+    <div class="chart-head"><h2>Last cycle</h2><span class="muted small" id="cycle-id"></span></div>
+    <div class="row3" id="cycle-summary"></div>
   </div>
 
   <div class="card">
-    <div class="chart-head"><h2>Cobertura por engine</h2></div>
+    <div class="chart-head"><h2>Coverage per engine</h2></div>
     <div id="dash-engines" class="engine-strip"></div>
   </div>
 </section>
 
-<!-- ============ ACHADOS ============ -->
+<!-- ============ FINDINGS ============ -->
 <section class="tab" id="tab-findings">
   <header class="page">
-    <div><h1>Achados</h1><p>Cada veredito mostra quem votou, com que peso e por qual regra.</p></div>
+    <div><h1>Findings</h1><p>Every verdict shows who voted, with what weight and under which rule.</p></div>
     <div class="spacer"></div>
-    <label class="inline"><input type="checkbox" id="f-pendentes" checked> só pendentes</label>
+    <label class="inline"><input type="checkbox" id="f-pending" checked> pending only</label>
   </header>
-  <div id="lista-achados"></div>
+  <div id="findings-list"></div>
 </section>
 
-<!-- ============ QUARENTENA ============ -->
+<!-- ============ QUARANTINE ============ -->
 <section class="tab" id="tab-quarantine">
   <header class="page">
-    <div><h1>Quarentena</h1><p>Nada aqui foi apagado. Todo item volta byte a byte ao lugar de origem.</p></div>
+    <div><h1>Quarantine</h1><p>Nothing here was deleted. Every item goes back to its original place byte for byte.</p></div>
     <div class="spacer"></div>
-    <label class="inline"><input type="checkbox" id="q-todos"> incluir restaurados e purgados</label>
+    <label class="inline"><input type="checkbox" id="q-all"> include restored and purged</label>
   </header>
   <div class="card"><table class="table" id="tab-quar"><thead><tr>
-    <th>Ref</th><th>Arquivo original</th><th>Quarentenado</th><th>Retenção</th><th>Status</th><th></th>
+    <th>Ref</th><th>Original file</th><th>Quarantined</th><th>Retention</th><th>Status</th><th></th>
   </tr></thead><tbody></tbody></table></div>
 </section>
 
 <!-- ============ ENGINES ============ -->
 <section class="tab" id="tab-engines">
   <header class="page">
-    <div><h1>Engines</h1><p>O SentinelHost não detecta nada sozinho: ele orquestra estes motores.</p></div>
+    <div><h1>Engines</h1><p>SentinelHost detects nothing on its own: it orchestrates these engines.</p></div>
   </header>
-  <div id="lista-engines"></div>
+  <div id="engines-list"></div>
 </section>
 
-<!-- ============ AGENDAMENTO ============ -->
+<!-- ============ SCHEDULE ============ -->
 <section class="tab" id="tab-schedule">
   <header class="page">
-    <div><h1>Agendamento</h1><p>Ciclos incrementais, scan completo e limites de recurso.</p></div>
+    <div><h1>Schedule</h1><p>Incremental cycles, full scan and resource limits.</p></div>
   </header>
 
   <div class="card">
-    <h2>Ritmo</h2>
+    <h2>Pace</h2>
     <div class="row2">
-      <label>Intervalo do ciclo incremental
+      <label>Incremental cycle interval
         <input id="s-incremental" placeholder="1h"></label>
-      <label>Scan completo (cron)
+      <label>Full scan (cron)
         <input id="s-full" placeholder="0 3 * * 0"></label>
-      <label>Atualização de assinaturas (cron)
+      <label>Signature update (cron)
         <input id="s-sig" placeholder="0 2 * * *"></label>
-      <label>Modo
-        <select id="s-mode"><option value="cron">somente cron</option><option value="daemon">daemon</option></select></label>
+      <label>Mode
+        <select id="s-mode"><option value="cron">cron only</option><option value="daemon">daemon</option></select></label>
     </div>
   </div>
 
   <div class="card">
-    <h2>Limites de recurso</h2>
+    <h2>Resource limits</h2>
     <p class="muted small">
-      Estes limites existem para que o scanner nunca cause a suspensão da sua
-      conta por abuso de recursos. Reduzir o <code>nice</code> aumenta a
-      prioridade do scanner — e o risco.
+      These limits exist so the scanner never gets your account suspended for
+      resource abuse. Lowering <code>nice</code> raises the scanner's priority —
+      and the risk.
     </p>
     <div class="row2">
       <label>nice (0–19) <input id="s-nice" type="number" min="0" max="19"></label>
-      <label>Tamanho máximo por arquivo (MB) <input id="s-maxsize" type="number" min="1"></label>
-      <label>Timeout por engine <input id="s-timeout" placeholder="5m"></label>
-      <label>Arquivos por lote <input id="s-batch" type="number" min="1"></label>
-      <label>Pausa entre lotes <input id="s-pause" placeholder="500ms"></label>
+      <label>Maximum size per file (MB) <input id="s-maxsize" type="number" min="1"></label>
+      <label>Timeout per engine <input id="s-timeout" placeholder="5m"></label>
+      <label>Files per batch <input id="s-batch" type="number" min="1"></label>
+      <label>Pause between batches <input id="s-pause" placeholder="500ms"></label>
     </div>
   </div>
 
   <div class="card">
-    <h2>Modo somente-cron</h2>
-    <p class="muted small">Cole no gerenciador de cron do cPanel. Rode <code>sentinelhost cron-line</code> no servidor para a linha completa.</p>
+    <h2>Cron-only mode</h2>
+    <p class="muted small">Paste this into the cPanel cron manager. Run <code>sentinelhost cron-line</code> on the server for the complete line.</p>
     <pre id="cron-box" class="pre"></pre>
   </div>
 
-  <button class="btn primary" id="btn-salvar-agenda">Salvar agendamento</button>
+  <button class="btn primary" id="btn-save-schedule">Save the schedule</button>
 </section>
 
-<!-- ============ ALERTAS ============ -->
+<!-- ============ ALERTS ============ -->
 <section class="tab" id="tab-alerts">
   <header class="page">
-    <div><h1>Alertas</h1><p>E-mail e webhooks. O botão de teste mostra o erro real do servidor.</p></div>
+    <div><h1>Alerts</h1><p>E-mail and webhooks. The test button shows the server's real error.</p></div>
   </header>
 
   <div class="card">
     <h2>E-mail (SMTP)</h2>
-    <label class="inline"><input type="checkbox" id="e-enabled"> habilitar alertas por e-mail</label>
+    <label class="inline"><input type="checkbox" id="e-enabled"> enable e-mail alerts</label>
     <div class="row2">
-      <label>Servidor <input id="e-host" placeholder="smtp.seudominio.com"></label>
-      <label>Porta <input id="e-port" type="number"></label>
-      <label>Segurança <select id="e-tls">
+      <label>Server <input id="e-host" placeholder="smtp.yourdomain.com"></label>
+      <label>Port <input id="e-port" type="number"></label>
+      <label>Security <select id="e-tls">
         <option value="starttls">STARTTLS (587)</option>
-        <option value="tls">TLS direto (465)</option>
-        <option value="none">sem TLS</option></select></label>
-      <label>Usuário <input id="e-user" autocomplete="off"></label>
-      <label>Senha <input id="e-pass" type="password" autocomplete="off" placeholder="********"></label>
-      <label>Remetente <input id="e-from" placeholder="sentinel@seudominio.com"></label>
-      <label>Destinatários (vírgula) <input id="e-to"></label>
-      <label>URL do painel (entra no e-mail) <input id="e-panel" placeholder="http://127.0.0.1:8787"></label>
+        <option value="tls">Direct TLS (465)</option>
+        <option value="none">no TLS</option></select></label>
+      <label>Username <input id="e-user" autocomplete="off"></label>
+      <label>Password <input id="e-pass" type="password" autocomplete="off" placeholder="********"></label>
+      <label>Sender <input id="e-from" placeholder="sentinel@yourdomain.com"></label>
+      <label>Recipients (comma-separated) <input id="e-to"></label>
+      <label>Panel URL (goes into the e-mail) <input id="e-panel" placeholder="http://127.0.0.1:8787"></label>
     </div>
-    <fieldset class="niveis">
-      <legend>Alertar imediatamente para</legend>
-      <label class="inline"><input type="checkbox" class="e-lvl" value="confirmed"> confirmados</label>
-      <label class="inline"><input type="checkbox" class="e-lvl" value="likely"> prováveis</label>
-      <label class="inline"><input type="checkbox" class="e-lvl" value="suspicious"> suspeitos</label>
+    <fieldset class="levels">
+      <legend>Alert immediately for</legend>
+      <label class="inline"><input type="checkbox" class="e-lvl" value="confirmed"> confirmed</label>
+      <label class="inline"><input type="checkbox" class="e-lvl" value="likely"> likely</label>
+      <label class="inline"><input type="checkbox" class="e-lvl" value="suspicious"> suspicious</label>
     </fieldset>
     <div class="row2">
-      <label class="inline"><input type="checkbox" id="e-digest"> enviar resumo periódico</label>
-      <label>Horário do resumo <input id="e-digest-at" placeholder="08:00"></label>
+      <label class="inline"><input type="checkbox" id="e-digest"> send a periodic summary</label>
+      <label>Summary time <input id="e-digest-at" placeholder="08:00"></label>
     </div>
     <div class="actions">
-      <button class="btn" id="btn-test-email">Enviar e-mail de teste</button>
-      <button class="btn primary" id="btn-salvar-email">Salvar</button>
+      <button class="btn" id="btn-test-email">Send a test e-mail</button>
+      <button class="btn primary" id="btn-save-email">Save</button>
     </div>
     <div class="result" id="res-email" hidden></div>
   </div>
 
   <div class="card">
-    <div class="chart-head"><h2>Webhooks</h2><button class="btn sm" id="btn-add-hook">Adicionar</button></div>
+    <div class="chart-head"><h2>Webhooks</h2><button class="btn sm" id="btn-add-hook">Add</button></div>
     <p class="muted small">
-      Cada entrega vai assinada em <code>X-Sentinel-Signature</code>
-      (HMAC-SHA256 sobre <code>timestamp.corpo</code>). Falhas são retentadas
-      5 vezes com backoff.
+      Every delivery goes out signed in <code>X-Sentinel-Signature</code>
+      (HMAC-SHA256 over <code>timestamp.body</code>). Failures are retried
+      5 times with backoff.
     </p>
-    <div id="lista-hooks"></div>
-    <button class="btn primary" id="btn-salvar-hooks">Salvar webhooks</button>
+    <div id="hooks-list"></div>
+    <button class="btn primary" id="btn-save-hooks">Save the webhooks</button>
   </div>
 </section>
 
-<!-- ============ CONFIGURAÇÕES ============ -->
+<!-- ============ SETTINGS ============ -->
 <section class="tab" id="tab-settings">
   <header class="page">
-    <div><h1>Configurações</h1><p id="cfg-path" class="muted small"></p></div>
+    <div><h1>Settings</h1><p id="cfg-path" class="muted small"></p></div>
   </header>
 
   <div class="card">
-    <h2>Ação automática</h2>
-    <label class="inline"><input type="checkbox" id="c-observacao"> modo observação (nada é movido)</label>
-    <label>Período de graça após a primeira execução (dias)
-      <input id="c-graca" type="number" min="0"></label>
+    <h2>Automatic action</h2>
+    <label class="inline"><input type="checkbox" id="c-observation"> observation mode (nothing is moved)</label>
+    <label>Grace period after the first run (days)
+      <input id="c-grace" type="number" min="0"></label>
     <p class="muted small">
-      Enquanto o período de graça durar, nenhuma quarentena automática acontece
-      — mesmo com o modo observação desligado. É o tempo de você calibrar pesos
-      e whitelist antes de a ferramenta mexer nos seus arquivos.
+      While the grace period lasts, no automatic quarantine happens — even with
+      observation mode off. It is the time for you to calibrate weights and the
+      whitelist before the tool touches your files.
     </p>
   </div>
 
   <div class="card">
-    <h2>Limiares do veredito</h2>
+    <h2>Verdict thresholds</h2>
     <div class="row3">
-      <label>confirmado ≥ <input id="c-confirmed" type="number" step="0.01" min="0" max="1"></label>
-      <label>provável ≥ <input id="c-likely" type="number" step="0.01" min="0" max="1"></label>
-      <label>suspeito ≥ <input id="c-suspicious" type="number" step="0.01" min="0" max="1"></label>
+      <label>confirmed ≥ <input id="c-confirmed" type="number" step="0.01" min="0" max="1"></label>
+      <label>likely ≥ <input id="c-likely" type="number" step="0.01" min="0" max="1"></label>
+      <label>suspicious ≥ <input id="c-suspicious" type="number" step="0.01" min="0" max="1"></label>
     </div>
     <p class="muted small">
-      Só o nível <b>confirmado</b> autoriza ação automática. Os demais sempre
-      aguardam decisão humana.
+      Only the <b>confirmed</b> level authorizes an automatic action. The others
+      always wait for a human decision.
     </p>
   </div>
 
   <div class="card">
-    <h2>Quarentena</h2>
+    <h2>Quarantine</h2>
     <div class="row2">
-      <label>Retenção antes da purga (dias) <input id="c-retencao" type="number" min="0"></label>
-      <label class="inline"><input type="checkbox" id="c-autopurge"> purgar automaticamente após a retenção</label>
+      <label>Retention before the purge (days) <input id="c-retention" type="number" min="0"></label>
+      <label class="inline"><input type="checkbox" id="c-autopurge"> purge automatically after the retention</label>
     </div>
-    <p class="muted small">Retenção 0 significa “nunca expira”. A purga é a única operação irreversível do SentinelHost.</p>
+    <p class="muted small">A retention of 0 means “never expires”. The purge is SentinelHost's only irreversible operation.</p>
   </div>
 
   <div class="card">
     <h2>Whitelist</h2>
-    <p class="muted small">Um padrão por linha. Arquivos na whitelist nunca são quarentenados, mas continuam aparecendo no relatório.</p>
+    <p class="muted small">One pattern per line. Whitelisted files are never quarantined, but they keep showing up in the report.</p>
     <textarea id="c-whitelist" rows="6" spellcheck="false"></textarea>
   </div>
 
   <div class="card">
-    <h2>Exclusões da varredura</h2>
-    <p class="muted small">Um padrão por linha. Aceita <code>**</code> para qualquer profundidade.</p>
+    <h2>Scan exclusions</h2>
+    <p class="muted small">One pattern per line. <code>**</code> matches any depth.</p>
     <textarea id="c-exclude" rows="8" spellcheck="false"></textarea>
   </div>
 
-  <button class="btn primary" id="btn-salvar-config">Salvar configurações</button>
+  <button class="btn primary" id="btn-save-config">Save the settings</button>
 </section>
 
 </main>
@@ -271,16 +271,16 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<!-- Modal de confirmação da purga: a única operação irreversível do projeto
-     não pode acontecer por um clique acidental. -->
+<!-- Purge confirmation modal: the project's only irreversible operation must not
+     happen from an accidental click. -->
 <div id="modal" class="modal" hidden>
   <div class="modal-card">
-    <h2 id="modal-title">Confirmar</h2>
+    <h2 id="modal-title">Confirm</h2>
     <p id="modal-body"></p>
-    <input id="modal-input" placeholder="digite: purgar">
+    <input id="modal-input" placeholder="type: purge">
     <div class="actions">
-      <button class="btn" id="modal-cancel">Cancelar</button>
-      <button class="btn danger" id="modal-ok">Confirmar</button>
+      <button class="btn" id="modal-cancel">Cancel</button>
+      <button class="btn danger" id="modal-ok">Confirm</button>
     </div>
   </div>
 </div>

@@ -1,6 +1,6 @@
-/* Painel do SentinelHost.
-   Evolucao direta de docs/painel-mockup.html: mesmas variaveis, mesmas
-   classes, mesma linguagem visual — agora consumindo a API real. */
+/* SentinelHost panel.
+   A direct evolution of docs/panel-mockup.html: same variables, same classes,
+   same visual language — now consuming the real API. */
 
 :root{
   --page:#0d0d0d;
@@ -39,7 +39,7 @@ code{background:var(--surface-2);padding:1px 5px;border-radius:4px;font-size:12p
 .c-warn{color:var(--st-warn)}
 .c-good{color:var(--st-good)}
 
-/* ---------- Barra lateral ---------- */
+/* ---------- Sidebar ---------- */
 .side{
   width:230px;flex:0 0 230px;background:var(--surface);
   border-right:1px solid var(--grid);padding:16px 12px;
@@ -68,7 +68,7 @@ code{background:var(--surface-2);padding:1px 5px;border-radius:4px;font-size:12p
 .side-foot{margin-top:auto;padding:12px 8px;color:var(--muted);font-size:11px;line-height:1.5}
 .dot{color:var(--st-good)}
 
-/* ---------- Conteudo ---------- */
+/* ---------- Content ---------- */
 main{flex:1;padding:22px 26px;overflow-y:auto;max-width:1100px}
 .tab{display:none}
 .tab.active{display:block}
@@ -97,7 +97,7 @@ input,select,textarea{
 label.inline input{width:auto;margin:0}
 textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px}
-fieldset.niveis{border:1px solid var(--grid);border-radius:8px;padding:10px 12px;margin:6px 0 12px}
+fieldset.levels{border:1px solid var(--grid);border-radius:8px;padding:10px 12px;margin:6px 0 12px}
 legend{color:var(--muted);font-size:11px;padding:0 4px}
 
 .btn{
@@ -130,7 +130,7 @@ legend{color:var(--muted);font-size:11px;padding:0 4px}
 .table tr:last-child td{border-bottom:0}
 .path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-all}
 
-/* ---------- Vereditos ---------- */
+/* ---------- Verdicts ---------- */
 .verdict{border-left:3px solid var(--baseline)}
 .verdict.confirmed{border-left-color:var(--st-crit)}
 .verdict.likely{border-left-color:var(--st-serious)}
@@ -152,8 +152,8 @@ legend{color:var(--muted);font-size:11px;padding:0 4px}
 
 .engine-strip{display:grid;gap:8px}
 .engine-line{display:flex;align-items:center;gap:10px;font-size:13px}
-.engine-line .nome{min-width:170px;font-weight:600}
-.engine-line .motivo{color:var(--muted);font-size:12px}
+.engine-line .name{min-width:170px;font-weight:600}
+.engine-line .reason{color:var(--muted);font-size:12px}
 
 .pre{
   background:var(--surface-2);border:1px solid var(--grid);border-radius:8px;
@@ -175,7 +175,7 @@ legend{color:var(--muted);font-size:11px;padding:0 4px}
 .gate-card label{text-align:left;margin-top:14px}
 .gate-card .btn{width:100%;margin-top:16px}
 
-/* ---------- Toast e modal ---------- */
+/* ---------- Toast and modal ---------- */
 .toast{
   position:fixed;right:20px;bottom:20px;background:var(--surface-2);
   border:1px solid var(--ring);border-radius:9px;padding:11px 15px;

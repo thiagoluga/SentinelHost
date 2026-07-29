@@ -13,16 +13,16 @@ import (
 func cmdDaemon(ctx context.Context, args []string) error {
 	fs, cfgPath := flagSet("daemon")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `sentinelhost daemon — fica rodando ciclos no intervalo configurado.
+		fmt.Fprint(os.Stderr, `sentinelhost daemon — keeps running cycles at the configured interval.
 
-O daemon e OPCIONAL. Hospedagem compartilhada raramente mantem um processo
-vivo por horas, e tudo que ele faz tambem funciona so com o cron do cPanel:
+The daemon is OPTIONAL. Shared hosting rarely keeps a process alive for hours,
+and everything it does also works with the cPanel cron alone:
 
   sentinelhost cron-line
 
-Use o daemon quando voce tem SSH e quer ciclos mais frequentes.
+Use the daemon when you have SSH and want more frequent cycles.
 
-OPCOES
+OPTIONS
 `)
 		fs.PrintDefaults()
 	}
@@ -41,12 +41,12 @@ OPCOES
 
 	d := sched.New(a.cfg, runner, a.store, dispatcher, a.vault)
 	d.OnCycle = func(sum cycle.Summary) {
-		fmt.Printf("[%s] ciclo %s: %d confirmado(s), %d provavel(is), %d suspeito(s)\n",
+		fmt.Printf("[%s] cycle %s: %d confirmed, %d likely, %d suspicious\n",
 			sum.FinishedAt.Format("15:04:05"), sum.ScanID,
 			sum.LevelCounts["confirmed"], sum.LevelCounts["likely"], sum.LevelCounts["suspicious"])
 	}
 
-	fmt.Printf("SentinelHost em modo daemon (intervalo: %s). Ctrl-C para sair.\n",
+	fmt.Printf("SentinelHost in daemon mode (interval: %s). Ctrl-C to exit.\n",
 		a.cfg.Schedule.Incremental.Duration)
 	return d.Run(ctx)
 }

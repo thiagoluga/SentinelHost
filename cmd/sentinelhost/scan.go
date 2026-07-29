@@ -18,21 +18,21 @@ import (
 
 func cmdScan(ctx context.Context, args []string) int {
 	fs, cfgPath := flagSet("scan")
-	full := fs.Bool("full", false, "escaneia tudo em vez de so o que mudou desde o ultimo ciclo")
-	dryRun := fs.Bool("dry-run", false, "calcula os vereditos sem executar nenhuma acao")
-	asJSON := fs.Bool("json", false, "imprime o relatorio em JSON")
-	quiet := fs.Bool("quiet", false, "so imprime se houver achados")
+	full := fs.Bool("full", false, "scan everything instead of only what changed since the last cycle")
+	dryRun := fs.Bool("dry-run", false, "compute the verdicts without taking any action")
+	asJSON := fs.Bool("json", false, "print the report as JSON")
+	quiet := fs.Bool("quiet", false, "print only when there are findings")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `sentinelhost scan — roda um ciclo agora.
+		fmt.Fprint(os.Stderr, `sentinelhost scan — run a cycle now.
 
-Sonda os engines disponiveis, executa os que estiverem prontos, normaliza as
-saidas e consolida um veredito por arquivo.
+It probes the available engines, runs the ones that are ready, normalizes their
+output and consolidates one verdict per file.
 
-Sai com codigo 1 quando encontra achados. Isso NAO e erro: e o comportamento
-normal de um scanner que achou coisa. Use no cron para distinguir "achou
-malware" de "a ferramenta quebrou".
+It exits with code 1 when it finds findings. That is NOT an error: it is the
+normal behaviour of a scanner that found something. Use it in the cron to tell
+"found malware" from "the tool broke".
 
-OPCOES
+OPTIONS
 `)
 		fs.PrintDefaults()
 	}
@@ -42,182 +42,182 @@ OPCOES
 
 	a, err := openApp(ctx, *cfgPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "erro: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return exitError
 	}
 	defer a.Close()
 
-	modo := schema.ModeIncremental
+	mode := schema.ModeIncremental
 	if *full {
-		modo = schema.ModeFull
+		mode = schema.ModeFull
 	}
 
 	dispatcher := alert.NewDispatcher(ctx, a.cfg, a.store)
 	runner := cycle.New(a.cfg, a.store, a.registry, a.vault).WithDispatcher(dispatcher)
 
-	// A manutenção periódica roda ANTES do ciclo, no modo cron tanto quanto no
-	// daemon. Ela é o que faz o backoff de webhook, o resumo periódico e a
-	// retenção de disco existirem de fato no modo PADRÃO do projeto — sem
-	// isso, tudo aquilo só acontecia para quem mantém um daemon vivo, que é
-	// justamente quem o Princípio III diz que não podemos pressupor.
-	manut, err := housekeeping.Run(ctx, housekeeping.Deps{
+	// The periodic maintenance runs BEFORE the cycle, in cron mode as much as in
+	// the daemon. It is what makes the webhook backoff, the periodic summary and the
+	// disk retention actually exist in the project's DEFAULT mode — without it, all
+	// of that only happened for whoever keeps a daemon alive, which is precisely
+	// what Principle III says we cannot presuppose.
+	maint, err := housekeeping.Run(ctx, housekeeping.Deps{
 		Cfg: a.cfg, Store: a.store, Vault: a.vault, Alerts: dispatcher,
 	})
 	if err != nil {
-		// Manutenção que falha nunca impede o scan: o scan é a proteção, ela é
-		// a arrumação.
-		fmt.Fprintf(os.Stderr, "aviso: manutenção periódica: %v\n", err)
+		// Maintenance that fails never blocks the scan: the scan is the protection,
+		// the maintenance is the tidying up.
+		fmt.Fprintf(os.Stderr, "warning: periodic maintenance: %v\n", err)
 	}
 
-	sum, err := runner.Run(ctx, cycle.Options{Mode: modo, DryRun: *dryRun})
+	sum, err := runner.Run(ctx, cycle.Options{Mode: mode, DryRun: *dryRun})
 	if err != nil {
 		if errors.Is(err, errLocked) {
 			fmt.Fprintln(os.Stderr, err)
 			return exitLocked
 		}
-		fmt.Fprintf(os.Stderr, "erro: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return exitError
 	}
 
-	// Marca o primeiro ciclo, que inicia a contagem do periodo de graca.
+	// Mark the first cycle, which starts the grace period's count.
 	if a.cfg.General.FirstRunAt.IsZero() {
 		a.cfg.General.FirstRunAt = sum.StartedAt
 		if err := a.cfg.Save(); err != nil {
-			fmt.Fprintf(os.Stderr, "aviso: nao foi possivel registrar a data do primeiro ciclo: %v\n", err)
+			fmt.Fprintf(os.Stderr, "warning: could not record the date of the first cycle: %v\n", err)
 		}
 	}
 
-	achados := contarAcionaveis(sum)
+	findings := countActionable(sum)
 
 	switch {
 	case *asJSON:
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(relatorioJSON(sum)); err != nil {
-			fmt.Fprintf(os.Stderr, "erro serializando relatorio: %v\n", err)
+		if err := enc.Encode(jsonReport(sum)); err != nil {
+			fmt.Fprintf(os.Stderr, "error serializing the report: %v\n", err)
 			return exitError
 		}
-	case *quiet && achados == 0:
-		// silencio proposital
+	case *quiet && findings == 0:
+		// deliberate silence
 	default:
-		imprimirRelatorio(os.Stdout, sum, &manut)
+		printReport(os.Stdout, sum, &maint)
 	}
 
-	if achados > 0 {
+	if findings > 0 {
 		return exitFindings
 	}
 	return exitOK
 }
 
-func contarAcionaveis(sum cycle.Summary) int {
+func countActionable(sum cycle.Summary) int {
 	return sum.LevelCounts[schema.LevelConfirmed] +
 		sum.LevelCounts[schema.LevelLikely] +
 		sum.LevelCounts[schema.LevelSuspicious]
 }
 
-func relatorioJSON(sum cycle.Summary) map[string]any {
+func jsonReport(sum cycle.Summary) map[string]any {
 	out := sum.Event()
 	out["verdicts_detail"] = sum.Verdicts
 	return out
 }
 
-// imprimirRelatorio escreve o relatorio em texto.
+// printReport writes the report as text.
 //
-// A ordem nao e decorativa: primeiro o que exige acao, depois o que o usuario
-// precisa saber sobre a COBERTURA do scan. Um relatorio que diz "0 achados"
-// sem dizer que 3 dos 4 engines falharam e uma mentira por omissao.
-func imprimirRelatorio(w *os.File, sum cycle.Summary, manut *housekeeping.Result) {
-	fmt.Fprintf(w, "\nSentinelHost — ciclo %s (%s)\n", sum.ScanID, sum.Mode)
+// The order is not decorative: first what demands action, then what the user needs
+// to know about the scan's COVERAGE. A report that says "0 findings" without saying
+// that 3 of the 4 engines failed is a lie by omission.
+func printReport(w *os.File, sum cycle.Summary, maint *housekeeping.Result) {
+	fmt.Fprintf(w, "\nSentinelHost — cycle %s (%s)\n", sum.ScanID, sum.Mode)
 	fmt.Fprintf(w, "%s\n", strings.Repeat("─", 64))
-	fmt.Fprintf(w, "Duracao: %s | Considerados: %d | Escaneados: %d\n",
+	fmt.Fprintf(w, "Duration: %s | Considered: %d | Scanned: %d\n",
 		sum.FinishedAt.Sub(sum.StartedAt).Round(time.Millisecond),
 		sum.FilesConsidered, sum.FilesScanned)
 
-	// Engines: cobertura real deste ciclo.
+	// Engines: this cycle's real coverage.
 	fmt.Fprintf(w, "\nENGINES\n")
 	for _, e := range sum.Engines {
 		switch {
 		case !e.Available:
-			fmt.Fprintf(w, "  ✗ %-20s indisponivel — %s\n", e.Slug, e.Reason)
+			fmt.Fprintf(w, "  ✗ %-20s unavailable — %s\n", e.Slug, e.Reason)
 		case e.Status != schema.StatusCompleted:
-			fmt.Fprintf(w, "  ! %-20s %s (abstencao) — %s\n", e.Slug, e.Status, e.Reason)
+			fmt.Fprintf(w, "  ! %-20s %s (abstention) — %s\n", e.Slug, e.Status, e.Reason)
 		default:
-			fmt.Fprintf(w, "  ✓ %-20s %d achado(s) em %s\n", e.Slug, e.Findings, e.Duration.Round(time.Millisecond))
+			fmt.Fprintf(w, "  ✓ %-20s %d finding(s) in %s\n", e.Slug, e.Findings, e.Duration.Round(time.Millisecond))
 		}
-		// O que o engine NAO conseguiu olhar vem junto do que ele olhou.
-		// O wp-checksums registra quantos plugins ficaram sem verificacao
-		// (plugin comercial, proprio, ou sem versao no cabecalho); esse numero
-		// so no banco faria "nao verificado" se parecer com "limpo".
+		// What the engine could NOT look at travels with what it did look at.
+		// wp-checksums records how many plugins were left unverified (commercial,
+		// in-house, or with no version in the header); that number living only in
+		// the database would make "not verified" look like "clean".
 		if len(e.Skipped) > 0 {
-			fmt.Fprintf(w, "      pulados: %s\n", formatarPulados(e.Skipped))
+			fmt.Fprintf(w, "      skipped: %s\n", formatSkipped(e.Skipped))
 		}
 	}
-	// Abstencao de engine que nem chegou a ser sondado (habilitado na
-	// configuracao mas sem adaptador neste binario) tambem entra na lista: o
-	// numero de abstencoes tem que bater com os motivos exibidos, senao o
-	// usuario ve "4 se abstiveram" e so 3 explicacoes.
-	listados := map[string]bool{}
+	// An abstention from an engine that was never even probed (enabled in the
+	// configuration but with no adapter in this binary) also enters the list: the
+	// number of abstentions has to match the reasons shown, otherwise the user sees
+	// "4 abstained" and only 3 explanations.
+	listed := map[string]bool{}
 	for _, e := range sum.Engines {
-		listados[e.Slug] = true
+		listed[e.Slug] = true
 	}
-	for _, slug := range ordenar(sum.Abstentions) {
-		if !listados[slug] {
+	for _, slug := range sortedKeys(sum.Abstentions) {
+		if !listed[slug] {
 			fmt.Fprintf(w, "  ✗ %-20s %s\n", slug, sum.Abstentions[slug])
 		}
 	}
 	if len(sum.Abstentions) > 0 {
-		fmt.Fprintf(w, "\n  %d engine(s) se abstiveram: a cobertura deste ciclo esta reduzida.\n", len(sum.Abstentions))
+		fmt.Fprintf(w, "\n  %d engine(s) abstained: this cycle's coverage is reduced.\n", len(sum.Abstentions))
 	}
 
-	// Vereditos.
-	acionaveis := ordenarPorGravidade(sum.Verdicts)
-	fmt.Fprintf(w, "\nVEREDITOS\n")
-	if len(acionaveis) == 0 {
-		fmt.Fprintf(w, "  Nada a relatar.\n")
+	// Verdicts.
+	actionable := sortBySeverity(sum.Verdicts)
+	fmt.Fprintf(w, "\nVERDICTS\n")
+	if len(actionable) == 0 {
+		fmt.Fprintf(w, "  Nothing to report.\n")
 	}
-	for _, v := range acionaveis {
+	for _, v := range actionable {
 		fmt.Fprintf(w, "\n  [%s] score %.2f — %s\n", strings.ToUpper(string(v.Level)), v.Score, v.FilePath)
-		for _, voto := range v.Votes {
-			fmt.Fprintf(w, "      voto: %-20s peso %.2f x %-9s = %.2f  (regra %s)\n",
-				voto.Engine, voto.Weight, voto.Confidence, voto.EffectiveWeight, voto.Rule)
+		for _, vote := range v.Votes {
+			fmt.Fprintf(w, "      vote: %-20s weight %.2f x %-9s = %.2f  (rule %s)\n",
+				vote.Engine, vote.Weight, vote.Confidence, vote.EffectiveWeight, vote.Rule)
 		}
 		if len(v.Abstentions) > 0 {
-			fmt.Fprintf(w, "      abstencoes: %s\n", strings.Join(v.Abstentions, ", "))
+			fmt.Fprintf(w, "      abstentions: %s\n", strings.Join(v.Abstentions, ", "))
 		}
 		if v.CleanReason != "" {
 			fmt.Fprintf(w, "      veto: %s\n", v.CleanReason)
 		}
-		fmt.Fprintf(w, "      acao: %s", v.ActionTaken)
+		fmt.Fprintf(w, "      action: %s", v.ActionTaken)
 		if v.ActionError != "" {
 			fmt.Fprintf(w, " (%s)", v.ActionError)
 		}
 		fmt.Fprintln(w)
 	}
 
-	// Resumo por nivel.
-	fmt.Fprintf(w, "\nRESUMO  ")
+	// Summary per level.
+	fmt.Fprintf(w, "\nSUMMARY  ")
 	for _, l := range []schema.Level{schema.LevelConfirmed, schema.LevelLikely, schema.LevelSuspicious, schema.LevelClean} {
 		fmt.Fprintf(w, "%s=%d  ", l, sum.LevelCounts[l])
 	}
 	fmt.Fprintln(w)
 
 	if sum.ObservationReason != "" {
-		fmt.Fprintf(w, "\nNenhuma acao automatica foi executada: %s\n", sum.ObservationReason)
+		fmt.Fprintf(w, "\nNo automatic action was taken: %s\n", sum.ObservationReason)
 	}
-	if manut != nil && !manut.Empty() {
-		fmt.Fprintf(w, "\nManutencao: %s\n", resumoManutencao(*manut))
+	if maint != nil && !maint.Empty() {
+		fmt.Fprintf(w, "\nMaintenance: %s\n", maintenanceSummary(*maint))
 	}
 	if n := sum.SkippedCounts["truncated"]; n > 0 {
-		fmt.Fprintf(w, "\nATENCAO: o limite de arquivos por ciclo foi atingido. Parte do site nao foi olhada.\n")
+		fmt.Fprintf(w, "\nWARNING: the per-cycle file limit was reached. Part of the site was not looked at.\n")
 	}
 	if len(sum.SkippedCounts) > 0 {
-		fmt.Fprintf(w, "\nPulados: %s\n", formatarPulados(sum.SkippedCounts))
+		fmt.Fprintf(w, "\nSkipped: %s\n", formatSkipped(sum.SkippedCounts))
 	}
 	fmt.Fprintln(w)
 }
 
-// ordenarPorGravidade coloca o que exige acao no topo e esconde os limpos.
-func ordenarPorGravidade(vs []schema.Verdict) []schema.Verdict {
+// sortBySeverity puts what demands action on top and hides the clean ones.
+func sortBySeverity(vs []schema.Verdict) []schema.Verdict {
 	var out []schema.Verdict
 	for _, v := range vs {
 		if v.Level != schema.LevelClean {
@@ -233,7 +233,7 @@ func ordenarPorGravidade(vs []schema.Verdict) []schema.Verdict {
 	return out
 }
 
-func ordenar(m map[string]string) []string {
+func sortedKeys(m map[string]string) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
@@ -242,39 +242,39 @@ func ordenar(m map[string]string) []string {
 	return out
 }
 
-func formatarPulados(m map[string]int) string {
-	chaves := make([]string, 0, len(m))
+func formatSkipped(m map[string]int) string {
+	keys := make([]string, 0, len(m))
 	for k := range m {
-		chaves = append(chaves, k)
+		keys = append(keys, k)
 	}
-	sort.Strings(chaves)
-	partes := make([]string, 0, len(chaves))
-	for _, k := range chaves {
-		partes = append(partes, fmt.Sprintf("%s=%d", k, m[k]))
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%d", k, m[k]))
 	}
-	return strings.Join(partes, ", ")
+	return strings.Join(parts, ", ")
 }
 
-// resumoManutencao descreve em uma linha o que a rotina de manutencao fez.
-func resumoManutencao(r housekeeping.Result) string {
-	var partes []string
+// maintenanceSummary describes in one line what the maintenance routine did.
+func maintenanceSummary(r housekeeping.Result) string {
+	var parts []string
 	if r.RetriedDeliveries > 0 {
-		partes = append(partes, fmt.Sprintf("%d entrega(s) retentada(s)", r.RetriedDeliveries))
+		parts = append(parts, fmt.Sprintf("%d delivery/ies retried", r.RetriedDeliveries))
 	}
 	if r.DigestSent {
-		partes = append(partes, "resumo periodico enviado")
+		parts = append(parts, "periodic summary sent")
 	}
 	if r.PurgedQuarantine > 0 {
-		partes = append(partes, fmt.Sprintf("%d item(ns) purgado(s) por retencao", r.PurgedQuarantine))
+		parts = append(parts, fmt.Sprintf("%d item(s) purged by retention", r.PurgedQuarantine))
 	}
 	if r.PrunedEvents > 0 {
-		partes = append(partes, fmt.Sprintf("%d evento(s) de log podado(s)", r.PrunedEvents))
+		parts = append(parts, fmt.Sprintf("%d log event(s) pruned", r.PrunedEvents))
 	}
 	if r.PrunedRawDirs > 0 {
-		partes = append(partes, fmt.Sprintf("%d diretorio(s) de saida bruta removido(s)", r.PrunedRawDirs))
+		parts = append(parts, fmt.Sprintf("%d raw-output directory/ies removed", r.PrunedRawDirs))
 	}
 	if r.RecoveredScans > 0 {
-		partes = append(partes, fmt.Sprintf("%d ciclo(s) interrompido(s) registrado(s) como killed", r.RecoveredScans))
+		parts = append(parts, fmt.Sprintf("%d interrupted cycle(s) recorded as killed", r.RecoveredScans))
 	}
-	return strings.Join(partes, ", ")
+	return strings.Join(parts, ", ")
 }
