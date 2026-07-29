@@ -102,7 +102,18 @@ foram executadas. Resumo por fase:
 
 ## O que ficou pendente
 
-Nada foi silenciosamente omitido. Esta é a lista completa:
+Nada foi silenciosamente omitido. Esta é a lista completa.
+
+### Fechado depois da validação com engines reais
+
+| Item | Estado |
+|---|---|
+| Linhas de comando dos adaptadores | ✅ validadas contra AMWScan 0.15.1 e yara 4.2.3 reais |
+| `Probe()` confirmando que o engine roda | ✅ executa o engine, não só confere versão e arquivo |
+| Manutenção periódica no modo `cron` | ✅ `internal/housekeeping`, chamada por `scan`, `daemon` e painel |
+| Retenção de log e de saída bruta | ✅ aplicada de fato (antes era só configuração decorativa) |
+| Corrida de dados na config do painel | ✅ `RWMutex` + `Clone()` profundo + teste de concorrência para o `-race` |
+| Flood de achados de core ausente | ✅ abstenção acima de 10%, `anomaly` abaixo |
 
 ### 1. Validação em conta cPanel real (SC-006, parte da T040)
 
@@ -143,6 +154,24 @@ renderização, layout, acessibilidade nem o critério de tempo com um usuário
 real. O painel foi verificado manualmente durante o desenvolvimento (primeiro
 acesso, autenticação, carga das 7 áreas com dados reais da API), mas o SC-004
 completo continua sendo validação com pessoa.
+
+### 4b. Integração com Slack e Discord
+
+A US4 diz que os webhooks servem para "integrar com Slack/Discord/n8n ou
+sistemas próprios". Isso vale para **n8n, Zapier e endpoints próprios**, que
+aceitam qualquer JSON — mas **não** para Slack e Discord.
+
+Os *incoming webhooks* dos dois não aceitam payload arbitrário: o Slack espera
+`{"text": …}` ou blocos, o Discord espera `{"content": …}` ou `embeds`. Nosso
+envelope (`{schema_version, event, delivery_id, instance, data}`) é rejeitado
+ou vira mensagem vazia.
+
+Fechar isso exigiria um campo `format` por webhook (`raw`/`slack`/`discord`)
+com um formatador por destino — e a assinatura HMAC continuaria valendo só para
+`raw`, já que nenhum dos dois verifica assinatura. **Não está em nenhuma spec
+nem tarefa**; é escopo novo. Registrado aqui para não ser anunciado como pronto.
+
+O Telegram é declarado pós-MVP na própria spec (`spec.md:292`).
 
 ### 5. Publicação do release v0.1.0
 

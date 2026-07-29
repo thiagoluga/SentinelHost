@@ -61,6 +61,19 @@ está implementado.
 
 `wordfence-cli` e `clamav` ficam para depois do MVP.
 
+## Notificações — o que existe hoje
+
+| Canal | Estado |
+|---|---|
+| **E-mail (SMTP)** | Pronto. Alerta imediato por nível + resumo periódico, com envio de teste que mostra o erro real do servidor. |
+| **Webhook genérico** | Pronto. `POST` JSON assinado com HMAC-SHA256, 5 tentativas com backoff, histórico de entregas. |
+| **n8n, Zapier, endpoint próprio** | Funcionam com o webhook genérico. |
+| **Slack, Discord** | **Ainda não.** Os *incoming webhooks* deles não aceitam JSON arbitrário — o Slack espera `{"text": …}`, o Discord `{"content": …}`. Falta um formatador por destino. Hoje é preciso um intermediário (n8n, Zapier). |
+| **Telegram** | Pós-MVP, declarado na spec. |
+
+O contrato completo dos webhooks está em
+[`contracts/webhooks.md`](specs/001-orquestrador-mvp/contracts/webhooks.md).
+
 ## Instalação e uso
 
 Veja [`specs/001-orquestrador-mvp/quickstart.md`](specs/001-orquestrador-mvp/quickstart.md).
