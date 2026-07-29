@@ -42,12 +42,28 @@ const PharURL = "https://raw.githubusercontent.com/marcocesarato/PHP-Antimalware
 // MinPHPVersion exigida pelo engine.
 const MinPHPVersion = "7.1"
 
-// maxFilterArgBytes limita o tamanho do argumento --filter-paths.
+// O escopo incremental do AMWScan é aplicado pelo ADAPTADOR, não pelo engine.
 //
-// O Linux limita UM argumento a 128 KiB (MAX_ARG_STRLEN). Com 64 KiB o
-// adaptador para bem antes disso; passando do teto ele escaneia a raiz inteira
-// e filtra os achados na leitura do relatorio — mais lento, mas correto.
-const maxFilterArgBytes = 64 << 10
+// Duas limitações reais, ambas medidas no container de validação, levam a essa
+// escolha:
+//
+//  1. `--filter-paths` tem semântica de **E**, não de OU. Com um caminho ele
+//     funciona; com dois ou mais o engine roda, sai com código 0, escreve o
+//     relatório e não aponta NADA — nem os arquivos que casariam sozinhos.
+//     Esse é o pior modo de falha possível para este projeto: engine verde,
+//     relatório limpo, site infectado.
+//  2. `--filter-paths` filtra o RELATÓRIO, não o conjunto varrido. Uma
+//     execução por arquivo custou 1m37s para 11 arquivos, porque cada uma
+//     varreu a raiz inteira de novo.
+//
+// Conclusão: uma execução por ciclo, sobre a raiz, e o Parse descarta o que o
+// orquestrador não pediu. É mais CPU do que o ideal — o AMWScan simplesmente
+// não sabe escanear uma lista de arquivos — mas é correto, e correto vem
+// primeiro.
+
+// chaveAlvos é onde o Scan guarda, no RawOutput, o conjunto de caminhos que o
+// orquestrador pediu, para o Parse descartar o excedente.
+const chaveAlvos = "alvos"
 
 // FileStat sao os metadados que o orquestrador calcula sobre um arquivo
 // apontado por um engine que nao reporta hash.
@@ -283,12 +299,25 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 
 	base := reportBase(env.DataDir)
 	relatorio := base + ".log"
-	// Remove o relatorio anterior ANTES de rodar. Sem isso, um engine que
+
+	out := adapter.RawOutput{
+		Engine: Slug, ScanID: req.ScanID, Root: req.Root, Mode: req.Mode,
+		StartedAt: time.Now(), PathsRequested: len(req.Paths),
+		Status: schema.StatusCompleted,
+		Extra:  map[string]any{},
+	}
+	// O Parse precisa saber o que foi realmente pedido para descartar o
+	// excedente: o engine sempre varre a raiz inteira.
+	if len(req.Paths) > 0 {
+		out.Extra[chaveAlvos] = append([]string(nil), req.Paths...)
+	}
+
+	// Remove o relatorio anterior ANTES de rodar. Sem isso, uma execucao que
 	// falha deixa o relatorio do ciclo passado no lugar, e o Parse devolveria
 	// achados velhos como se fossem novos.
 	if err := os.Remove(relatorio); err != nil && !os.IsNotExist(err) {
-		return adapter.RawOutput{Engine: Slug, Status: schema.StatusFailed},
-			fmt.Errorf("limpando relatorio anterior: %w", err)
+		out.Status = schema.StatusFailed
+		return out, fmt.Errorf("limpando relatorio anterior: %w", err)
 	}
 
 	args := []string{
@@ -306,12 +335,6 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 	if req.MaxFileSizeBytes > 0 {
 		args = append(args, "--max-filesize", strconv.FormatInt(req.MaxFileSizeBytes, 10))
 	}
-	// Escopo incremental: quem decide a lista e o orquestrador. O AMWScan
-	// aceita uma lista separada por virgula em --filter-paths.
-	filtro := strings.Join(req.Paths, ",")
-	if len(req.Paths) > 0 && len(filtro) <= maxFilterArgBytes {
-		args = append(args, "--filter-paths", filtro)
-	}
 	args = append(args, env.ExtraArgs...)
 	args = append(args, req.Root)
 
@@ -323,16 +346,18 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 		Dir:     req.Root,
 		Timeout: req.Timeout,
 	})
+	out.RawRef = res.RawRef
+	out.FinishedAt = time.Now()
 
-	out := adapter.FromExecResult(req, Slug, res)
 	if res.Abstains() {
+		out.Status = res.Status
 		return out, res.Err
 	}
 
 	// A saida bruta e o arquivo de relatorio. stdout fica vazio por causa do
 	// --silent, e confundir "stdout vazio" com "nada achado" seria o erro
 	// classico deste adaptador.
-	conteudo, err := os.ReadFile(relatorio) //nolint:gosec // caminho derivado do diretorio de dados
+	conteudo, err := os.ReadFile(relatorio) // caminho derivado do diretorio de dados
 	switch {
 	case err == nil:
 		out.Stdout = conteudo
@@ -341,8 +366,8 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 		// tivesse rodado, ele teria escrito ao menos o cabecalho.
 		out.Status = schema.StatusFailed
 		return out, fmt.Errorf(
-			"o AMWScan terminou com codigo %d mas nao escreveu o relatorio em %s "+
-				"(saida: %q)", res.ExitCode, relatorio, primeiraLinha(res.Stderr))
+			"o AMWScan terminou com codigo %d mas nao escreveu o relatorio em %s (saida: %q)",
+			res.ExitCode, relatorio, primeiraLinha(res.Stderr))
 	default:
 		out.Status = schema.StatusFailed
 		return out, fmt.Errorf("lendo relatorio do AMWScan: %w", err)
@@ -418,6 +443,12 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 		detectedAt = time.Now()
 	}
 
+	// Quando o Scan varreu a raiz inteira (lote grande demais para uma
+	// execucao por arquivo), o relatorio traz achados de arquivos que o
+	// orquestrador NAO pediu. Descarta-los aqui e o que preserva o escopo
+	// incremental: quem decide a lista e o orquestrador, sempre.
+	permitido := alvosPermitidos(raw)
+
 	type pendente struct {
 		rule  string
 		extra string
@@ -437,6 +468,14 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 			return
 		}
 		defer func() { atual = nil }()
+
+		if permitido != nil && !permitido[arquivoAtual] {
+			if rep.Scope.SkippedReasonCounts == nil {
+				rep.Scope.SkippedReasonCounts = map[string]int{}
+			}
+			rep.Scope.SkippedReasonCounts["fora_do_escopo_pedido"]++
+			return
+		}
 
 		m, conhecida := classify(atual.rule, atual.tag)
 		if !conhecida {
@@ -540,6 +579,31 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 		rep.Scope.SkippedReasonCounts["regra_desconhecida"] = desconhecidas
 	}
 	return rep, nil
+}
+
+// alvosPermitidos devolve o conjunto de caminhos que o orquestrador pediu, ou
+// nil quando nao ha filtro a aplicar.
+//
+// nil e diferente de conjunto vazio: nil significa "aceite tudo o que o
+// relatorio trouxer" (execucao por arquivo, ou reprocessamento de saida bruta
+// arquivada, onde a lista original ja nao existe).
+func alvosPermitidos(raw adapter.RawOutput) map[string]bool {
+	if raw.Extra == nil {
+		return nil
+	}
+	bruto, ok := raw.Extra[chaveAlvos]
+	if !ok {
+		return nil
+	}
+	lista, ok := bruto.([]string)
+	if !ok || len(lista) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(lista))
+	for _, p := range lista {
+		out[p] = true
+	}
+	return out
 }
 
 // statFile le hash e metadados do arquivo apontado.

@@ -7,27 +7,16 @@
 # errada que o engine *aceita e ignora* produziria "0 achados" com o engine
 # marcado como saudável, que é o pior modo de falha possível deste projeto.
 #
-# Esta imagem fecha esse buraco. Ela imita uma hospedagem compartilhada:
-# Debian slim, PHP CLI, yara, usuário sem root.
+# Esta imagem imita uma hospedagem compartilhada: Debian slim, PHP CLI, yara,
+# usuário sem root.
+#
+# O binário é compilado FORA daqui (`make validar-engines` cuida disso) e só
+# copiado. Compilar dentro da imagem custava mais de dez minutos por iteração,
+# e uma ferramenta de validação que ninguém tem paciência de rodar não valida
+# nada.
 
-# --- build -------------------------------------------------------------------
-FROM golang:1.24-bookworm AS build
-
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-
-COPY . .
-RUN CGO_ENABLED=0 go build -trimpath \
-      -ldflags "-s -w -X main.version=validacao" \
-      -o /out/sentinelhost ./cmd/sentinelhost
-
-# --- runtime -----------------------------------------------------------------
 FROM debian:bookworm-slim
 
-# php-cli para o AMWScan, yara para o php-malware-finder, ca-certificates para
-# os downloads. Nada além disso: se a validação precisar de mais alguma coisa,
-# é sinal de que o binário não é tão autossuficiente quanto promete.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       php-cli \
       # php-mbstring NÃO é opcional: sem ela o AMWScan morre com exit 255 e
@@ -48,11 +37,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # existe para prevenir.
 RUN useradd --create-home --shell /bin/bash hospedagem
 
-COPY --from=build /out/sentinelhost /usr/local/bin/sentinelhost
+COPY dist/sentinelhost-linux-amd64 /usr/local/bin/sentinelhost
 COPY --chown=hospedagem:hospedagem tests/testdata/corpus /corpus
-COPY --chown=hospedagem:hospedagem docker/validar-engines.sh /usr/local/bin/validar-engines
+COPY docker/validar-engines.sh /usr/local/bin/validar-engines
 
-RUN chmod +x /usr/local/bin/validar-engines
+RUN chmod +x /usr/local/bin/sentinelhost /usr/local/bin/validar-engines
 
 USER hospedagem
 WORKDIR /home/hospedagem

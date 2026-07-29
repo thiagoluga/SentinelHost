@@ -124,19 +124,17 @@ chegar; o engine vem **desabilitado por padrão**, porque habilitar um engine se
 adaptador o faria constar como abstenção em todo ciclo — um alarme permanente
 sobre algo que o usuário não tem como resolver.
 
-### 3. Caminhos de `Install()` e `Scan()` dos engines reais
+### 3. Cobertura real do php-malware-finder
 
-Os testes automatizados cobrem `Probe()` e `Parse()`, mas **não baixam o phar do
-AMWScan nem executam o binário `yara`** (`DECISIONS.md` D-011): um teste que
-depende de rede e de binário externo falha em CI e na hospedagem do usuário por
-motivos que não têm nada a ver com o código. Esses caminhos precisam de
-validação manual:
+Os testes automatizados cobrem `Probe()` e `Parse()`; os caminhos de `Install()`
+e `Scan()` são validados no container (`make validar-engines`, item abaixo).
 
-```bash
-sentinelhost engines --install amwscan
-sentinelhost engines --install php-malware-finder
-sentinelhost scan
-```
+O que **continua sem validação real** é a detecção do php-malware-finder: o
+corpus sintético é inerte demais para casar com as regras reais do `php.yar` —
+o `yara` executado diretamente sobre o corpus casa **zero** regras. O adaptador
+está correto (o container confirma flags, execução e parsing), mas o engine não
+está sendo exercitado com nada que ele reconheça. Validar isso exigiria
+amostras que a constituição proíbe no repositório.
 
 ### 4. Usabilidade do painel (parte do SC-004)
 
@@ -219,6 +217,33 @@ ok  internal/verdict      tests/contract       tests/integration
 ```
 
 Todos verdes. `go vet ./...` limpo. CI (lint + test + build amd64/arm64) verde.
+
+### Valide os engines reais antes de confiar num scan
+
+```bash
+make validar-engines
+```
+
+Sobe um Debian com PHP CLI e `yara`, usuário sem root, instala os engines e
+compara o que o orquestrador vê com o que cada engine vê sozinho.
+
+**Isso não é opcional.** A suíte automatizada não executa os engines (D-011), e
+por isso as linhas de comando dos adaptadores passaram meses sem nunca terem
+sido exercitadas. Na primeira execução do container, todas reprovaram:
+
+| O que estava errado | Como aparecia |
+|---|---|
+| URL do release do AMWScan | 404 na instalação — visível |
+| `--format json` (não existe; é `--report-format txt`) | parser construído sobre um formato fictício |
+| `@arquivo` no yara (é `--scan-list`) | linha de comando inválida |
+| `--filter-paths` com vários caminhos | **engine verde, relatório limpo, site infectado** |
+| `mbstring` ausente | engine marcado como saudável sem nunca poder rodar |
+| 2998 achados `likely` de core ausente | ruído afogando os achados reais |
+
+Os dois últimos são os que importam: um scanner que reporta "0 achados" quando
+não escaneou nada é pior que scanner nenhum, porque produz confiança falsa. O
+`Probe` agora executa o engine de verdade, e o script compara sempre contra a
+linha de base do engine rodando sozinho.
 
 ### Rode os testes no Linux, não só na estação de trabalho
 

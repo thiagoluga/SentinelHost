@@ -195,11 +195,28 @@ else
   info "é exatamente isto que a suíte automatizada não consegue detectar"
 fi
 
-# E o mais perigoso de todos: engine marcado como saudável e zero achados.
-if grep -qE '✓ .* 0 achado' <<<"$saida_scan"; then
-  falha "um engine rodou com sucesso e não achou NADA no corpus sintético"
-  info "provável flag aceita-e-ignorada: o engine varreu outra coisa"
-  info "compare com os números da seção 'Execução direta' acima"
+# E o mais perigoso de todos: o engine roda, sai verde, e o orquestrador vê
+# menos do que o próprio engine viu sozinho. É a assinatura de uma flag
+# aceita-e-ignorada, e foi assim que o `--filter-paths` foi pego.
+#
+# A comparação é contra a LINHA DE BASE, não contra zero: um engine que não
+# acha nada porque o corpus é inerte demais para as regras dele está certo.
+orq_amw=$(grep -oE '✓ amwscan +[0-9]+ achado' <<<"$saida_scan" | grep -oE '[0-9]+' | head -1)
+orq_amw=${orq_amw:-0}
+if [ "${n_amw:-0}" -gt 0 ] && [ "$orq_amw" -eq 0 ]; then
+  falha "o AMWScan achou $n_amw arquivo(s) sozinho e o orquestrador viu 0"
+  info "assinatura de flag aceita-e-ignorada: o engine varreu outra coisa"
+elif [ "${n_amw:-0}" -gt 0 ]; then
+  ok "o orquestrador viu o que o AMWScan viu sozinho ($orq_amw vs $n_amw)"
+fi
+
+orq_pmf=$(grep -oE '✓ php-malware-finder +[0-9]+ achado' <<<"$saida_scan" | grep -oE '[0-9]+' | head -1)
+orq_pmf=${orq_pmf:-0}
+if [ "${n_yara:-0}" -gt 0 ] && [ "$orq_pmf" -eq 0 ]; then
+  falha "o yara casou $n_yara regra(s) sozinho e o orquestrador viu 0"
+elif [ "${n_yara:-0}" -eq 0 ]; then
+  aviso "o yara não casou nenhuma regra nem sozinho: o corpus sintético é inerte demais para o php.yar real"
+  info "isso NÃO é bug do adaptador, mas significa que o pmf não está sendo exercitado de verdade aqui"
 fi
 
 # ---------------------------------------------------------------------------

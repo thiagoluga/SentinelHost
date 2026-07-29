@@ -280,6 +280,66 @@ validação manual, listada como pendente no `SUMMARY.md`.
 
 ---
 
+## D-018 — Escopo incremental do AMWScan aplicado pelo adaptador
+
+**Contexto**: o contrato diz que quem decide o escopo é o orquestrador, e o
+adaptador só executa. Para o AMWScan isso não é implementável como pretendido.
+
+**Medições no container de validação** (`make validar-engines`):
+
+- `--filter-paths` com **um** caminho funciona; com **dois ou mais**, o engine
+  roda, sai com código 0, escreve o relatório e não aponta nada — nem os
+  arquivos que casariam sozinhos. É semântica de E, não de OU.
+- `--filter-paths` filtra o **relatório**, não o conjunto varrido. Uma execução
+  por arquivo custou 1m37s para 11 arquivos.
+
+**Decisão**: uma execução por ciclo, sobre a raiz, e o `Parse` descarta os
+achados fora da lista pedida. A lista viaja no `RawOutput.Extra`.
+
+**Motivo**: das opções possíveis, é a única correta. Passar vários caminhos
+produziria "0 achados" com o engine verde — engine saudável, relatório limpo,
+site infectado, que é o modo de falha que o Princípio VI existe para impedir.
+Uma execução por arquivo seria correta mas inviável em custo. O preço é CPU: o
+AMWScan varre o site inteiro a cada ciclo, e nenhuma configuração do
+SentinelHost muda isso, porque o engine não sabe escanear uma lista de arquivos.
+
+---
+
+## D-019 — Manutenção periódica também no caminho `scan`
+
+**Ambiguidade**: T025 pede daemon com ciclos, retentativas e digest. Não diz
+onde essas rotinas rodam no modo `cron`.
+
+**Decisão**: retentativa de webhook, resumo periódico, purga por retenção, poda
+de log e de saída bruta, e recuperação de ciclo interrompido vivem em
+`internal/housekeeping` e são chamadas por **`scan` e `daemon`**.
+
+**Motivo**: o modo padrão do projeto é `cron` (Princípio III — não se pode
+pressupor um processo vivo). Com as rotinas só no daemon, no caminho
+recomendado pela própria documentação o backoff de 5 tentativas existia no
+código e nunca acontecia, o digest nunca saía, e o log e a saída bruta cresciam
+até estourar a cota de disco da conta — a ferramenta derrubando o site que ela
+promete proteger.
+
+---
+
+## D-020 — Ausência de arquivo do core não é assinatura
+
+**Contexto**: na primeira execução real, o `wp-checksums` emitiu **2998**
+achados `likely` — um por arquivo de core ausente, incluindo fontes `.woff2`.
+
+**Decisão**: acima de 10% de arquivos do core ausentes, o adaptador **se
+abstém** com motivo explícito. Abaixo disso, só arquivo com extensão executável
+vira achado, com `confidence=anomaly` e `severity=medium`.
+
+**Motivo**: um WordPress incompleto quase nunca é ataque — é core em
+subdiretório, deploy parcial, symlink ou raiz mal configurada. E ausência não é
+assinatura de nada: um arquivo que não existe não contém backdoor e não pode
+ser quarentenado. Tratá-lo como `signature` fazia o peso 1,5 empurrar sozinho o
+achado para perto de `confirmed`, autorizando ação sobre um arquivo inexistente.
+
+---
+
 ## D-014 — Log estruturado no SQLite, saída bruta em arquivo
 
 **Ambiguidade**: o plan.md lista "logs" no diretório de dados e o FR-015 exige

@@ -58,5 +58,6 @@ install-lint:
 # adaptadores montam: a suite automatizada so testa Probe() e Parse().
 .PHONY: validar-engines
 validar-engines:
+	GOOS=linux GOARCH=amd64 $(GOBUILD) -o dist/sentinelhost-linux-amd64 $(PKG)
 	docker build -f docker/Dockerfile.validacao -t sentinelhost-validacao .
 	docker run --rm sentinelhost-validacao

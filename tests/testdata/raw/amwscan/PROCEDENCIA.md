@@ -57,9 +57,19 @@ mais que `Signature` sozinho.
 - **O engine exige extensões do PHP além do interpretador.** Sem `mbstring` ele
   morre com exit 255 e **zero saída** — por isso o `Probe` executa
   `--version` de verdade em vez de só conferir se o arquivo existe.
-- O escopo incremental vai por `--filter-paths` (lista separada por vírgula).
-  Acima de 64 KiB de argumento o adaptador desiste do filtro e varre a raiz,
-  porque o Linux limita um único argumento a 128 KiB.
+- **O escopo incremental é aplicado pelo adaptador, não pelo engine.** Duas
+  limitações do `--filter-paths`, ambas medidas no container:
+
+  1. **Semântica de E, não de OU.** Com um caminho ele funciona; com dois ou
+     mais o engine roda, sai com código 0, escreve o relatório e não aponta
+     **nada** — nem os arquivos que casariam sozinhos. Engine verde, relatório
+     limpo, site infectado.
+  2. **Filtra o relatório, não a varredura.** Uma execução por arquivo custou
+     1m37s para 11 arquivos, porque cada uma varreu a raiz inteira de novo.
+
+  Por isso o adaptador faz **uma execução por ciclo, sobre a raiz**, e descarta
+  no `Parse` o que o orquestrador não pediu. Custa mais CPU do que o ideal, mas
+  o AMWScan simplesmente não sabe escanear uma lista de arquivos.
 - O engine não reporta hash. Quem calcula o sha256 é o orquestrador, porque ele
   é a chave de deduplicação entre engines.
 - O relatório txt **não inclui o trecho do código**, só a regra e a linha.

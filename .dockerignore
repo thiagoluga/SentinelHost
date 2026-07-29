@@ -1,8 +1,12 @@
 .git/
-dist/
 .sentinelhost/
 
-# O docs/esquema-e-adaptadores.md dispara heuristica de antivirus em estacao
-# Windows e pode ficar ilegivel no contexto de build. Ele nao e necessario
+# dist/ inteiro fica de fora, MENOS o binário linux/amd64 que a imagem de
+# validação copia (ela não compila nada por dentro — ver docker/Dockerfile.validacao).
+dist/*
+!dist/sentinelhost-linux-amd64
+
+# O docs/esquema-e-adaptadores.md dispara heurística de antivírus em estação
+# Windows e pode ficar ilegível no contexto de build. Ele não é necessário
 # para validar os engines.
 docs/
