@@ -216,9 +216,24 @@ func TestArquivoNoCofreEhNeutralizado(t *testing.T) {
 		if err != nil {
 			t.Fatalf("stat do cofre: %v", err)
 		}
-		if info.Mode().Perm()&0o111 != 0 {
-			t.Errorf("o arquivo no cofre manteve permissao de execucao: %v", info.Mode().Perm())
+		perm := info.Mode().Perm()
+		if perm&0o111 != 0 {
+			t.Errorf("o arquivo no cofre manteve permissao de execucao: %v", perm)
 		}
+		if perm&0o077 != 0 {
+			t.Errorf("o arquivo no cofre e acessivel por grupo ou outros: %v", perm)
+		}
+		// O dono TEM que conseguir ler: sem isso, restaurar e verificar o
+		// cofre param de funcionar e a promessa de reversibilidade morre.
+		// Este defeito e invisivel no Windows, que ignora permissoes POSIX.
+		if perm&0o400 == 0 {
+			t.Errorf("o dono nao consegue ler a copia no cofre (%v): a restauracao ficaria impossivel", perm)
+		}
+	}
+
+	// E a prova pratica: o arquivo continua legivel para quem vai restaurar.
+	if _, err := os.ReadFile(item.VaultPath); err != nil {
+		t.Errorf("a copia no cofre nao pode ser lida: %v", err)
 	}
 }
 

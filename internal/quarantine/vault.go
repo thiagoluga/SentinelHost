@@ -119,8 +119,16 @@ func (v *Vault) Quarantine(ctx context.Context, verdictID, path, expectedSHA str
 			ErrVaultUnwritable, short(copiedSHA), short(atual))
 	}
 
-	// Remove permissao de execucao e de leitura por terceiros.
-	if err := os.Chmod(vaultPath, 0o000); err != nil {
+	// Neutralizacao: sem execucao, sem escrita, e sem nenhum acesso para
+	// grupo ou outros. O diretorio do cofre ja e 0700 e a extensao ja foi
+	// trocada; isto fecha o ultimo caminho.
+	//
+	// 0400 e nao 0000 de proposito: o dono precisa conseguir LER a copia para
+	// restaurar e para o `quarantine verify` conferir o hash. Com 0000, a
+	// promessa de reversibilidade morre em qualquer sistema que respeite
+	// permissoes POSIX — e o Windows nao respeita, o que faz esse defeito
+	// passar despercebido na estacao de trabalho e aparecer so em producao.
+	if err := os.Chmod(vaultPath, 0o400); err != nil {
 		// Nao e fatal: em alguns sistemas de arquivos o chmod falha. O
 		// arquivo ja esta neutralizado pela extensao e pelo diretorio 0700.
 		_ = err

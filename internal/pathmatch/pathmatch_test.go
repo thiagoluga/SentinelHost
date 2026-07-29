@@ -1,6 +1,7 @@
 package pathmatch_test
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/thiagoluga/SentinelHost/internal/pathmatch"
@@ -55,12 +56,28 @@ func TestMatchECaseSensitive(t *testing.T) {
 	}
 }
 
-func TestMatchNormalizaBarrasDoWindows(t *testing.T) {
+func TestPadraoComBarraInvertidaENormalizado(t *testing.T) {
+	// Quem edita o TOML num editor Windows escreve `**\uploads\**` sem pensar.
 	if !pathmatch.Match(`**\uploads\**`, "/site/wp-content/uploads/2026/x.php") {
 		t.Error("padrao com barra invertida deveria ser normalizado")
 	}
-	if !pathmatch.Match("**/uploads/**", `C:\site\wp-content\uploads\2026\x.php`) {
-		t.Error("caminho com barra invertida deveria ser normalizado")
+}
+
+func TestCaminhoUsaOSeparadorDoSistema(t *testing.T) {
+	// O caminho segue a convencao do sistema operacional. No Windows, o
+	// walker produz barras invertidas e elas precisam casar; no Linux, barra
+	// invertida e um caractere valido em nome de arquivo e NAO pode ser
+	// reescrita — converter corromperia nomes legitimos.
+	if runtime.GOOS == "windows" {
+		if !pathmatch.Match("**/uploads/**", `C:\site\wp-content\uploads\2026\x.php`) {
+			t.Error("no Windows o caminho com barra invertida deveria casar")
+		}
+		return
+	}
+	// No Linux, este "caminho" e um unico nome de arquivo com barras
+	// invertidas dentro — e nao pode ser confundido com uma hierarquia.
+	if pathmatch.Match("**/uploads/**", `arquivo\estranho\uploads\x.php`) {
+		t.Error("no Linux a barra invertida nao pode ser tratada como separador")
 	}
 }
 

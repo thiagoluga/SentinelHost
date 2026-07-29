@@ -1,4 +1,6 @@
-version: "2"
+# Formato v1, que e o que a golangci-lint-action instala por padrao.
+# Trocar para o formato v2 exigiria fixar uma versao especifica da ferramenta
+# no CI, e um lint que so roda numa versao exata quebra para quem contribui.
 
 run:
   timeout: 5m
@@ -16,26 +18,23 @@ linters:
     - revive
     - unconvert
     - nolintlint
-
-  settings:
-    gosec:
-      excludes:
-        # G204: o projeto INTEIRO existe para executar engines externos como
-        # subprocesso. Os argumentos sao montados em internal/exec, que valida
-        # o binario e nunca passa por shell.
-        - G204
-    revive:
-      rules:
-        - name: exported
-          disabled: true
-
-  exclusions:
-    rules:
-      - path: _test\.go
-        linters:
-          - gosec
-          - errcheck
-
-formatters:
-  enable:
     - gofmt
+
+linters-settings:
+  gosec:
+    excludes:
+      # G204: o projeto INTEIRO existe para executar engines externos como
+      # subprocesso. Os argumentos sao montados em internal/exec, que resolve
+      # o binario e nunca passa por shell.
+      - G204
+  revive:
+    rules:
+      - name: exported
+        disabled: true
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck

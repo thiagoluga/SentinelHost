@@ -1,8 +1,12 @@
-# Artefatos de build
+# Artefatos de build.
+#
+# As barras iniciais NAO sao decorativas: sem elas, o padrao `sentinelhost`
+# casa qualquer arquivo OU DIRETORIO com esse nome em qualquer nivel — e o
+# primeiro alvo seria `cmd/sentinelhost/`, que e o programa inteiro.
 /dist/
 /bin/
-sentinelhost
-sentinelhost.exe
+/sentinelhost
+/sentinelhost.exe
 
 # Dados de runtime (nunca versionados)
 /.sentinelhost/

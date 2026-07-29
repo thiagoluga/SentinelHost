@@ -28,8 +28,17 @@ import (
 // projeto, sao case-sensitive, e ignorar isso faria uma whitelist de
 // `Config.php` proteger tambem um `config.php` que o atacante plantou.
 func Match(pattern, path string) bool {
-	pattern = filepath.ToSlash(pattern)
+	// O PADRAO e sempre normalizado: ele e escrito a mao no TOML, e quem
+	// edita num editor Windows escreve `**\uploads\**` sem pensar. Barra
+	// invertida nao tem uso legitimo como literal num glob deste projeto.
+	pattern = strings.ReplaceAll(pattern, `\`, "/")
+
+	// O CAMINHO usa a conversao do sistema operacional, que no Linux e um
+	// no-op. Converter `\` em `/` no Linux corromperia nomes de arquivo
+	// legitimos — barra invertida e um caractere valido em nome de arquivo
+	// POSIX, e o alvo do projeto e justamente Linux.
 	path = filepath.ToSlash(path)
+
 	return matchSegments(splitPattern(pattern), strings.Split(strings.Trim(path, "/"), "/"))
 }
 
