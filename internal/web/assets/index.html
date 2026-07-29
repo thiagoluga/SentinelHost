@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>SentinelHost</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<!-- Tela de autenticacao. O painel inteiro fica atras dela: nenhuma area e
+     acessivel sem sessao valida (restricao explicita da constituicao). -->
+<div id="gate" class="gate" hidden>
+  <form class="gate-card" id="gate-form">
+    <div class="logo-mark big">S</div>
+    <h1 id="gate-title">SentinelHost</h1>
+    <p id="gate-sub" class="muted">Entre para acessar o painel.</p>
+
+    <label for="senha">Senha</label>
+    <input id="senha" type="password" autocomplete="current-password" required>
+
+    <div id="senha2-wrap" hidden>
+      <label for="senha2">Repita a senha</label>
+      <input id="senha2" type="password" autocomplete="new-password">
+      <p class="muted small">
+        Esta senha e a unica coisa entre a internet e um botao que move arquivos
+        do seu site. Use pelo menos 10 caracteres.
+      </p>
+    </div>
+
+    <button class="btn primary" type="submit" id="gate-btn">Entrar</button>
+    <p class="err" id="gate-err" hidden></p>
+  </form>
+</div>
+
+<div id="app" hidden>
+<aside class="side">
+  <div class="logo">
+    <div class="logo-mark">S</div>
+    <div><b>SentinelHost</b><small id="side-version">orquestrador</small></div>
+  </div>
+  <button class="nav-btn active" data-tab="dash"><span class="ico">▦</span> Visão geral</button>
+  <button class="nav-btn" data-tab="findings"><span class="ico">⚠</span> Achados <span class="pill" id="pill-findings" hidden>0</span></button>
+  <button class="nav-btn" data-tab="quarantine"><span class="ico">🗄</span> Quarentena</button>
+  <button class="nav-btn" data-tab="engines"><span class="ico">⚙</span> Engines</button>
+  <button class="nav-btn" data-tab="schedule"><span class="ico">🕐</span> Agendamento</button>
+  <button class="nav-btn" data-tab="alerts"><span class="ico">✉</span> Alertas</button>
+  <button class="nav-btn" data-tab="settings"><span class="ico">☰</span> Configurações</button>
+  <div class="side-foot" id="side-foot">carregando…</div>
+  <button class="btn sm ghost" id="btn-logout">Sair</button>
+</aside>
+
+<main>
+
+<!-- ============ VISÃO GERAL ============ -->
+<section class="tab active" id="tab-dash">
+  <header class="page">
+    <div><h1>Visão geral</h1><p id="dash-sub">Estado atual do monitoramento</p></div>
+    <div class="spacer"></div>
+    <button class="btn" id="btn-scan">Escanear agora</button>
+  </header>
+
+  <!-- A cobertura vem SEMPRE junto do resumo. Um painel que mostra "0 ameaças"
+       sem dizer que metade dos engines está fora esconde exatamente o que o
+       usuário precisa para confiar no número. -->
+  <div class="banner" id="banner-cobertura" hidden></div>
+  <div class="banner info" id="banner-observacao" hidden></div>
+
+  <div class="grid-4">
+    <div class="card kpi"><small>Confirmados</small><b class="c-crit" id="kpi-confirmed">–</b><span>quarentena automática</span></div>
+    <div class="card kpi"><small>Prováveis</small><b class="c-serious" id="kpi-likely">–</b><span>aguardam sua decisão</span></div>
+    <div class="card kpi"><small>Suspeitos</small><b class="c-warn" id="kpi-suspicious">–</b><span>apenas no relatório</span></div>
+    <div class="card kpi"><small>Em quarentena</small><b id="kpi-quarantine">–</b><span>todos restauráveis</span></div>
+  </div>
+
+  <div class="card">
+    <div class="chart-head"><h2>Último ciclo</h2><span class="muted small" id="ciclo-id"></span></div>
+    <div class="row3" id="ciclo-resumo"></div>
+  </div>
+
+  <div class="card">
+    <div class="chart-head"><h2>Cobertura por engine</h2></div>
+    <div id="dash-engines" class="engine-strip"></div>
+  </div>
+</section>
+
+<!-- ============ ACHADOS ============ -->
+<section class="tab" id="tab-findings">
+  <header class="page">
+    <div><h1>Achados</h1><p>Cada veredito mostra quem votou, com que peso e por qual regra.</p></div>
+    <div class="spacer"></div>
+    <label class="inline"><input type="checkbox" id="f-pendentes" checked> só pendentes</label>
+  </header>
+  <div id="lista-achados"></div>
+</section>
+
+<!-- ============ QUARENTENA ============ -->
+<section class="tab" id="tab-quarantine">
+  <header class="page">
+    <div><h1>Quarentena</h1><p>Nada aqui foi apagado. Todo item volta byte a byte ao lugar de origem.</p></div>
+    <div class="spacer"></div>
+    <label class="inline"><input type="checkbox" id="q-todos"> incluir restaurados e purgados</label>
+  </header>
+  <div class="card"><table class="table" id="tab-quar"><thead><tr>
+    <th>Ref</th><th>Arquivo original</th><th>Quarentenado</th><th>Retenção</th><th>Status</th><th></th>
+  </tr></thead><tbody></tbody></table></div>
+</section>
+
+<!-- ============ ENGINES ============ -->
+<section class="tab" id="tab-engines">
+  <header class="page">
+    <div><h1>Engines</h1><p>O SentinelHost não detecta nada sozinho: ele orquestra estes motores.</p></div>
+  </header>
+  <div id="lista-engines"></div>
+</section>
+
+<!-- ============ AGENDAMENTO ============ -->
+<section class="tab" id="tab-schedule">
+  <header class="page">
+    <div><h1>Agendamento</h1><p>Ciclos incrementais, scan completo e limites de recurso.</p></div>
+  </header>
+
+  <div class="card">
+    <h2>Ritmo</h2>
+    <div class="row2">
+      <label>Intervalo do ciclo incremental
+        <input id="s-incremental" placeholder="1h"></label>
+      <label>Scan completo (cron)
+        <input id="s-full" placeholder="0 3 * * 0"></label>
+      <label>Atualização de assinaturas (cron)
+        <input id="s-sig" placeholder="0 2 * * *"></label>
+      <label>Modo
+        <select id="s-mode"><option value="cron">somente cron</option><option value="daemon">daemon</option></select></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Limites de recurso</h2>
+    <p class="muted small">
+      Estes limites existem para que o scanner nunca cause a suspensão da sua
+      conta por abuso de recursos. Reduzir o <code>nice</code> aumenta a
+      prioridade do scanner — e o risco.
+    </p>
+    <div class="row2">
+      <label>nice (0–19) <input id="s-nice" type="number" min="0" max="19"></label>
+      <label>Tamanho máximo por arquivo (MB) <input id="s-maxsize" type="number" min="1"></label>
+      <label>Timeout por engine <input id="s-timeout" placeholder="5m"></label>
+      <label>Arquivos por lote <input id="s-batch" type="number" min="1"></label>
+      <label>Pausa entre lotes <input id="s-pause" placeholder="500ms"></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Modo somente-cron</h2>
+    <p class="muted small">Cole no gerenciador de cron do cPanel. Rode <code>sentinelhost cron-line</code> no servidor para a linha completa.</p>
+    <pre id="cron-box" class="pre"></pre>
+  </div>
+
+  <button class="btn primary" id="btn-salvar-agenda">Salvar agendamento</button>
+</section>
+
+<!-- ============ ALERTAS ============ -->
+<section class="tab" id="tab-alerts">
+  <header class="page">
+    <div><h1>Alertas</h1><p>E-mail e webhooks. O botão de teste mostra o erro real do servidor.</p></div>
+  </header>
+
+  <div class="card">
+    <h2>E-mail (SMTP)</h2>
+    <label class="inline"><input type="checkbox" id="e-enabled"> habilitar alertas por e-mail</label>
+    <div class="row2">
+      <label>Servidor <input id="e-host" placeholder="smtp.seudominio.com"></label>
+      <label>Porta <input id="e-port" type="number"></label>
+      <label>Segurança <select id="e-tls">
+        <option value="starttls">STARTTLS (587)</option>
+        <option value="tls">TLS direto (465)</option>
+        <option value="none">sem TLS</option></select></label>
+      <label>Usuário <input id="e-user" autocomplete="off"></label>
+      <label>Senha <input id="e-pass" type="password" autocomplete="off" placeholder="********"></label>
+      <label>Remetente <input id="e-from" placeholder="sentinel@seudominio.com"></label>
+      <label>Destinatários (vírgula) <input id="e-to"></label>
+      <label>URL do painel (entra no e-mail) <input id="e-panel" placeholder="http://127.0.0.1:8787"></label>
+    </div>
+    <fieldset class="niveis">
+      <legend>Alertar imediatamente para</legend>
+      <label class="inline"><input type="checkbox" class="e-lvl" value="confirmed"> confirmados</label>
+      <label class="inline"><input type="checkbox" class="e-lvl" value="likely"> prováveis</label>
+      <label class="inline"><input type="checkbox" class="e-lvl" value="suspicious"> suspeitos</label>
+    </fieldset>
+    <div class="row2">
+      <label class="inline"><input type="checkbox" id="e-digest"> enviar resumo periódico</label>
+      <label>Horário do resumo <input id="e-digest-at" placeholder="08:00"></label>
+    </div>
+    <div class="actions">
+      <button class="btn" id="btn-test-email">Enviar e-mail de teste</button>
+      <button class="btn primary" id="btn-salvar-email">Salvar</button>
+    </div>
+    <div class="result" id="res-email" hidden></div>
+  </div>
+
+  <div class="card">
+    <div class="chart-head"><h2>Webhooks</h2><button class="btn sm" id="btn-add-hook">Adicionar</button></div>
+    <p class="muted small">
+      Cada entrega vai assinada em <code>X-Sentinel-Signature</code>
+      (HMAC-SHA256 sobre <code>timestamp.corpo</code>). Falhas são retentadas
+      5 vezes com backoff.
+    </p>
+    <div id="lista-hooks"></div>
+    <button class="btn primary" id="btn-salvar-hooks">Salvar webhooks</button>
+  </div>
+</section>
+
+<!-- ============ CONFIGURAÇÕES ============ -->
+<section class="tab" id="tab-settings">
+  <header class="page">
+    <div><h1>Configurações</h1><p id="cfg-path" class="muted small"></p></div>
+  </header>
+
+  <div class="card">
+    <h2>Ação automática</h2>
+    <label class="inline"><input type="checkbox" id="c-observacao"> modo observação (nada é movido)</label>
+    <label>Período de graça após a primeira execução (dias)
+      <input id="c-graca" type="number" min="0"></label>
+    <p class="muted small">
+      Enquanto o período de graça durar, nenhuma quarentena automática acontece
+      — mesmo com o modo observação desligado. É o tempo de você calibrar pesos
+      e whitelist antes de a ferramenta mexer nos seus arquivos.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Limiares do veredito</h2>
+    <div class="row3">
+      <label>confirmado ≥ <input id="c-confirmed" type="number" step="0.01" min="0" max="1"></label>
+      <label>provável ≥ <input id="c-likely" type="number" step="0.01" min="0" max="1"></label>
+      <label>suspeito ≥ <input id="c-suspicious" type="number" step="0.01" min="0" max="1"></label>
+    </div>
+    <p class="muted small">
+      Só o nível <b>confirmado</b> autoriza ação automática. Os demais sempre
+      aguardam decisão humana.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Quarentena</h2>
+    <div class="row2">
+      <label>Retenção antes da purga (dias) <input id="c-retencao" type="number" min="0"></label>
+      <label class="inline"><input type="checkbox" id="c-autopurge"> purgar automaticamente após a retenção</label>
+    </div>
+    <p class="muted small">Retenção 0 significa “nunca expira”. A purga é a única operação irreversível do SentinelHost.</p>
+  </div>
+
+  <div class="card">
+    <h2>Whitelist</h2>
+    <p class="muted small">Um padrão por linha. Arquivos na whitelist nunca são quarentenados, mas continuam aparecendo no relatório.</p>
+    <textarea id="c-whitelist" rows="6" spellcheck="false"></textarea>
+  </div>
+
+  <div class="card">
+    <h2>Exclusões da varredura</h2>
+    <p class="muted small">Um padrão por linha. Aceita <code>**</code> para qualquer profundidade.</p>
+    <textarea id="c-exclude" rows="8" spellcheck="false"></textarea>
+  </div>
+
+  <button class="btn primary" id="btn-salvar-config">Salvar configurações</button>
+</section>
+
+</main>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<!-- Modal de confirmação da purga: a única operação irreversível do projeto
+     não pode acontecer por um clique acidental. -->
+<div id="modal" class="modal" hidden>
+  <div class="modal-card">
+    <h2 id="modal-title">Confirmar</h2>
+    <p id="modal-body"></p>
+    <input id="modal-input" placeholder="digite: purgar">
+    <div class="actions">
+      <button class="btn" id="modal-cancel">Cancelar</button>
+      <button class="btn danger" id="modal-ok">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

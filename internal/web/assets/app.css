@@ -1,0 +1,197 @@
+/* Painel do SentinelHost.
+   Evolucao direta de docs/painel-mockup.html: mesmas variaveis, mesmas
+   classes, mesma linguagem visual — agora consumindo a API real. */
+
+:root{
+  --page:#0d0d0d;
+  --surface:#1a1a19;
+  --surface-2:#222221;
+  --ink:#ffffff;
+  --ink-2:#c3c2b7;
+  --muted:#898781;
+  --grid:#2c2c2a;
+  --baseline:#383835;
+  --ring:rgba(255,255,255,0.10);
+  --accent:#3987e5;
+  --st-good:#0ca30c;
+  --st-warn:#fab219;
+  --st-serious:#ec835a;
+  --st-crit:#d03b3b;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--page);color:var(--ink);
+  font:14px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  display:flex;min-height:100vh;
+}
+#app{display:flex;width:100%}
+h1{font-size:22px;margin:0 0 2px}
+h2{font-size:15px;margin:0 0 12px;font-weight:600}
+a{color:var(--accent)}
+code{background:var(--surface-2);padding:1px 5px;border-radius:4px;font-size:12px}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+.spacer{flex:1}
+.c-crit{color:var(--st-crit)}
+.c-serious{color:var(--st-serious)}
+.c-warn{color:var(--st-warn)}
+.c-good{color:var(--st-good)}
+
+/* ---------- Barra lateral ---------- */
+.side{
+  width:230px;flex:0 0 230px;background:var(--surface);
+  border-right:1px solid var(--grid);padding:16px 12px;
+  display:flex;flex-direction:column;gap:2px;
+}
+.logo{display:flex;gap:10px;align-items:center;padding:4px 6px 16px}
+.logo b{display:block;font-size:14px}
+.logo small{display:block;color:var(--muted);font-size:11px}
+.logo-mark{
+  width:30px;height:30px;border-radius:8px;background:var(--accent);
+  display:grid;place-items:center;font-weight:700;
+}
+.logo-mark.big{width:46px;height:46px;font-size:22px;margin:0 auto 12px}
+.nav-btn{
+  display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+  background:none;border:0;color:var(--ink-2);padding:8px 10px;border-radius:8px;
+  font:inherit;cursor:pointer;
+}
+.nav-btn:hover{background:var(--surface-2);color:var(--ink)}
+.nav-btn.active{background:var(--surface-2);color:var(--ink);box-shadow:inset 0 0 0 1px var(--ring)}
+.ico{opacity:.8;width:16px;display:inline-block}
+.pill{
+  margin-left:auto;background:var(--st-crit);color:#fff;font-size:11px;
+  padding:1px 7px;border-radius:99px;
+}
+.side-foot{margin-top:auto;padding:12px 8px;color:var(--muted);font-size:11px;line-height:1.5}
+.dot{color:var(--st-good)}
+
+/* ---------- Conteudo ---------- */
+main{flex:1;padding:22px 26px;overflow-y:auto;max-width:1100px}
+.tab{display:none}
+.tab.active{display:block}
+.page{display:flex;align-items:flex-start;gap:16px;margin-bottom:18px}
+.page p{margin:0;color:var(--muted);font-size:13px}
+
+.card{
+  background:var(--surface);border:1px solid var(--grid);border-radius:12px;
+  padding:16px;margin-bottom:16px;
+}
+.chart-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.chart-head h2{margin:0}
+.grid-4{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px}
+.kpi small{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.kpi b{display:block;font-size:30px;line-height:1.2;margin:2px 0}
+.kpi span{color:var(--muted);font-size:11px}
+.row2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.row3{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+
+label{display:block;color:var(--ink-2);font-size:12px;margin-bottom:8px}
+label.inline{display:inline-flex;align-items:center;gap:7px;margin-right:16px}
+input,select,textarea{
+  width:100%;margin-top:4px;background:var(--surface-2);color:var(--ink);
+  border:1px solid var(--grid);border-radius:7px;padding:7px 9px;font:inherit;
+}
+label.inline input{width:auto;margin:0}
+textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px}
+fieldset.niveis{border:1px solid var(--grid);border-radius:8px;padding:10px 12px;margin:6px 0 12px}
+legend{color:var(--muted);font-size:11px;padding:0 4px}
+
+.btn{
+  background:var(--surface-2);color:var(--ink);border:1px solid var(--grid);
+  border-radius:8px;padding:7px 13px;font:inherit;cursor:pointer;
+}
+.btn:hover{border-color:var(--ring);background:#2a2a28}
+.btn.primary{background:var(--accent);border-color:var(--accent)}
+.btn.primary:hover{filter:brightness(1.1)}
+.btn.danger{background:var(--st-crit);border-color:var(--st-crit)}
+.btn.sm{padding:4px 9px;font-size:12px}
+.btn.ghost{background:none;margin-top:8px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.actions{display:flex;gap:8px;margin-top:12px;align-items:center}
+
+.badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}
+.b-crit{background:rgba(208,59,59,.18);color:#ff8f8f}
+.b-serious{background:rgba(236,131,90,.18);color:#f5b193}
+.b-warn{background:rgba(250,178,25,.18);color:#f7cf7c}
+.b-good{background:rgba(12,163,12,.18);color:#7fd67f}
+.b-muted{background:var(--surface-2);color:var(--muted)}
+
+.table{width:100%;border-collapse:collapse;font-size:13px}
+.table th{
+  text-align:left;color:var(--muted);font-weight:500;font-size:11px;
+  text-transform:uppercase;letter-spacing:.04em;
+  padding:6px 8px;border-bottom:1px solid var(--grid);
+}
+.table td{padding:8px;border-bottom:1px solid var(--grid);vertical-align:top}
+.table tr:last-child td{border-bottom:0}
+.path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-all}
+
+/* ---------- Vereditos ---------- */
+.verdict{border-left:3px solid var(--baseline)}
+.verdict.confirmed{border-left-color:var(--st-crit)}
+.verdict.likely{border-left-color:var(--st-serious)}
+.verdict.suspicious{border-left-color:var(--st-warn)}
+.verdict.clean{border-left-color:var(--st-good)}
+.votes{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+.votes td{padding:3px 8px 3px 0;color:var(--ink-2)}
+.votes .eng{font-weight:600;color:var(--ink)}
+.votes .calc{font-family:ui-monospace,Menlo,monospace;color:var(--muted)}
+.score-bar{height:5px;background:var(--surface-2);border-radius:99px;overflow:hidden;margin:8px 0}
+.score-bar i{display:block;height:100%;background:var(--accent)}
+
+.banner{
+  border:1px solid var(--st-warn);background:rgba(250,178,25,.10);
+  border-radius:10px;padding:11px 14px;margin-bottom:14px;font-size:13px;
+}
+.banner.info{border-color:var(--accent);background:rgba(57,135,229,.10)}
+.banner.bad{border-color:var(--st-crit);background:rgba(208,59,59,.10)}
+
+.engine-strip{display:grid;gap:8px}
+.engine-line{display:flex;align-items:center;gap:10px;font-size:13px}
+.engine-line .nome{min-width:170px;font-weight:600}
+.engine-line .motivo{color:var(--muted);font-size:12px}
+
+.pre{
+  background:var(--surface-2);border:1px solid var(--grid);border-radius:8px;
+  padding:11px;font-size:12px;overflow-x:auto;white-space:pre;margin:0;
+}
+.result{margin-top:10px;padding:10px 12px;border-radius:8px;font-size:13px;white-space:pre-wrap}
+.result.ok{background:rgba(12,163,12,.12);border:1px solid var(--st-good)}
+.result.bad{background:rgba(208,59,59,.12);border:1px solid var(--st-crit)}
+.err{color:#ff8f8f;font-size:13px;margin:8px 0 0}
+.empty{color:var(--muted);padding:18px;text-align:center}
+
+/* ---------- Login ---------- */
+.gate{position:fixed;inset:0;display:grid;place-items:center;background:var(--page);z-index:50}
+.gate-card{
+  background:var(--surface);border:1px solid var(--grid);border-radius:14px;
+  padding:28px;width:min(380px,92vw);text-align:center;
+}
+.gate-card h1{font-size:19px;margin-bottom:4px}
+.gate-card label{text-align:left;margin-top:14px}
+.gate-card .btn{width:100%;margin-top:16px}
+
+/* ---------- Toast e modal ---------- */
+.toast{
+  position:fixed;right:20px;bottom:20px;background:var(--surface-2);
+  border:1px solid var(--ring);border-radius:9px;padding:11px 15px;
+  font-size:13px;max-width:380px;z-index:60;
+}
+.toast.bad{border-color:var(--st-crit)}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:grid;place-items:center;z-index:70}
+.modal-card{
+  background:var(--surface);border:1px solid var(--grid);border-radius:12px;
+  padding:20px;width:min(420px,92vw);
+}
+.hook{border:1px solid var(--grid);border-radius:9px;padding:12px;margin-bottom:10px}
+
+@media (max-width:760px){
+  body{flex-direction:column}
+  .side{width:100%;flex:none;flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--grid)}
+  .side-foot,.logo{width:100%}
+  main{padding:16px}
+}
