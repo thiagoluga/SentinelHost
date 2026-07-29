@@ -224,6 +224,22 @@ nem tarefa**; é escopo novo. Registrado aqui para não ser anunciado como pront
 
 O Telegram é declarado pós-MVP na própria spec (`spec.md:292`).
 
+### ~~4c. Script de instalação em um comando~~ — implementado
+
+`install.sh`, exigido pelo Princípio VII. POSIX `sh` (dash e busybox servem),
+sem root e sem gerenciador de pacotes.
+
+O ponto que merece nota: **a verificação de checksum não é opcional e a
+ausência dela aborta**. Se o `SHA256SUMS` não estiver disponível, a instalação
+para em vez de seguir com um binário não conferido — `curl | sh` já pede
+confiança suficiente sem isso. O instalador também confirma que o binário
+*executa* antes de declarar sucesso, porque diretório com `noexec` é comum em
+hospedagem compartilhada e o erro precisa aparecer na instalação, não no
+primeiro cron.
+
+Exercitado no container contra um release servido localmente, incluindo o caso
+que mais importa: **binário adulterado é recusado**.
+
 ### 5. Publicação do release v0.1.0
 
 Binários e `dist/SHA256SUMS` estão gerados, mas **o release não foi publicado no

@@ -17,21 +17,39 @@ reportado com o motivo em vez de sumir em silêncio.
 ## 1. Instalar
 
 ```bash
-curl -fsSL https://github.com/thiagoluga/SentinelHost/releases/latest/download/sentinelhost-linux-amd64 -o ~/bin/sentinelhost
-chmod +x ~/bin/sentinelhost
+curl -fsSL https://raw.githubusercontent.com/thiagoluga/SentinelHost/main/install.sh | sh
 ```
 
-Em ARM (alguns planos de hospedagem), troque `amd64` por `arm64`. Se `~/bin`
-não existir, crie com `mkdir -p ~/bin` e acrescente ao `PATH`:
+O instalador detecta a arquitetura, baixa o binário, **confere o SHA-256
+publicado** e verifica que ele executa antes de declarar sucesso. Se o checksum
+não confere, ele não instala — e se o `SHA256SUMS` não estiver disponível, ele
+para: instalar um binário não conferido não é opção numa ferramenta de
+segurança.
+
+Ele não precisa de root nem de gerenciador de pacotes, e roda em `sh` (dash ou
+busybox servem — não exige bash).
+
+Para instalar em outro lugar:
+
+```bash
+curl -fsSL .../install.sh | SENTINELHOST_PREFIX=~/.local/bin sh
+```
+
+### Preferindo fazer à mão
+
+```bash
+mkdir -p ~/bin && cd ~/bin
+BASE=https://github.com/thiagoluga/SentinelHost/releases/latest/download
+curl -fsSLO "$BASE/sentinelhost-linux-amd64"    # ou -arm64
+curl -fsSLO "$BASE/SHA256SUMS"
+sha256sum -c SHA256SUMS --ignore-missing        # confira ANTES de executar
+mv sentinelhost-linux-amd64 sentinelhost && chmod +x sentinelhost
+```
+
+Se `~/bin` não estiver no `PATH`:
 
 ```bash
 echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
-```
-
-Confira os checksums publicados junto do release:
-
-```bash
-sha256sum -c SHA256SUMS --ignore-missing
 ```
 
 ## 2. Configurar

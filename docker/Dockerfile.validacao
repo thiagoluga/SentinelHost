@@ -31,6 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       jq \
       time \
       unzip \
+      busybox \
     && rm -rf /var/lib/apt/lists/*
 
 # Conta sem privilégio, como numa hospedagem compartilhada. Rodar a validação
@@ -41,6 +42,7 @@ RUN useradd --create-home --shell /bin/bash hospedagem
 COPY dist/sentinelhost-linux-amd64 /usr/local/bin/sentinelhost
 COPY --chown=hospedagem:hospedagem tests/testdata/corpus /corpus
 COPY docker/validar-engines.sh /usr/local/bin/validar-engines
+COPY install.sh /opt/install.sh
 
 RUN chmod +x /usr/local/bin/sentinelhost /usr/local/bin/validar-engines
 

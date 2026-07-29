@@ -441,6 +441,50 @@ if [[ "$pico" =~ ^[0-9]+$ ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+secao "Instalador (Princípio VII: instalação em um comando)"
+
+# O install.sh é exercitado contra um "release" servido localmente. Sem isto,
+# a única prova de que ele funciona seria eu ter lido o próprio script — que é
+# exatamente o tipo de verificação que falhou oito vezes nesta sessão (D-022).
+if [ -f /opt/install.sh ]; then
+  REL=/tmp/release
+  mkdir -p "$REL"
+  cp /usr/local/bin/sentinelhost "$REL/sentinelhost-linux-amd64"
+  ( cd "$REL" && sha256sum sentinelhost-linux-amd64 > SHA256SUMS )
+
+  # Servidor estático mínimo, sem depender de python nem de nada extra.
+  ( cd "$REL" && exec busybox httpd -f -p 18080 ) >/dev/null 2>&1 &
+  HTTPD=$!
+  sleep 1
+
+  if SENTINELHOST_BASE_URL="http://127.0.0.1:18080" \
+     SENTINELHOST_PREFIX="$HOME/bin-teste" \
+     NO_COLOR=1 sh /opt/install.sh >/tmp/install.log 2>&1; then
+    ok "install.sh instalou e o binário executa"
+    grep -q "checksum confere" /tmp/install.log \
+      && ok "o instalador conferiu o checksum" \
+      || falha "o instalador NÃO conferiu o checksum do que baixou"
+  else
+    falha "install.sh falhou"
+    sed 's/^/      /' /tmp/install.log | head -15
+  fi
+
+  # E o teste que importa mais: binário adulterado tem que ser RECUSADO.
+  printf 'binario adulterado' > "$REL/sentinelhost-linux-amd64"
+  if SENTINELHOST_BASE_URL="http://127.0.0.1:18080" \
+     SENTINELHOST_PREFIX="$HOME/bin-ruim" \
+     NO_COLOR=1 sh /opt/install.sh >/tmp/install-ruim.log 2>&1; then
+    falha "o instalador ACEITOU um binário que não confere com o checksum"
+  else
+    ok "binário adulterado foi recusado"
+  fi
+
+  kill "$HTTPD" 2>/dev/null || true
+else
+  aviso "install.sh não está na imagem; o instalador não foi exercitado"
+fi
+
+# ---------------------------------------------------------------------------
 secao "Veredito"
 
 if [ "$FALHAS" -eq 0 ] && [ "$AVISOS" -eq 0 ]; then
