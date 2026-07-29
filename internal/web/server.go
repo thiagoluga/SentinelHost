@@ -15,6 +15,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/thiagoluga/SentinelHost/internal/adapter"
@@ -30,7 +31,12 @@ var assets embed.FS
 
 // Server serve o painel e a API.
 type Server struct {
-	cfg      *config.Config
+	// cfgMu protege cfg. O painel EDITA a configuracao enquanto um ciclo
+	// disparado por /api/scan a LE — sem o lock, isso e uma corrida de dados
+	// de verdade sobre os mesmos mapas e fatias.
+	cfgMu sync.RWMutex
+	cfg   *config.Config
+
 	store    *store.Store
 	registry *adapter.Registry
 	vault    *quarantine.Vault
@@ -39,6 +45,52 @@ type Server struct {
 
 	limiter *rateLimiter
 	now     func() time.Time
+}
+
+// config devolve a configuracao para leitura.
+//
+// Devolve o ponteiro atual sob lock: quem escreve TROCA o conteudo apontado
+// por um clone (ver replaceConfig), entao um leitor que ja pegou o ponteiro
+// nunca ve a estrutura sendo alterada por baixo.
+func (s *Server) config() *config.Config {
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	return s.cfg
+}
+
+// ErrBusy indica que ha um ciclo em andamento segurando a configuracao.
+var ErrBusy = errors.New("ha um scan em andamento; tente de novo quando ele terminar")
+
+// mutateConfig aplica uma alteracao sobre um CLONE e so entao publica.
+//
+// O clone existe para que uma alteracao invalida nao deixe a configuracao pela
+// metade: se fn devolver erro, nada foi tocado.
+//
+// A escrita usa TryLock em vez de Lock porque um ciclo pode segurar a leitura
+// por minutos, e o painel pendurado sem explicacao e pior que uma recusa
+// clara. Quem escreve trocam o CONTEUDO apontado, e nao o ponteiro, para que o
+// executor de ciclos e o cofre — que compartilham o mesmo ponteiro — passem a
+// enxergar a configuracao nova.
+func (s *Server) mutateConfig(fn func(*config.Config) error) error {
+	if !s.cfgMu.TryLock() {
+		return ErrBusy
+	}
+	defer s.cfgMu.Unlock()
+
+	novo := s.cfg.Clone()
+	if err := fn(novo); err != nil {
+		return err
+	}
+	*s.cfg = *novo
+	return nil
+}
+
+// withConfigRead segura a configuracao durante uma operacao longa que a le do
+// comeco ao fim — na pratica, um ciclo de scan.
+func (s *Server) withConfigRead(fn func(*config.Config) error) error {
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	return fn(s.cfg)
 }
 
 // New monta o servidor.
@@ -89,8 +141,10 @@ func (s *Server) Handler() http.Handler {
 
 // ListenAndServe sobe o painel.
 func (s *Server) ListenAndServe(ctx context.Context) error {
+	// Lido uma vez, antes de qualquer requisicao existir: nao ha concorrencia
+	// neste ponto, e o endereco de escuta nao muda em tempo de execucao.
 	srv := &http.Server{
-		Addr:    s.cfg.Web.Listen,
+		Addr:    s.config().Web.Listen,
 		Handler: s.Handler(),
 		// Timeouts explicitos: um cliente lento nao pode segurar uma conexao
 		// indefinidamente num processo que tambem precisa rodar scans.

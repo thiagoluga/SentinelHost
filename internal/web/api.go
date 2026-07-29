@@ -106,7 +106,7 @@ func (s *Server) startSession(w http.ResponseWriter, req *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "gerando sessao: %v", err)
 		return
 	}
-	expira := s.now().Add(s.cfg.Web.SessionTTL.Duration)
+	expira := s.now().Add(s.config().Web.SessionTTL.Duration)
 	if err := s.store.CreateSession(req.Context(), token, expira,
 		req.UserAgent(), clientIP(req)); err != nil {
 		writeErr(w, http.StatusInternalServerError, "gravando sessao: %v", err)
@@ -136,7 +136,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, req *http.Request) {
 
 	pendentes, _ := s.store.ListVerdicts(ctx, store.VerdictFilter{PendingOnly: true, Limit: 200})
 
-	permitido, motivo := s.cfg.AutomaticActionAllowed(s.now())
+	cfg := s.config()
+	permitido, motivo := cfg.AutomaticActionAllowed(s.now())
 
 	// A cobertura vem junto do resumo, sempre. Um painel que mostra "0
 	// ameacas" sem dizer que metade dos engines esta fora esconde exatamente
@@ -151,7 +152,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, req *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"roots": s.cfg.General.Roots,
+		"roots": cfg.General.Roots,
 		"last_scan": map[string]any{
 			"scan_id":          ultimo.ScanID,
 			"mode":             ultimo.Mode,
@@ -180,8 +181,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, req *http.Request) {
 		"automatic_action": map[string]any{
 			"allowed":          permitido,
 			"reason":           motivo,
-			"observation_mode": s.cfg.General.ObservationMode,
-			"grace_ends_at":    s.cfg.GracePeriodEndsAt(),
+			"observation_mode": cfg.General.ObservationMode,
+			"grace_ends_at":    cfg.GracePeriodEndsAt(),
 		},
 	})
 }
@@ -261,10 +262,18 @@ func (s *Server) handleDecide(w http.ResponseWriter, req *http.Request) {
 
 	case "whitelist":
 		// A whitelist e permanente e vive no TOML, que e a fonte da verdade
-		// compartilhada com a CLI (FR-014).
-		s.cfg.Verdict.Whitelist = append(s.cfg.Verdict.Whitelist, v.FilePath)
-		if err := s.cfg.Save(); err != nil {
-			writeErr(w, http.StatusInternalServerError, "gravando whitelist: %v", err)
+		// compartilhada com a CLI (FR-014). E uma ESCRITA de configuracao como
+		// qualquer outra, e passa pelo mesmo lock.
+		err := s.mutateConfig(func(c *config.Config) error {
+			c.Verdict.Whitelist = append(c.Verdict.Whitelist, v.FilePath)
+			return c.Save()
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, ErrBusy) {
+				status = http.StatusConflict
+			}
+			writeErr(w, status, "gravando whitelist: %v", err)
 			return
 		}
 		_ = s.store.UpdateVerdictAction(req.Context(), id, schema.ActionSkippedWhitelist, "",
@@ -333,6 +342,7 @@ func (s *Server) handlePurge(w http.ResponseWriter, req *http.Request) {
 // Engines -----------------------------------------------------------------------
 
 func (s *Server) handleEngines(w http.ResponseWriter, req *http.Request) {
+	cfgEngines := s.config()
 	estados, _ := s.store.ListEngineStates(req.Context())
 	porSlug := map[string]store.EngineState{}
 	for _, e := range estados {
@@ -350,8 +360,8 @@ func (s *Server) handleEngines(w http.ResponseWriter, req *http.Request) {
 			"license":               info.License,
 			"homepage":              info.Homepage,
 			"cost":                  info.Cost,
-			"enabled":               s.cfg.EngineEnabled(slug),
-			"weight":                s.cfg.WeightFor(slug),
+			"enabled":               cfgEngines.EngineEnabled(slug),
+			"weight":                cfgEngines.WeightFor(slug),
 			"default_weight":        info.DefaultWeight,
 			"available":             st.Available,
 			"unavailable_reason":    st.UnavailableReason,
@@ -373,9 +383,9 @@ func (s *Server) handleEngineInstall(w http.ResponseWriter, req *http.Request) {
 	}
 
 	env := adapter.Environment{
-		DataDir:    s.cfg.General.DataDir,
-		BinaryPath: s.cfg.Engines[slug].Path,
-		ExtraArgs:  s.cfg.Engines[slug].ExtraArgs,
+		DataDir:    s.config().General.DataDir,
+		BinaryPath: s.config().Engines[slug].Path,
+		ExtraArgs:  s.config().Engines[slug].ExtraArgs,
 	}
 	if err := adapter.SafeInstall(req.Context(), a, env); err != nil {
 		if errors.Is(err, adapter.ErrNotInstallable) {
@@ -395,7 +405,7 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, _ *http.Request) {
 	// Segredos nunca saem pela API. O painel mostra "definido"/"nao definido"
 	// em vez do valor: quem tem acesso ao painel ja pode agir, mas nao
 	// precisa poder LER a senha do SMTP para colar em outro lugar.
-	c := *s.cfg
+	c := *s.config()
 	c.Alerts.Email.Password = mask(c.Alerts.Email.Password)
 	hooks := make([]config.Webhook, len(c.Alerts.Webhooks))
 	copy(hooks, c.Alerts.Webhooks)
@@ -416,7 +426,7 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, _ *http.Request) {
 			"web":        c.Web,
 			"logging":    c.Logging,
 		},
-		"path": s.cfg.Path(),
+		"path": s.config().Path(),
 	})
 }
 
@@ -438,26 +448,32 @@ func (s *Server) handleConfigPut(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	novo := *s.cfg
-	patch.apply(&novo)
+	var avisosValidacao []config.Problem
+	err := s.mutateConfig(func(c *config.Config) error {
+		patch.apply(c)
 
-	res := novo.Validate()
-	if res.HasErrors() {
-		// Configuracao invalida nao chega a tocar o arquivo: melhor recusar a
-		// edicao do que deixar a ferramenta sem conseguir subir depois.
-		writeErr(w, http.StatusBadRequest, "%v", res.Err())
+		res := c.Validate()
+		if res.HasErrors() {
+			// Configuracao invalida nao chega a tocar nem a copia publicada
+			// nem o arquivo: melhor recusar a edicao do que deixar a
+			// ferramenta sem conseguir subir depois.
+			return res.Err()
+		}
+		avisosValidacao = res.Warnings()
+		return c.Save()
+	})
+	switch {
+	case errors.Is(err, ErrBusy):
+		writeErr(w, http.StatusConflict, "%v", err)
 		return
-	}
-
-	*s.cfg = novo
-	if err := s.cfg.Save(); err != nil {
-		writeErr(w, http.StatusInternalServerError, "gravando configuracao: %v", err)
+	case err != nil:
+		writeErr(w, http.StatusBadRequest, "%v", err)
 		return
 	}
 	s.logAction(req, "configuracao alterada pelo painel", map[string]any{"campos": patch.fields()})
 
-	avisos := make([]string, 0)
-	for _, p := range res.Warnings() {
+	avisos := make([]string, 0, len(avisosValidacao))
+	for _, p := range avisosValidacao {
 		avisos = append(avisos, p.Field+": "+p.Message)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "warnings": avisos})
@@ -518,7 +534,15 @@ func (s *Server) handleScanNow(w http.ResponseWriter, req *http.Request) {
 		modo = schema.ModeFull
 	}
 
-	sum, err := s.runner.Run(req.Context(), cycle.Options{Mode: modo})
+	// O ciclo le a configuracao do comeco ao fim. Segurar o lock de leitura
+	// durante toda a execucao e o que impede o painel de trocar limiares ou
+	// exclusoes no meio de um scan.
+	var sum cycle.Summary
+	err := s.withConfigRead(func(*config.Config) error {
+		var err error
+		sum, err = s.runner.Run(req.Context(), cycle.Options{Mode: modo})
+		return err
+	})
 	if err != nil {
 		writeErr(w, http.StatusConflict, "%v", err)
 		return
@@ -549,10 +573,11 @@ func (s *Server) handleEvents(w http.ResponseWriter, req *http.Request) {
 }
 
 func (s *Server) handleCronLine(w http.ResponseWriter, _ *http.Request) {
+	cfg := s.config()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"incremental": s.cfg.Schedule.Incremental.Duration.String(),
-		"full_cron":   s.cfg.Schedule.FullCron,
-		"config_path": s.cfg.Path(),
+		"incremental": cfg.Schedule.Incremental.Duration.String(),
+		"full_cron":   cfg.Schedule.FullCron,
+		"config_path": cfg.Path(),
 		"hint":        "rode `sentinelhost cron-line` no servidor para a linha completa com o caminho do binario",
 	})
 }

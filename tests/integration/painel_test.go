@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -391,6 +393,71 @@ func TestPainelAplicaCabecalhosDeSeguranca(t *testing.T) {
 	}
 	if !strings.Contains(resp.Header.Get("X-Robots-Tag"), "noindex") {
 		t.Error("o painel poderia ser indexado")
+	}
+}
+
+// TestPainelSuportaConfigESacanConcorrentes existe para o `-race` do CI.
+//
+// O painel EDITA a configuracao enquanto um ciclo disparado por /api/scan a
+// LE — mapas e fatias compartilhados, sem sincronizacao nenhuma na primeira
+// versao. O detector de corrida so acusa se os dois acontecerem de fato ao
+// mesmo tempo, e nenhum outro teste faz isso.
+func TestPainelSuportaConfigEScanConcorrentes(t *testing.T) {
+	p := montarPainel(t)
+	autenticar(t, p)
+
+	const rodadas = 12
+	pronto := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Escritores de configuracao.
+	for i := 0; i < rodadas; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			<-pronto
+			// Cada escrita mexe em fatias e mapas — exatamente o que uma copia
+			// rasa compartilharia com quem esta lendo.
+			st, _ := p.req(t, "PUT", "/api/config", map[string]any{
+				"whitelist": []string{fmt.Sprintf("**/plugin-%d/**", n)},
+				"exclude":   []string{fmt.Sprintf("**/cache-%d/**", n)},
+				"engines": map[string]any{
+					"amwscan": map[string]any{"weight": 0.5 + float64(n)/100},
+				},
+			})
+			// 409 e resposta legitima: ha um scan segurando a configuracao.
+			if st != http.StatusOK && st != http.StatusConflict {
+				t.Errorf("PUT /api/config devolveu %d", st)
+			}
+		}(i)
+	}
+
+	// Leitores e scans concorrentes.
+	for i := 0; i < rodadas; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-pronto
+			if st, _ := p.req(t, "GET", "/api/status", nil); st != http.StatusOK {
+				t.Errorf("GET /api/status devolveu %d", st)
+			}
+			if st, _ := p.req(t, "POST", "/api/scan", map[string]any{"full": false}); st != http.StatusOK && st != http.StatusConflict {
+				t.Errorf("POST /api/scan devolveu %d", st)
+			}
+		}()
+	}
+
+	close(pronto)
+	wg.Wait()
+
+	// A configuracao no disco tem que continuar valida e legivel: uma escrita
+	// concorrente nao pode deixar o TOML pela metade.
+	doDisco, err := config.Load(p.cfg.Path())
+	if err != nil {
+		t.Fatalf("a configuracao ficou ilegivel apos escritas concorrentes: %v", err)
+	}
+	if res := doDisco.Validate(); res.HasErrors() {
+		t.Errorf("a configuracao ficou invalida apos escritas concorrentes: %v", res.Errors())
 	}
 }
 

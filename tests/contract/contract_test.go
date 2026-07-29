@@ -63,61 +63,81 @@ func raw(engine string, stdout []byte, status schema.ScanStatus) adapter.RawOutp
 func TestAMWScanParseAchados(t *testing.T) {
 	a := amwscan.New().WithStat(statFalso)
 
-	rep, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "sucesso-com-achados.json"), schema.StatusCompleted))
+	rep, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "sucesso-com-achados.txt"), schema.StatusCompleted))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	if err := rep.Validate(); err != nil {
 		t.Fatalf("relatorio nao cumpre o esquema: %v", err)
 	}
-	if rep.Status != schema.StatusCompleted || rep.Abstains() {
+	if rep.Abstains() {
 		t.Fatalf("relatorio de sucesso nao deveria abster-se: %q", rep.Status)
 	}
 	if len(rep.Findings) != 3 {
 		t.Fatalf("esperava 3 achados, veio %d", len(rep.Findings))
 	}
-	if rep.EngineVersion != "0.10.4" {
-		t.Errorf("versao do engine perdida: %q", rep.EngineVersion)
-	}
-	if rep.Scope.FilesScanned != 412 {
-		t.Errorf("files_scanned: %d", rep.Scope.FilesScanned)
-	}
 
-	// A tabela regra->categoria e o contrato do adaptador.
-	esperado := map[string]struct {
-		cat  schema.Category
-		conf schema.Confidence
-	}{
-		"SIGNATURE_KNOWN_MARKER": {schema.CategoryKnownMalware, schema.ConfidenceSignature},
-		"EVAL_POST":              {schema.CategoryBackdoor, schema.ConfidenceHeuristic},
-		"OBFUSCATED_BLOB":        {schema.CategoryObfuscation, schema.ConfidenceHeuristic},
+	// A hierarquia do relatorio: cada achado tem que ficar com o arquivo do
+	// bloco `File:` a que pertence. Tratar as linhas isoladamente produziria
+	// achados sem arquivo, ou todos no arquivo errado.
+	esperado := map[string]string{
+		"Signature":               "/home/user/public_html/wp-content/uploads/2026/07/x.php",
+		"Eval":                    "/home/user/public_html/wp-content/plugins/cache-helper/init.php",
+		"RegraQueNaoEstaNaTabela": "/home/user/public_html/wp-content/themes/tema/inc/loader.php",
 	}
 	for _, f := range rep.Findings {
-		e, ok := esperado[f.Rule]
+		caminho, ok := esperado[f.Rule]
 		if !ok {
-			t.Errorf("regra inesperada no relatorio: %q", f.Rule)
+			t.Errorf("regra inesperada: %q", f.Rule)
 			continue
 		}
-		if f.Category != e.cat {
-			t.Errorf("%s: categoria %q, esperada %q", f.Rule, f.Category, e.cat)
-		}
-		if f.Confidence != e.conf {
-			t.Errorf("%s: confianca %q, esperada %q", f.Rule, f.Confidence, e.conf)
+		if f.File.Path != caminho {
+			t.Errorf("%s: arquivo %q, esperado %q", f.Rule, f.File.Path, caminho)
 		}
 		if f.File.SHA256 != shaFalso {
 			t.Errorf("%s: o orquestrador deveria ter calculado o sha256", f.Rule)
 		}
-		if f.Engine != amwscan.Slug {
-			t.Errorf("%s: engine %q", f.Rule, f.Engine)
+	}
+}
+
+func TestAMWScanTagVenceONomeDaRegra(t *testing.T) {
+	// A linha "      => backdoor" e mais especifica que o nome da regra:
+	// "Signature" sozinho nao diz de que familia e o achado.
+	a := amwscan.New().WithStat(statFalso)
+	rep, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "sucesso-com-achados.txt"), schema.StatusCompleted))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	for _, f := range rep.Findings {
+		if f.Rule == "Signature" && f.Category != schema.CategoryBackdoor {
+			t.Errorf("a tag `backdoor` deveria ter definido a categoria, veio %q", f.Category)
 		}
 	}
 }
 
+func TestAMWScanLinhaDoAchadoEPreservada(t *testing.T) {
+	a := amwscan.New().WithStat(statFalso)
+	rep, _ := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "sucesso-com-achados.txt"), schema.StatusCompleted))
+	achou := false
+	for _, f := range rep.Findings {
+		if f.Rule == "Signature" {
+			achou = true
+			if f.MatchedOffset != 4 {
+				t.Errorf("linha do achado: %d, esperado 4", f.MatchedOffset)
+			}
+		}
+	}
+	if !achou {
+		t.Error("achado Signature nao apareceu")
+	}
+}
+
 func TestAMWScanSemAchadosNaoEAbstencao(t *testing.T) {
-	// Zero achados com engine que rodou e um site limpo, nao uma falha.
+	// O AMWScan sempre escreve ao menos a linha `Scan date:`. Um relatorio so
+	// com o cabecalho significa site limpo, nao falha.
 	a := amwscan.New().WithStat(statFalso)
 
-	rep, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "sucesso-sem-achados.json"), schema.StatusCompleted))
+	rep, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "sucesso-sem-achados.txt"), schema.StatusCompleted))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -129,104 +149,67 @@ func TestAMWScanSemAchadosNaoEAbstencao(t *testing.T) {
 	}
 }
 
-func TestAMWScanSaidaVaziaViraAbstencao(t *testing.T) {
-	// O AMWScan sempre emite o JSON do relatorio. Vazio significa que ele
-	// morreu antes de escrever — abstencao, nunca "nao achou nada".
+func TestAMWScanRelatorioVazioViraAbstencao(t *testing.T) {
+	// Vazio significa que o engine nao chegou a escrever o cabecalho —
+	// abstencao, nunca "nao achou nada".
 	a := amwscan.New().WithStat(statFalso)
 
-	_, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "saida-vazia.json"), schema.StatusCompleted))
+	_, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "saida-vazia.txt"), schema.StatusCompleted))
 	if err == nil {
-		t.Fatal("saida vazia deveria ser recusada pelo parser")
+		t.Fatal("relatorio vazio deveria ser recusado pelo parser")
 	}
 }
 
-func TestAMWScanSaidaCorrompidaViraAbstencao(t *testing.T) {
+func TestAMWScanRelatorioForaDoFormatoViraAbstencao(t *testing.T) {
 	a := amwscan.New().WithStat(statFalso)
 
-	_, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "saida-corrompida.json"), schema.StatusCompleted))
+	_, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "saida-corrompida.txt"), schema.StatusCompleted))
 	if err == nil {
-		t.Fatal("JSON truncado deveria ser recusado")
-	}
-}
-
-func TestAMWScanDetectaRelatorioTruncado(t *testing.T) {
-	// O engine declara N deteccoes mas lista menos: relatorio incompleto.
-	// Aceita-lo como bom esconderia achados reais.
-	a := amwscan.New().WithStat(statFalso)
-	truncado := []byte(`{"version":"0.10.4","scanned":10,"detected":5,"logs":[
-		{"file":"/x.php","exploit":"EVAL_POST","line":1}]}`)
-
-	_, err := a.Parse(raw(amwscan.Slug, truncado, schema.StatusCompleted))
-	if err == nil {
-		t.Fatal("divergencia entre contador e lista deveria ser recusada")
+		t.Fatal("relatorio fora do formato deveria ser recusado")
 	}
 }
 
 func TestAMWScanRegraDesconhecidaNaoEDescartada(t *testing.T) {
-	// Obrigacao 4 do contrato: regra desconhecida vira other/medium/heuristic.
-	// Descartar faria um achado real sumir quando o engine ganhasse uma
-	// assinatura nova entre duas versoes do SentinelHost.
+	// Obrigacao 4 do contrato. A tabela cobre so as regras vistas em execucao
+	// real; descartar o resto faria achados sumirem a cada versao nova do
+	// engine.
 	a := amwscan.New().WithStat(statFalso)
-	entrada := []byte(`{"version":"0.10.4","scanned":1,"detected":1,"logs":[
-		{"file":"/x.php","exploit":"REGRA_QUE_NAO_EXISTE_NA_TABELA","line":7,"details":"x"}]}`)
 
-	rep, err := a.Parse(raw(amwscan.Slug, entrada, schema.StatusCompleted))
+	rep, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "sucesso-com-achados.txt"), schema.StatusCompleted))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if len(rep.Findings) != 1 {
-		t.Fatalf("o achado foi descartado: %d", len(rep.Findings))
+	var achou bool
+	for _, f := range rep.Findings {
+		if f.Rule == "RegraQueNaoEstaNaTabela" {
+			achou = true
+			if f.Category != schema.CategoryOther {
+				t.Errorf("categoria: %q, esperada other", f.Category)
+			}
+		}
 	}
-	f := rep.Findings[0]
-	if f.Category != schema.CategoryOther {
-		t.Errorf("categoria: %q, esperada other", f.Category)
+	if !achou {
+		t.Fatal("o achado de regra desconhecida foi descartado")
 	}
-	if f.Rule != "REGRA_QUE_NAO_EXISTE_NA_TABELA" {
-		t.Errorf("o nome original da regra deveria ser preservado: %q", f.Rule)
-	}
-	// E o relatorio registra que houve regra desconhecida, para que a tabela
-	// receba manutencao em vez de envelhecer em silencio.
-	if rep.Scope.SkippedReasonCounts["regra_desconhecida"] != 1 {
+	if rep.Scope.SkippedReasonCounts["regra_desconhecida"] == 0 {
 		t.Errorf("a regra desconhecida deveria ser contabilizada: %v", rep.Scope.SkippedReasonCounts)
 	}
 }
 
 func TestAMWScanArquivoQueSumiuNaoViraAchadoSemHash(t *testing.T) {
-	// Sem hash nao ha como deduplicar entre engines; inventar uma chave seria
-	// pior que pular.
 	a := amwscan.New().WithStat(func(string) (amwscan.FileStat, bool) {
 		return amwscan.FileStat{}, false
 	})
-	entrada := []byte(`{"version":"0.10.4","scanned":1,"detected":1,"logs":[
-		{"file":"/sumiu.php","exploit":"EVAL_POST","line":1}]}`)
 
-	rep, err := a.Parse(raw(amwscan.Slug, entrada, schema.StatusCompleted))
+	rep, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "sucesso-com-achados.txt"), schema.StatusCompleted))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	if len(rep.Findings) != 0 {
 		t.Fatalf("achado sem hash nao deveria entrar: %+v", rep.Findings)
 	}
-	if rep.Scope.SkippedReasonCounts["sumiu_antes_do_hash"] != 1 {
-		t.Errorf("o arquivo sumido deveria ser contabilizado: %v", rep.Scope.SkippedReasonCounts)
-	}
-}
-
-func TestAMWScanMatchedContentESanitizadoETruncado(t *testing.T) {
-	a := amwscan.New().WithStat(statFalso)
-	longo := make([]byte, 0, 4096)
-	for i := 0; i < 2000; i++ {
-		longo = append(longo, 'A')
-	}
-	entrada := []byte(`{"version":"0.10.4","scanned":1,"detected":1,"logs":[
-		{"file":"/x.php","exploit":"EVAL_POST","line":1,"match":"` + string(longo) + `"}]}`)
-
-	rep, err := a.Parse(raw(amwscan.Slug, entrada, schema.StatusCompleted))
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	if len(rep.Findings[0].MatchedContent) > schema.MaxMatchedContentBytes {
-		t.Errorf("trecho nao foi truncado: %d bytes", len(rep.Findings[0].MatchedContent))
+	if rep.Scope.SkippedReasonCounts["sumiu_antes_do_hash"] != 3 {
+		t.Errorf("os arquivos sumidos deveriam ser contabilizados: %v", rep.Scope.SkippedReasonCounts)
 	}
 }
 

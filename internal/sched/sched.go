@@ -9,12 +9,12 @@ package sched
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/thiagoluga/SentinelHost/internal/alert"
 	"github.com/thiagoluga/SentinelHost/internal/config"
 	"github.com/thiagoluga/SentinelHost/internal/cycle"
+	"github.com/thiagoluga/SentinelHost/internal/housekeeping"
 	"github.com/thiagoluga/SentinelHost/internal/lock"
 	"github.com/thiagoluga/SentinelHost/internal/quarantine"
 	"github.com/thiagoluga/SentinelHost/internal/schema"
@@ -45,9 +45,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 		intervalo = time.Hour
 	}
 
-	// Ciclos interrompidos por um kill anterior sao registrados no arranque,
-	// para que o historico nao fique com buracos silenciosos.
-	d.recoverInterrupted(ctx)
+	// Manutencao no arranque: fecha ciclos interrompidos por um kill anterior,
+	// retoma entregas pendentes e aplica a retencao de disco.
+	d.manutencao(ctx)
 
 	// Primeiro ciclo imediato: quem sobe o daemon quer saber o estado agora,
 	// nao daqui a uma hora.
@@ -69,8 +69,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 			d.runOnce(ctx)
 		case <-checkFull.C:
 			d.maybeFull(ctx)
-			d.maybeDigest(ctx)
-			d.maybeAutoPurge(ctx)
+			d.manutencao(ctx)
 		}
 	}
 }
@@ -80,14 +79,6 @@ func (d *Daemon) Run(ctx context.Context) error {
 // Nenhum erro de ciclo derruba o daemon: um scan que falhou hoje nao pode
 // impedir o scan de amanha. A falha e registrada e a vida continua.
 func (d *Daemon) runOnce(ctx context.Context) {
-	// Retentativas de webhook pendentes vem primeiro: e o que faz o backoff
-	// sobreviver a um processo morto entre tentativas.
-	if d.alerts != nil {
-		if _, err := d.alerts.RetryPending(ctx); err != nil {
-			d.log(ctx, "warn", store.CatAlert, "retentativas pendentes: "+err.Error())
-		}
-	}
-
 	sum, err := d.runner.Run(ctx, cycle.Options{Mode: schema.ModeIncremental})
 	switch {
 	case errors.Is(err, lock.ErrLocked):
@@ -133,54 +124,20 @@ func (d *Daemon) maybeFull(ctx context.Context) {
 	}
 }
 
-func (d *Daemon) maybeDigest(ctx context.Context) {
-	if d.alerts == nil {
-		return
-	}
-	enviado, err := d.alerts.SendDigestIfDue(ctx)
-	if err != nil {
-		d.log(ctx, "warn", store.CatAlert, "digest: "+err.Error())
-		return
-	}
-	if enviado {
-		d.log(ctx, "info", store.CatAlert, "resumo periodico enviado")
-	}
-}
-
-// maybeAutoPurge so age quando o usuario ligou a purga automatica.
+// manutencao delega ao pacote housekeeping, o MESMO que o comando `scan` usa.
 //
-// A purga em si e delegada ao cofre, que recusa qualquer item ainda dentro da
-// retencao — o daemon nao tem como contornar essa barreira nem por engano.
-func (d *Daemon) maybeAutoPurge(ctx context.Context) {
-	if !d.cfg.Quarantine.AutoPurge || d.vault == nil {
-		return
-	}
-	n, err := d.vault.PurgeExpired(ctx)
+// Antes estas rotinas viviam so aqui, e o modo padrao do projeto e `cron` — o
+// resultado era que retentativa de webhook, resumo periodico e retencao de
+// disco nunca aconteciam para a maioria dos usuarios.
+func (d *Daemon) manutencao(ctx context.Context) {
+	res, err := housekeeping.Run(ctx, housekeeping.Deps{
+		Cfg: d.cfg, Store: d.store, Vault: d.vault, Alerts: d.alerts, Now: d.now,
+	})
 	if err != nil {
-		d.log(ctx, "warn", store.CatQuarantine, "purga automatica: "+err.Error())
+		d.log(ctx, "warn", store.CatSystem, "manutencao periodica: "+err.Error())
 	}
-	if n > 0 {
-		// Remocao definitiva de arquivo do usuario sempre vira registro, mesmo
-		// tendo sido autorizada de antemao pela configuracao.
-		d.log(ctx, "warn", store.CatQuarantine,
-			fmt.Sprintf("%d item(ns) expirado(s) purgado(s) definitivamente pela rotina automatica", n))
-	}
-}
-
-// recoverInterrupted registra ciclos que ficaram sem desfecho.
-func (d *Daemon) recoverInterrupted(ctx context.Context) {
-	ids, err := d.store.InterruptedScans(ctx)
-	if err != nil || len(ids) == 0 {
-		return
-	}
-	for _, id := range ids {
-		// Fecha o ciclo como `killed`: ele NAO completou, e por isso nao pode
-		// aparecer no historico como um ciclo limpo.
-		_ = d.store.FinishScan(ctx, store.ScanRecord{
-			ScanID: id, FinishedAt: d.now(), Status: schema.StatusKilled,
-		})
-		d.log(ctx, "warn", store.CatScan,
-			fmt.Sprintf("ciclo %s foi interrompido antes de terminar (processo morto?); registrado como killed", id))
+	if res.DigestSent {
+		d.log(ctx, "info", store.CatAlert, "resumo periodico enviado")
 	}
 }
 

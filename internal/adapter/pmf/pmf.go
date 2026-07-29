@@ -31,8 +31,17 @@ import (
 // Slug do engine.
 const Slug = "php-malware-finder"
 
-// RulesURL e de onde as regras sao baixadas na instalacao.
-const RulesURL = "https://raw.githubusercontent.com/jvoisin/php-malware-finder/master/php-malware-finder/php.yar"
+// RulesURL e de onde as regras YARA sao baixadas na instalacao.
+//
+// O caminho e data/php.yar: o repositorio foi reescrito em Go e o diretorio
+// php-malware-finder/ deixou de existir no ramo principal (o caminho antigo
+// responde 404).
+const RulesURL = "https://raw.githubusercontent.com/jvoisin/php-malware-finder/master/data/php.yar"
+
+// WhitelistURL acompanha as regras. O php-malware-finder usa uma whitelist
+// propria para nao apontar codigo legitimo conhecido; sem ela o engine gera
+// bem mais ruido.
+const WhitelistURL = "https://raw.githubusercontent.com/jvoisin/php-malware-finder/master/data/whitelist.yar"
 
 // FileStat sao os metadados calculados pelo orquestrador.
 type FileStat struct {
@@ -175,15 +184,19 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 	}
 	// O limite de tamanho de arquivo e aplicado pelo walker do orquestrador,
 	// nao aqui: quem decide o escopo e o orquestrador (contrato de adaptadores).
-	args = append(args, env.ExtraArgs...)
-	args = append(args, rules)
-	// yara aceita "@arquivo" com a lista de alvos.
+	// A lista de alvos vai por --scan-list. NAO existe sintaxe "@arquivo" no
+	// yara — essa suposicao esteve no codigo e so caiu quando o engine real
+	// foi executado num container Linux.
 	listFile, cleanup, err := writeTargetList(env.DataDir, req)
 	if err != nil {
 		return adapter.RawOutput{Engine: Slug, Status: schema.StatusFailed}, err
 	}
 	defer cleanup()
-	args = append(args, "@"+listFile)
+	args = append(args, "--scan-list")
+
+	args = append(args, env.ExtraArgs...)
+	// Ordem obrigatoria do yara: REGRAS por ultimo, depois o alvo.
+	args = append(args, rules, listFile)
 
 	res := env.Runner.Run(ctx, sexec.Command{
 		Engine:  Slug,

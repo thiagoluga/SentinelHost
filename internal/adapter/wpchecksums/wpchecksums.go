@@ -11,6 +11,15 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
 
+// maxMissingRatio e a fracao de arquivos do core que pode faltar antes de o
+// adaptador concluir que aquela raiz nao tem um WordPress completo.
+//
+// 10% e folgado de proposito: um core intacto nao perde 300 arquivos. Acima
+// disso, a explicacao provavel e estrutural (core em subdiretorio, deploy
+// parcial, exclusao do walker), nunca "o site foi invadido de um jeito que
+// apagou meio WordPress".
+const maxMissingRatio = 0.10
+
 // Adapter e o adaptador nativo de integridade do WordPress.
 type Adapter struct {
 	api *client
@@ -208,8 +217,36 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 	}
 	rep.CleanFiles = clean
 
-	// Arquivo do core ausente: alguem apagou ou substituiu parte da instalacao.
+	// Arquivo do core ausente exige muito mais cuidado que arquivo alterado.
+	//
+	// Um WordPress "incompleto" quase nunca e um ataque: e o core morando num
+	// subdiretorio, um deploy parcial, um symlink, ou a raiz configurada
+	// apontando para o lugar errado. Sem as duas travas abaixo, este adaptador
+	// emite MILHARES de achados `likely` de uma vez — foi exatamente o que ele
+	// fez na primeira execucao real, com 2998 achados num site de teste.
+	//
+	// Trava 1: proporcao. Se falta core demais, a comparacao inteira perdeu o
+	// sentido — inclusive para os arquivos alterados, que foram conferidos
+	// contra quase nada. O adaptador se abstem com motivo, que e a resposta
+	// honesta (Principio VI).
+	if len(sums) > 0 {
+		ausentes := float64(len(payload.Missing)) / float64(len(sums))
+		if ausentes > maxMissingRatio {
+			return rep, fmt.Errorf(
+				"%.0f%% dos arquivos do core (%d de %d) nao existem em %s: "+
+					"isto nao parece um WordPress completo nesta raiz, e comparar "+
+					"checksums aqui produziria milhares de achados sem sentido",
+				ausentes*100, len(payload.Missing), len(sums), payload.Root)
+		}
+	}
+
+	// Trava 2: so codigo executavel. Uma fonte .woff2 ou um .png que sumiu nao
+	// e um evento de seguranca — nao da para esconder backdoor num arquivo que
+	// nao existe, e o ruido afogaria os achados que importam.
 	for _, rel := range payload.Missing {
+		if !isExecutableExt(rel) {
+			continue
+		}
 		rep.Findings = append(rep.Findings, schema.Finding{
 			SchemaVersion: schema.Version,
 			Kind:          schema.KindMalware,
@@ -225,9 +262,14 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 				// arquivo que existe.
 				SHA256: pathHash(payload.Root + "/" + rel),
 			},
-			Category:       schema.CategoryCoreIntegrity,
-			Severity:       schema.SeverityHigh,
-			Confidence:     schema.ConfidenceSignature,
+			Category: schema.CategoryCoreIntegrity,
+			// Ausencia NAO e assinatura de nada. Um arquivo que sumiu nao
+			// contem codigo malicioso e nao pode ser quarentenado; tratar isto
+			// como `signature` faria o peso 1.5 empurrar sozinho o achado para
+			// perto de `confirmed`, autorizando acao sobre um arquivo que nem
+			// existe.
+			Severity:       schema.SeverityMedium,
+			Confidence:     schema.ConfidenceAnomaly,
 			MatchedContent: schema.SanitizeSnippet("arquivo oficial do core ausente: " + rel),
 			ScanID:         raw.ScanID,
 			DetectedAt:     detectedAt,

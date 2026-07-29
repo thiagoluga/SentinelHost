@@ -52,3 +52,11 @@ clean:
 
 install-lint:
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+# Validacao dos engines REAIS numa hospedagem simulada (Debian + PHP + yara,
+# usuario sem root). E o unico jeito de exercitar as linhas de comando que os
+# adaptadores montam: a suite automatizada so testa Probe() e Parse().
+.PHONY: validar-engines
+validar-engines:
+	docker build -f docker/Dockerfile.validacao -t sentinelhost-validacao .
+	docker run --rm sentinelhost-validacao

@@ -1,0 +1,60 @@
+# Ambiente de validação dos engines reais.
+#
+# Existe porque a suíte automatizada NÃO executa AMWScan nem yara
+# (DECISIONS.md D-011): um teste que depende de rede e binário externo falha em
+# CI por motivos alheios ao código. A consequência é que as linhas de comando
+# montadas pelos adaptadores nunca foram exercitadas de verdade — e uma flag
+# errada que o engine *aceita e ignora* produziria "0 achados" com o engine
+# marcado como saudável, que é o pior modo de falha possível deste projeto.
+#
+# Esta imagem fecha esse buraco. Ela imita uma hospedagem compartilhada:
+# Debian slim, PHP CLI, yara, usuário sem root.
+
+# --- build -------------------------------------------------------------------
+FROM golang:1.24-bookworm AS build
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath \
+      -ldflags "-s -w -X main.version=validacao" \
+      -o /out/sentinelhost ./cmd/sentinelhost
+
+# --- runtime -----------------------------------------------------------------
+FROM debian:bookworm-slim
+
+# php-cli para o AMWScan, yara para o php-malware-finder, ca-certificates para
+# os downloads. Nada além disso: se a validação precisar de mais alguma coisa,
+# é sinal de que o binário não é tão autossuficiente quanto promete.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      php-cli \
+      # php-mbstring NÃO é opcional: sem ela o AMWScan morre com exit 255 e
+      # ZERO saída. Foi este container que revelou isso — antes dele, o Probe
+      # do adaptador marcava o engine como saudável num ambiente onde ele
+      # nunca conseguiria rodar. O Probe agora executa o engine de verdade,
+      # mas a lição fica: "PHP existe" não é o mesmo que "o engine roda".
+      php-mbstring \
+      yara \
+      ca-certificates \
+      curl \
+      jq \
+      time \
+    && rm -rf /var/lib/apt/lists/*
+
+# Conta sem privilégio, como numa hospedagem compartilhada. Rodar a validação
+# como root esconderia justamente os problemas de permissão que o Princípio III
+# existe para prevenir.
+RUN useradd --create-home --shell /bin/bash hospedagem
+
+COPY --from=build /out/sentinelhost /usr/local/bin/sentinelhost
+COPY --chown=hospedagem:hospedagem tests/testdata/corpus /corpus
+COPY --chown=hospedagem:hospedagem docker/validar-engines.sh /usr/local/bin/validar-engines
+
+RUN chmod +x /usr/local/bin/validar-engines
+
+USER hospedagem
+WORKDIR /home/hospedagem
+
+ENTRYPOINT ["/usr/local/bin/validar-engines"]

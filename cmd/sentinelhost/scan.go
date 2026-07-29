@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thiagoluga/SentinelHost/internal/alert"
 	"github.com/thiagoluga/SentinelHost/internal/cycle"
+	"github.com/thiagoluga/SentinelHost/internal/housekeeping"
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
 
@@ -50,7 +52,23 @@ OPCOES
 		modo = schema.ModeFull
 	}
 
-	runner := cycle.New(a.cfg, a.store, a.registry, a.vault)
+	dispatcher := alert.NewDispatcher(ctx, a.cfg, a.store)
+	runner := cycle.New(a.cfg, a.store, a.registry, a.vault).WithDispatcher(dispatcher)
+
+	// A manutenção periódica roda ANTES do ciclo, no modo cron tanto quanto no
+	// daemon. Ela é o que faz o backoff de webhook, o resumo periódico e a
+	// retenção de disco existirem de fato no modo PADRÃO do projeto — sem
+	// isso, tudo aquilo só acontecia para quem mantém um daemon vivo, que é
+	// justamente quem o Princípio III diz que não podemos pressupor.
+	manut, err := housekeeping.Run(ctx, housekeeping.Deps{
+		Cfg: a.cfg, Store: a.store, Vault: a.vault, Alerts: dispatcher,
+	})
+	if err != nil {
+		// Manutenção que falha nunca impede o scan: o scan é a proteção, ela é
+		// a arrumação.
+		fmt.Fprintf(os.Stderr, "aviso: manutenção periódica: %v\n", err)
+	}
+
 	sum, err := runner.Run(ctx, cycle.Options{Mode: modo, DryRun: *dryRun})
 	if err != nil {
 		if errors.Is(err, errLocked) {
@@ -82,7 +100,7 @@ OPCOES
 	case *quiet && achados == 0:
 		// silencio proposital
 	default:
-		imprimirRelatorio(os.Stdout, sum)
+		imprimirRelatorio(os.Stdout, sum, &manut)
 	}
 
 	if achados > 0 {
@@ -108,7 +126,7 @@ func relatorioJSON(sum cycle.Summary) map[string]any {
 // A ordem nao e decorativa: primeiro o que exige acao, depois o que o usuario
 // precisa saber sobre a COBERTURA do scan. Um relatorio que diz "0 achados"
 // sem dizer que 3 dos 4 engines falharam e uma mentira por omissao.
-func imprimirRelatorio(w *os.File, sum cycle.Summary) {
+func imprimirRelatorio(w *os.File, sum cycle.Summary, manut *housekeeping.Result) {
 	fmt.Fprintf(w, "\nSentinelHost — ciclo %s (%s)\n", sum.ScanID, sum.Mode)
 	fmt.Fprintf(w, "%s\n", strings.Repeat("─", 64))
 	fmt.Fprintf(w, "Duracao: %s | Considerados: %d | Escaneados: %d\n",
@@ -179,6 +197,9 @@ func imprimirRelatorio(w *os.File, sum cycle.Summary) {
 	if sum.ObservationReason != "" {
 		fmt.Fprintf(w, "\nNenhuma acao automatica foi executada: %s\n", sum.ObservationReason)
 	}
+	if manut != nil && !manut.Empty() {
+		fmt.Fprintf(w, "\nManutencao: %s\n", resumoManutencao(*manut))
+	}
 	if n := sum.SkippedCounts["truncated"]; n > 0 {
 		fmt.Fprintf(w, "\nATENCAO: o limite de arquivos por ciclo foi atingido. Parte do site nao foi olhada.\n")
 	}
@@ -223,6 +244,30 @@ func formatarPulados(m map[string]int) string {
 	partes := make([]string, 0, len(chaves))
 	for _, k := range chaves {
 		partes = append(partes, fmt.Sprintf("%s=%d", k, m[k]))
+	}
+	return strings.Join(partes, ", ")
+}
+
+// resumoManutencao descreve em uma linha o que a rotina de manutencao fez.
+func resumoManutencao(r housekeeping.Result) string {
+	var partes []string
+	if r.RetriedDeliveries > 0 {
+		partes = append(partes, fmt.Sprintf("%d entrega(s) retentada(s)", r.RetriedDeliveries))
+	}
+	if r.DigestSent {
+		partes = append(partes, "resumo periodico enviado")
+	}
+	if r.PurgedQuarantine > 0 {
+		partes = append(partes, fmt.Sprintf("%d item(ns) purgado(s) por retencao", r.PurgedQuarantine))
+	}
+	if r.PrunedEvents > 0 {
+		partes = append(partes, fmt.Sprintf("%d evento(s) de log podado(s)", r.PrunedEvents))
+	}
+	if r.PrunedRawDirs > 0 {
+		partes = append(partes, fmt.Sprintf("%d diretorio(s) de saida bruta removido(s)", r.PrunedRawDirs))
+	}
+	if r.RecoveredScans > 0 {
+		partes = append(partes, fmt.Sprintf("%d ciclo(s) interrompido(s) registrado(s) como killed", r.RecoveredScans))
 	}
 	return strings.Join(partes, ", ")
 }
