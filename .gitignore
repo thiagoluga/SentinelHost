@@ -1,28 +1,28 @@
-# Artefatos de build.
+# Build artifacts.
 #
-# As barras iniciais NAO sao decorativas: sem elas, o padrao `sentinelhost`
-# casa qualquer arquivo OU DIRETORIO com esse nome em qualquer nivel — e o
-# primeiro alvo seria `cmd/sentinelhost/`, que e o programa inteiro.
+# The leading slashes are NOT decorative: without them, the pattern `sentinelhost`
+# matches any file OR DIRECTORY with that name at any depth — and the first target
+# would be `cmd/sentinelhost/`, which is the whole program.
 /dist/
 /bin/
 /sentinelhost
 /sentinelhost.exe
 
-# Dados de runtime (nunca versionados)
+# Runtime data (never versioned)
 /.sentinelhost/
 *.db
 *.db-wal
 *.db-shm
 
-# Ferramentas
+# Tooling
 /tools/bin/
 
-# Sistema operacional / editores
+# Operating system / editors
 .DS_Store
 Thumbs.db
 *.swp
 .idea/
 .vscode/
 
-# Artefatos de release gerados localmente
+# Release artifacts built locally
 /dist/

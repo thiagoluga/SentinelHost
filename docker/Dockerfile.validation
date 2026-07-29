@@ -1,0 +1,49 @@
+# Validation environment for the real engines.
+#
+# It exists because the automated suite does NOT execute AMWScan or yara
+# (DECISIONS.md D-011): a test that depends on the network and on an external
+# binary fails in CI for reasons unrelated to the code. The consequence was that
+# the command lines the adapters assemble had never been exercised for real — and a
+# wrong flag that the engine *accepts and ignores* would produce "0 findings" with
+# the engine marked as healthy, which is this project's worst possible failure mode.
+#
+# This image imitates shared hosting: Debian slim, PHP CLI, yara, a non-root user.
+#
+# The binary is compiled OUTSIDE here (`make validate-engines` takes care of it) and
+# only copied in. Compiling inside the image cost more than ten minutes per
+# iteration, and a validation tool nobody has the patience to run validates nothing.
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      php-cli \
+      # php-mbstring is NOT optional: without it AMWScan dies with exit 255 and
+      # ZERO output. This container is what revealed that — before it, the
+      # adapter's Probe marked the engine as healthy in an environment where it
+      # could never run. Probe now really executes the engine, but the lesson
+      # stands: "PHP exists" is not the same as "the engine runs".
+      php-mbstring \
+      yara \
+      ca-certificates \
+      curl \
+      jq \
+      time \
+      unzip \
+      busybox \
+    && rm -rf /var/lib/apt/lists/*
+
+# An unprivileged account, as on shared hosting. Running the validation as root
+# would hide precisely the permission problems Principle III exists to prevent.
+RUN useradd --create-home --shell /bin/bash hosting
+
+COPY dist/sentinelhost-linux-amd64 /usr/local/bin/sentinelhost
+COPY --chown=hosting:hosting tests/testdata/corpus /corpus
+COPY docker/validate-engines.sh /usr/local/bin/validate-engines
+COPY install.sh /opt/install.sh
+
+RUN chmod +x /usr/local/bin/sentinelhost /usr/local/bin/validate-engines
+
+USER hosting
+WORKDIR /home/hosting
+
+ENTRYPOINT ["/usr/local/bin/validate-engines"]

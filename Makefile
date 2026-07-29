@@ -9,8 +9,8 @@ LDFLAGS := -s -w \
 	-X main.commit=$(COMMIT) \
 	-X main.buildDate=$(DATE)
 
-# CGO_ENABLED=0 nao e negociavel: o binario precisa ser estatico para rodar
-# numa conta de hospedagem compartilhada sem glibc compativel (Principio VII).
+# CGO_ENABLED=0 is not negotiable: the binary has to be static to run on a shared
+# hosting account with no compatible glibc (Principle VII).
 GOBUILD := CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)"
 
 .PHONY: all build test test-short lint fmt vet tidy clean release install-lint doctor
@@ -31,7 +31,7 @@ test:
 test-short:
 	go test ./... -short -count=1
 
-# Testes lentos (SC-002: 20k arquivos) ficam fora do -short.
+# The slow tests (SC-002: 20k files) stay out of -short.
 test-race:
 	go test ./... -race -count=1
 
@@ -53,11 +53,11 @@ clean:
 install-lint:
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
-# Validacao dos engines REAIS numa hospedagem simulada (Debian + PHP + yara,
-# usuario sem root). E o unico jeito de exercitar as linhas de comando que os
-# adaptadores montam: a suite automatizada so testa Probe() e Parse().
-.PHONY: validar-engines
-validar-engines:
+# Validation of the REAL engines on a simulated hosting account (Debian + PHP +
+# yara, a non-root user). It is the only way to exercise the command lines the
+# adapters assemble: the automated suite only tests Probe() and Parse().
+.PHONY: validate-engines
+validate-engines:
 	GOOS=linux GOARCH=amd64 $(GOBUILD) -o dist/sentinelhost-linux-amd64 $(PKG)
-	docker build -f docker/Dockerfile.validacao -t sentinelhost-validacao .
-	docker run --rm sentinelhost-validacao
+	docker build -f docker/Dockerfile.validation -t sentinelhost-validation .
+	docker run --rm sentinelhost-validation

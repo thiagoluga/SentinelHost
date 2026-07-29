@@ -1,6 +1,6 @@
-# Formato v1, que e o que a golangci-lint-action instala por padrao.
-# Trocar para o formato v2 exigiria fixar uma versao especifica da ferramenta
-# no CI, e um lint que so roda numa versao exata quebra para quem contribui.
+# The v1 format, which is what golangci-lint-action installs by default.
+# Moving to the v2 format would require pinning a specific version of the tool in
+# CI, and a lint that only runs on an exact version breaks for contributors.
 
 run:
   timeout: 5m
@@ -18,28 +18,28 @@ linters:
     - unconvert
     - nolintlint
     - gofmt
-
-  # `misspell` fica de fora: ele so conhece ingles, e o codigo deste projeto e
-  # escrito em portugues. Ele acusa `problemas` como erro de `problems`,
-  # `independente` como erro de `independence` e `eles` como erro de `eels`.
-  # Manter um linter que exige renomear identificadores corretos para palavras
-  # erradas treina todo mundo a ignorar o lint.
+    # `misspell` only knows English, which is now the repository's language
+    # (constitution 1.1.0, Principle VIII). It used to be disabled because the code
+    # was written in Portuguese and it flagged correct words as typos; with the
+    # translation done, it became a cheap way of keeping the policy honest.
+    - misspell
 
 linters-settings:
   gosec:
     excludes:
-      # G204: o projeto INTEIRO existe para executar engines externos como
-      # subprocesso. Os argumentos sao montados em internal/exec, que resolve
-      # o binario e nunca passa por shell.
+      # G204: the ENTIRE project exists to run external engines as subprocesses.
+      # The arguments are assembled in internal/exec, which resolves the binary and
+      # never goes through a shell.
       - G204
-      # G501: o MD5 e obrigatorio por INTEROPERABILIDADE, nao por escolha. A
-      # API de checksums do WordPress.org publica MD5, e a comparacao tem que
-      # usar o mesmo algoritmo que a fonte. Nao ha uso criptografico: o MD5
-      # so serve para casar com o valor publicado, e o hash que entra no
-      # esquema normalizado e SHA-256, calculado na mesma leitura do arquivo.
+      # G501: MD5 is mandatory for INTEROPERABILITY, not by choice. The
+      # WordPress.org checksums API publishes MD5, and the comparison has to use the
+      # same algorithm as the source. There is no cryptographic use: the MD5 only
+      # serves to match the published value, and the hash that enters the normalized
+      # schema is SHA-256, computed in the same read of the file.
       - G501
-      # G401 pelo mesmo motivo: e a CHAMADA do md5.New() que casa com o valor
-      # publicado pela API. Sem ela nao ha como comparar com a fonte oficial.
+      # G401 for the same reason: it is the md5.New() CALL that matches the value the
+      # API publishes. Without it there is no way to compare against the official
+      # source.
       - G401
   revive:
     rules:

@@ -1,12 +1,12 @@
 .git/
 .sentinelhost/
 
-# dist/ inteiro fica de fora, MENOS o binário linux/amd64 que a imagem de
-# validação copia (ela não compila nada por dentro — ver docker/Dockerfile.validacao).
+# All of dist/ stays out, EXCEPT the linux/amd64 binary the validation image copies
+# (it compiles nothing inside — see docker/Dockerfile.validation).
 dist/*
 !dist/sentinelhost-linux-amd64
 
-# O docs/esquema-e-adaptadores.md dispara heurística de antivírus em estação
-# Windows e pode ficar ilegível no contexto de build. Ele não é necessário
-# para validar os engines.
+# docs/schema-and-adapters.md trips an antivirus heuristic on a Windows workstation
+# and can end up unreadable in the build context. It is not needed in order to
+# validate the engines.
 docs/
