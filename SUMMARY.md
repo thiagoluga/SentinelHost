@@ -322,11 +322,17 @@ container encontrou **oito** defeitos que nenhum teste unitário pegaria:
 | 2998 achados `likely` de core ausente | ruído afogando os achados reais |
 | Engine invocado uma vez por lote | 21m45s por ciclo e 16× achados duplicados |
 | `--config` ignorado depois de argumento posicional | `restore` falhava ou agia na instância errada |
+| Hashes de plugin declarados como array (a API usa string) | **todo plugin pulado, zero achados, nenhum erro** |
 
-Quatro deles teriam causado dano real: três produziriam "0 achados" com
+Cinco deles teriam causado dano real: quatro produziriam "0 achados" com
 aparência de saúde — e um scanner que reporta site limpo sem ter escaneado é
 pior que scanner nenhum, porque produz confiança falsa —, e o sétimo poderia
 derrubar a conta por consumo de CPU.
+
+**Oito dos nove são o mesmo erro**: uma suposição sobre o mundo externo, com um
+teste escrito a partir da própria suposição. Ver `DECISIONS.md` D-022 — é a
+lição que mais importa deste projeto, e o motivo de as amostras reais estarem
+versionadas.
 
 #### O que a validação prova hoje
 

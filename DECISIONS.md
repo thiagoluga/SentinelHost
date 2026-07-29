@@ -340,6 +340,42 @@ achado para perto de `confirmed`, autorizando ação sobre um arquivo inexistent
 
 ---
 
+## D-022 — Teste sobre suposição não vale como verificação
+
+**Contexto**: esta é a lição mais caras desta sessão, e vale registrar como
+regra e não como anedota.
+
+Nove defeitos foram encontrados executando o produto de verdade num Linux com
+os engines e as APIs reais. **Oito deles são o mesmo erro**: eu assumi como o
+mundo externo se comporta, escrevi o teste que confirmava a minha suposição, e
+o teste passou.
+
+O caso dos plugins é o mais claro. A API publica hashes como string; eu
+declarei `[]string`, escrevi 16 testes com fixtures em array, todos passaram —
+e contra a API de verdade o `Unmarshal` falhava e **todo plugin era pulado com
+zero achados e nenhum erro visível**.
+
+**Decisão**: para tudo que cruza a fronteira do processo — CLI de engine,
+formato de saída, resposta de API — o repositório guarda uma **amostra real
+capturada**, e o teste roda sobre ela:
+
+| Fronteira | Fixture real |
+|---|---|
+| Saída do AMWScan | `tests/testdata/raw/amwscan/` (formato `--report-format txt`) |
+| Saída do yara | `tests/testdata/raw/php-malware-finder/` |
+| API de checksums de plugin | `internal/adapter/wpchecksums/api_formato_test.go` |
+| Flags de cada engine | `docker/validar-engines.sh`, contra o binário instalado |
+
+E `make validar-engines` compara sempre o que o **orquestrador** vê com o que o
+**engine vê sozinho**. Números diferentes reprovam.
+
+**Motivo**: num orquestrador, a suposição errada não produz erro — produz
+"0 achados" com o engine marcado como saudável. É o único modo de falha que o
+usuário não tem como perceber, e por isso o único contra o qual não basta
+cuidado: precisa de evidência.
+
+---
+
 ## D-021 — Flags aceitas em qualquer posição na CLI
 
 **Contexto**: o `flag` da biblioteca padrão para de parsear no primeiro
