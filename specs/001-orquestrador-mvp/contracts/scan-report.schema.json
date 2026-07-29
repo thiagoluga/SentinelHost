@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelhost.dev/schemas/1.0/scan-report.schema.json",
+  "title": "ScanReport",
+  "description": "Resultado de UMA execucao de UM engine num ciclo.",
+  "type": "object",
+  "required": ["schema_version", "scan_id", "engine", "status"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^1\\.[0-9]+$" },
+    "scan_id": { "type": "string" },
+    "engine": { "type": "string" },
+    "engine_version": { "type": "string" },
+    "signatures_updated_at": { "type": "string", "format": "date-time" },
+    "started_at": { "type": "string", "format": "date-time" },
+    "finished_at": { "type": "string", "format": "date-time" },
+    "scope": {
+      "type": "object",
+      "description": "Quem decide a lista de arquivos e o ORQUESTRADOR; o adaptador nunca escolhe escopo.",
+      "properties": {
+        "root": { "type": "string" },
+        "mode": { "type": "string", "enum": ["incremental", "full", "targeted"] },
+        "files_considered": { "type": "integer", "minimum": 0 },
+        "files_scanned": { "type": "integer", "minimum": 0 },
+        "skipped_reason_counts": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 },
+          "examples": [{ "unchanged": 17801, "too_large": 12, "unreadable": 9 }]
+        }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["completed", "partial", "failed", "timeout", "killed"],
+      "description": "Somente 'completed' pode contar como voto no consenso. Qualquer outro status e abstencao — nunca 'engine nao achou nada'."
+    },
+    "error": {
+      "type": ["string", "null"],
+      "description": "Obrigatorio quando status != completed. Um status de falha sem motivo transforma um problema diagnosticavel em misterio."
+    },
+    "resource_usage": {
+      "type": "object",
+      "properties": {
+        "wall_seconds": { "type": "number", "minimum": 0 },
+        "max_rss_mb": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "finding.schema.json" }
+    },
+    "clean_files": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+      "description": "Hashes que este engine afirma POSITIVAMENTE serem legitimos. So o wp-checksums preenche. Base da protecao anti-falso-positivo."
+    },
+    "raw_ref": {
+      "type": "string",
+      "description": "Ponteiro para a saida bruta arquivada, para auditoria e reprocessamento por Parse()."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "enum": ["partial", "failed", "timeout", "killed"] } },
+        "required": ["status"]
+      },
+      "then": { "required": ["error"] }
+    }
+  ]
+}

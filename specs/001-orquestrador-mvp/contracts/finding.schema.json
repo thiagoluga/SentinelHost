@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelhost.dev/schemas/1.0/finding.schema.json",
+  "title": "Finding",
+  "description": "Um achado individual de UM engine sobre UM arquivo, ja normalizado. A consolidacao entre engines acontece no Verdict, nunca aqui.",
+  "type": "object",
+  "required": ["schema_version", "engine", "rule", "category", "severity", "confidence", "detected_at"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^1\\.[0-9]+$" },
+    "id": {
+      "type": "string",
+      "description": "Gerado pelo orquestrador, nunca pelo adaptador."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["malware", "vulnerability", "hardening"],
+      "default": "malware"
+    },
+    "engine": {
+      "type": "string",
+      "description": "Slug unico do engine.",
+      "examples": ["maldet", "php-malware-finder", "amwscan", "wordfence-cli", "clamav", "wp-checksums"]
+    },
+    "engine_version": { "type": "string" },
+    "rule": {
+      "type": "string",
+      "description": "Nome da assinatura/regra que bateu, como o engine reporta.",
+      "minLength": 1
+    },
+    "rule_ref": { "type": "string", "format": "uri" },
+    "file": { "$ref": "#/$defs/fileRef" },
+    "category": {
+      "type": "string",
+      "enum": [
+        "known_malware", "obfuscation", "backdoor", "webshell", "injection",
+        "spam_seo", "phishing", "dropper", "core_integrity",
+        "suspicious_location", "suspicious_perms", "vulnerable_component", "other"
+      ],
+      "description": "Cada adaptador mantem sua tabela regra->categoria. O que nao mapear vira 'other' — nunca e descartado."
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low"],
+      "description": "Severidade NA VISAO DO ENGINE, normalizada pelo adaptador."
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["signature", "heuristic", "anomaly"],
+      "description": "Alimenta o peso do voto: signature=hash/assinatura exata, heuristic=padrao/comportamento, anomaly=fora do padrao."
+    },
+    "matched_content": {
+      "type": "string",
+      "maxLength": 512,
+      "description": "Trecho que disparou a regra, truncado a 512 bytes e sanitizado. Nunca executavel."
+    },
+    "matched_offset": { "type": "integer", "minimum": 0 },
+    "component": { "$ref": "#/$defs/component" },
+    "scan_id": { "type": "string" },
+    "detected_at": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "kind": { "const": "vulnerability" } },
+        "required": ["kind"]
+      },
+      "then": {
+        "required": ["component"],
+        "description": "Vereditos de vulnerabilidade sao consolidados por componente, nao por arquivo."
+      },
+      "else": {
+        "required": ["file"],
+        "description": "Achados de malware exigem file.sha256: e a chave de deduplicacao entre engines."
+      }
+    }
+  ],
+  "$defs": {
+    "fileRef": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string" },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Obrigatorio e minusculo. Mesmo arquivo apontado por N engines = N votos no mesmo alvo."
+        },
+        "md5": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "mtime": { "type": "string", "format": "date-time" },
+        "owner": { "type": "string" },
+        "perms": {
+          "type": "string",
+          "pattern": "^0[0-7]{3}$",
+          "description": "Octal. Preservado para que o restore devolva o arquivo exatamente como estava."
+        }
+      }
+    },
+    "component": {
+      "type": "object",
+      "required": ["type", "slug", "installed_version"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["wordpress-plugin", "wordpress-theme", "wordpress-core", "composer-package", "npm-package"]
+        },
+        "slug": { "type": "string" },
+        "installed_version": { "type": "string" },
+        "fixed_in": { "type": "string" },
+        "vuln_ids": { "type": "array", "items": { "type": "string" } },
+        "cvss": { "type": "number", "minimum": 0, "maximum": 10 },
+        "exploited_in_wild": { "type": "boolean" }
+      }
+    }
+  }
+}

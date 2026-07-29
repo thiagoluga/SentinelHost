@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelhost.dev/schemas/1.0/verdict.schema.json",
+  "title": "Verdict",
+  "description": "Decisao consolidada sobre UM arquivo. Produzido pelo motor de veredito, nunca por adaptadores.",
+  "type": "object",
+  "required": ["schema_version", "verdict_id", "file_sha256", "level", "score", "votes"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^1\\.[0-9]+$" },
+    "verdict_id": { "type": "string" },
+    "file_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "file_path": { "type": "string" },
+    "file_size": { "type": "integer", "minimum": 0 },
+    "level": {
+      "type": "string",
+      "enum": ["confirmed", "likely", "suspicious", "clean"],
+      "description": "confirmed: score >= 0.9, quarentena automatica + alerta. likely: 0.6-0.9, aguarda decisao. suspicious: 0.3-0.6, so relatorio. clean: < 0.3 ou whitelist."
+    },
+    "score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "votes": {
+      "type": "array",
+      "description": "O que torna o consenso auditavel. O usuario sempre consegue responder 'por que este arquivo foi quarentenado?'.",
+      "items": {
+        "type": "object",
+        "required": ["engine", "weight", "effective_weight"],
+        "properties": {
+          "engine": { "type": "string" },
+          "finding_id": { "type": "string" },
+          "weight": { "type": "number", "minimum": 0 },
+          "confidence": { "type": "string", "enum": ["signature", "heuristic", "anomaly"] },
+          "effective_weight": {
+            "type": "number",
+            "minimum": 0,
+            "description": "weight x multiplicador da confianca. E o numero que realmente entrou na soma."
+          },
+          "rule": { "type": "string" },
+          "category": { "type": "string" }
+        }
+      }
+    },
+    "abstentions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Engines que nao puderam opinar. Registradas para transparencia; NAO entram no calculo do score."
+    },
+    "clean_reason": {
+      "type": "string",
+      "enum": ["official_checksum_match"],
+      "description": "Explica um level=clean que contraria os votos. Arquivo identico ao checksum oficial do WordPress nunca e quarentenado, independente de votos."
+    },
+    "action_taken": {
+      "type": "string",
+      "enum": [
+        "none", "quarantined", "recommended", "skipped_whitelist",
+        "skipped_official_checksum", "rescan_needed", "failed", "restored", "ignored"
+      ]
+    },
+    "action_at": { "type": "string", "format": "date-time" },
+    "action_error": { "type": "string" },
+    "quarantine_ref": { "type": "string" },
+    "acknowledged_by_user": { "type": "boolean" },
+    "acknowledged_at": { "type": "string", "format": "date-time" },
+    "scan_id": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "action_taken": { "const": "quarantined" } },
+        "required": ["action_taken"]
+      },
+      "then": {
+        "required": ["quarantine_ref"],
+        "description": "Sem quarantine_ref o arquivo nao e restauravel — violaria o Principio I."
+      }
+    },
+    {
+      "if": {
+        "properties": { "action_taken": { "const": "failed" } },
+        "required": ["action_taken"]
+      },
+      "then": { "required": ["action_error"] }
+    }
+  ]
+}
