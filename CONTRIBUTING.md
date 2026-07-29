@@ -1,68 +1,129 @@
-# Contribuindo com o SentinelHost
+# Contributing to SentinelHost
 
-## Antes de qualquer coisa: leia a constituição
+## Everything here is written in English
 
-[`.specify/memory/constitution.md`](.specify/memory/constitution.md) define sete
-princípios inegociáveis. **Pull requests que violem um princípio são rejeitados**
-ou precisam vir acompanhados de emenda aprovada à constituição (com registro de
-motivação, análise de impacto nas specs existentes e incremento de versão
-semântica).
+Code, identifiers, comments, commit messages, docs, error messages, log output,
+CLI help, panel strings, test names, shell scripts.
 
-Os erros mais comuns que a constituição impede:
+Shared hosting exists everywhere, and this project is for the people running it.
+A comment explaining *why* the quarantine verifies its copy before deleting the
+original is safety-critical knowledge — behind a language barrier, the next
+contributor reintroduces the bug. Principle VIII of the constitution.
 
-- Adicionar uma ação destrutiva "só nesse caso" (Princípio I).
-- Embutir assinaturas ou heurísticas próprias no orquestrador (Princípio II).
-- Depender de root, systemd ou de um daemon sempre vivo (Princípio III).
-- Remover um limite de recurso "porque estava lento" (Princípio IV).
-- Produzir um veredito que o usuário não consegue explicar (Princípio V).
-- Fazer o motor de veredito conhecer um engine específico (Princípio VI).
-- Introduzir CGO, build step de frontend ou segundo arquivo de config
-  (Princípio VII).
+Discussion in issues and PRs can happen in any language. Committed artifacts
+cannot.
 
-## Desenvolvimento é spec-driven
+## Read the constitution first
 
-Toda feature nasce de `spec.md` → `plan.md` → `tasks.md` dentro de `specs/`.
-Não abra PR de código para algo que não está numa spec. Se a spec estiver
-ambígua, registre a interpretação escolhida em [`DECISIONS.md`](DECISIONS.md).
+[`.specify/memory/constitution.md`](.specify/memory/constitution.md) defines
+eight binding principles. **Pull requests that violate a principle get
+rejected**, or must come with an approved amendment (recorded motivation, impact
+analysis on existing specs, semantic version bump).
 
-## Testes obrigatórios
+The mistakes the constitution exists to prevent:
 
-- **Contrato por adaptador**: cada adaptador tem fixtures de saída **bruta** do
-  engine em `tests/testdata/raw/<engine>/` e um teste que verifica o `Parse`
-  contra o esquema normalizado. Fixtures vêm de execuções reais, versionadas.
-- **Corpus de consenso**: amostras em `tests/testdata/corpus/`. **Somente
-  webshells sintéticas e inertes** — nunca malware vivo ou executável. Cada
-  amostra tem um `.md` ao lado documentando o que ela simula e por que é
-  inofensiva.
-- **Round-trip de quarentena**: quarentenar → restaurar → comparar hash. Tem
-  que ser byte a byte idêntico.
+- Adding a destructive action "just this once" (Principle I).
+- Embedding our own signatures or heuristics in the orchestrator (Principle II).
+- Depending on root, systemd, or an always-running daemon (Principle III).
+- Removing a resource limit "because it was slow" (Principle IV).
+- Producing a verdict the user cannot explain (Principle V).
+- Letting the verdict engine know about a specific engine (Principle VI).
+- Introducing CGO, a frontend build step, or a second config file (Principle VII).
+- Committing anything not in English (Principle VIII).
+
+## Development is spec-driven
+
+Every feature starts from `spec.md` → `plan.md` → `tasks.md` under `specs/`.
+Don't open a code PR for something that isn't in a spec. If the spec is
+ambiguous, record the interpretation you chose in
+[`DECISIONS.md`](DECISIONS.md), citing the principle that settles it.
+
+## Verify against reality, not against your own assumptions
+
+This is the hardest-won lesson in the project, recorded as `DECISIONS.md` D-022.
+
+Nine defects were found by running the real binary against real engines and real
+APIs. **Eight were the same mistake**: an assumption about how something
+external behaves, plus a test written from that same assumption. The tests
+passed. Against reality they failed — silently.
+
+The worst case: plugin checksum verification had 16 green tests and detected
+nothing, because the API's hash fields were declared as arrays when the real API
+returns strings, so every plugin was skipped as "unreadable response".
+
+In an orchestrator this class of bug doesn't raise an error. It produces
+**"0 findings" with the engine marked healthy** — the one failure mode a user
+cannot detect. So:
 
 ```bash
-make test        # tudo
-make lint        # golangci-lint
-make build       # binário estático local
-make release     # linux/amd64 + linux/arm64
+make validate-engines
 ```
 
-## Novos adaptadores
+Debian with PHP CLI and YARA, a non-root account, a real WordPress, a real
+plugin. It compares what the **orchestrator** sees against what each **engine
+sees alone**, and different numbers fail the run. Run it before claiming an
+adapter works. It is not optional.
 
-1. Implemente a interface `adapter.Adapter` em `internal/adapter/<slug>/`.
-2. Mantenha a tabela regra→(`category`, `severity`, `confidence`) **explícita e
-   versionada** junto do adaptador. Regra desconhecida vira
-   `other`/`medium`/`heuristic` — nunca é descartada.
-3. Nunca escreva fora do diretório de trabalho do SentinelHost. Quem move
-   arquivo é o orquestrador, jamais o adaptador.
-4. Falha, pânico ou timeout do adaptador tem que virar
-   `ScanReport{status: failed}` e abstenção — nunca derrubar o ciclo.
-5. Se o engine for GPL, ele só pode ser invocado por subprocess. Nada de linkar.
-6. Registre o adaptador em `internal/adapter/registry.go` e adicione fixtures.
+For every process boundary, the repository keeps a **captured real sample** and
+the tests run against it — see `tests/testdata/raw/` and
+`internal/adapter/wpchecksums/api_format_test.go`.
+
+## Run the tests on Linux
+
+Two defects hid behind Windows ignoring POSIX permissions:
+
+1. The quarantine vault was **unrestorable** — `chmod 000` blocks the read that
+   `restore` and `verify` need, killing Principle I outright. Windows lets you
+   read a "0000" file, so the whole suite passed locally.
+2. `.gitignore` had swallowed `cmd/sentinelhost/` — the first push published a
+   repository with no `main` package, and only the CI build noticed.
+
+A green suite on Windows is not evidence about anything permission-related.
+
+## Required tests
+
+- **Contract per adapter**: raw engine output fixtures in
+  `tests/testdata/raw/<engine>/`, and a test that checks `Parse` against the
+  normalized schema. Fixtures come from real runs, versioned.
+- **Consensus corpus**: samples in `tests/testdata/corpus/`. **Synthetic, inert
+  webshells only** — never live or executable malware. Each sample is documented
+  in `AMOSTRAS.md` with what it simulates and why it is harmless.
+- **Quarantine round-trip**: quarantine → restore → compare hash. Byte-for-byte
+  identical, or it fails.
+
+```bash
+make test          # everything
+make test-short    # skips the 20k-file SC-002 benchmark
+make lint
+make build         # local static binary
+make release       # linux/amd64 + linux/arm64 + SHA256SUMS
+```
+
+## Adding an adapter
+
+1. Implement `adapter.Adapter` in `internal/adapter/<slug>/`.
+2. Keep the rule→(`category`, `severity`, `confidence`) table **explicit and
+   versioned** next to the adapter. An unknown rule becomes
+   `other`/`medium`/`heuristic` — **never discarded**. Otherwise a real finding
+   disappears the moment the engine ships a new signature.
+3. Declare `ScopeAware` honestly. An engine that cannot restrict its scan to a
+   file list gets invoked **once per cycle**; claiming otherwise multiplies the
+   work by the number of batches (this cost 21 minutes per cycle once).
+4. Never write outside SentinelHost's working directory. The orchestrator moves
+   files, never the adapter.
+5. A failure, panic or timeout must become `ScanReport{status: failed}` and an
+   abstention — never a collapsed cycle, never a clean vote.
+6. GPL engines are invoked as subprocesses only. No linking.
+7. Register it in `cmd/sentinelhost/common.go` and add fixtures.
 
 ## Commits
 
-[Conventional Commits](https://www.conventionalcommits.org/). Commits pequenos,
-um por tarefa da spec quando possível:
+[Conventional Commits](https://www.conventionalcommits.org/), in English. Small
+commits, one per spec task where practical:
 
 ```text
-feat(verdict): motor de consenso ponderado (T014)
-fix(quarantine): re-hash antes de mover (FR-018)
+feat(verdict): weighted consensus engine (T014)
+fix(quarantine): re-hash immediately before acting (FR-018)
 ```
+
+Never add AI attribution trailers.

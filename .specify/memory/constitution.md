@@ -1,87 +1,123 @@
-# Constituição do SentinelHost
+# SentinelHost Constitution
 
-**Versão**: 1.0.0 | **Ratificada**: 2026-07-23 | **Última alteração**: 2026-07-23
+**Version**: 1.1.0 | **Ratified**: 2026-07-23 | **Last amended**: 2026-07-29
 
-O SentinelHost é um orquestrador open source de scanners de malware para
-hospedagens compartilhadas (cPanel e similares). Ele NÃO implementa motor de
-detecção próprio: coordena engines open source existentes e consolida os
-resultados num veredito por consenso. Estes princípios governam toda decisão
-de design e implementação. Violações exigem justificativa registrada.
+SentinelHost is an open source orchestrator of malware scanners for shared
+hosting (cPanel and similar). It does NOT implement a detection engine of its
+own: it coordinates existing open source engines and consolidates their results
+into a consensus verdict. These principles govern every design and
+implementation decision. Violations require a recorded justification.
 
 ## Core Principles
 
-### I. Reversibilidade acima de tudo
+### I. Reversibility above all
 
-Nenhuma ação destrutiva é irreversível por padrão. Quarentena = mover +
-registrar + bloquear, nunca apagar. Purga definitiva só por ação manual do
-usuário ou após período de retenção configurado. Um falso positivo tratado
-nunca pode derrubar o site do usuário permanentemente.
+No destructive action is irreversible by default. Quarantine = move + record +
+block, never delete. Permanent purge happens only by explicit user action or
+after a configured retention period. A false positive that gets acted on must
+never take the user's site down permanently.
 
-### II. Orquestrar, não competir
+### II. Orchestrate, don't compete
 
-Detecção vem de engines externos (maldet, PHP Malware Finder, AMWScan,
-Wordfence CLI, ClamAV) e de verificação de integridade por checksums oficiais.
-O projeto não mantém base de assinaturas própria. Engines GPL são invocados
-exclusivamente como processos externos via CLI — nunca linkados — para que o
-orquestrador possa manter licença MIT.
+Detection comes from external engines (maldet, PHP Malware Finder, AMWScan,
+Wordfence CLI, ClamAV) and from integrity verification against official
+checksums. The project maintains no signature database of its own. GPL engines
+are invoked exclusively as external processes via their CLI — never linked — so
+that the orchestrator can keep an MIT license.
 
-### III. Funciona sem root, no espaço do usuário
+### III. Works without root, in user space
 
-Todo recurso essencial precisa funcionar numa conta de hospedagem compartilhada
-barata: sem root, sem systemd, possivelmente sem SSH (fallback via cron do
-cPanel). Recursos que exigem privilégios (inotify global, ClamAV daemon) são
-oportunistas: usados quando disponíveis, nunca obrigatórios.
+Every essential feature must work on a cheap shared hosting account: no root,
+no systemd, possibly no SSH (falling back to cPanel cron). Features requiring
+privileges (global inotify, the ClamAV daemon) are opportunistic: used when
+available, never required.
 
-### IV. Cidadão educado da hospedagem
+### IV. A well-behaved hosting tenant
 
-O scanner nunca pode causar a suspensão da conta do usuário por abuso de
-recursos. Limites de CPU (nice 19 por padrão), pausas entre lotes, scans
-incrementais por padrão, limite de tamanho de arquivo e timeout por engine são
-obrigatórios e ativos por padrão.
+The scanner must never get the user's account suspended for resource abuse. CPU
+limits (nice 19 by default), pauses between batches, incremental scans by
+default, a maximum file size and a per-engine timeout are mandatory and active
+by default.
 
-### V. Consenso transparente
+### V. Transparent consensus
 
-Todo veredito exibe quais engines votaram, com que peso e por qual regra.
-O usuário sempre consegue responder "por que este arquivo foi quarentenado?".
-Vereditos automáticos só no nível `confirmed`; níveis inferiores sempre
-aguardam decisão humana. Modo observação (sem ação automática) disponível.
+Every verdict shows which engines voted, with what weight, and by which rule.
+The user can always answer "why was this file quarantined?". Automatic verdicts
+only at the `confirmed` level; anything below always waits for a human decision.
+An observation mode (no automatic action) is available.
 
-### VI. Esquema normalizado como contrato
+### VI. The normalized schema is the contract
 
-Adaptadores convertem qualquer saída de engine para o esquema normalizado
-versionado (docs/esquema-e-adaptadores.md). O motor de veredito só conhece o
-esquema, nunca um engine específico. Saída bruta é arquivada para auditoria e
-reprocessamento. Falha de um adaptador = abstenção no consenso, nunca "voto
-limpo" e nunca queda do ciclo.
+Adapters convert any engine output into the versioned normalized schema
+(docs/schema-and-adapters.md). The verdict engine only ever knows the schema,
+never a specific engine. Raw output is archived for auditing and reprocessing.
+An adapter failure = abstention in the consensus, never a "clean vote" and never
+a collapsed cycle.
 
-### VII. Simplicidade operacional
+### VII. Operational simplicity
 
-Distribuição como binário Go único e estático, sem dependências externas
-obrigatórias. Configuração num único arquivo legível (TOML). Estado em SQLite
-(driver puro Go, sem CGO). Painel web embutido no próprio binário. Instalação
-em um comando.
+Distributed as a single static Go binary, with no mandatory external
+dependencies. Configuration in one readable file (TOML). State in SQLite (pure
+Go driver, no CGO). Web panel embedded in the binary itself. One-command
+install.
 
-## Restrições adicionais
+### VIII. English is the language of the repository
 
-- Segurança do painel: autenticação obrigatória por padrão; escuta em
-  localhost por padrão (acesso via túnel SSH ou porta liberada conscientemente).
-- Conteúdo malicioso nunca é executado nem re-servido: trechos exibidos na UI
-  são truncados e sanitizados; arquivos em quarentena perdem permissão de
-  execução e são armazenados com extensão neutralizada.
-- Privacidade: nenhum arquivo do usuário sai da hospedagem; consultas externas
-  enviam apenas hashes e slugs de versão (ex.: API de checksums do
-  WordPress.org).
+Everything committed to this repository is written in English: code,
+identifiers, comments, error and log messages, CLI output, panel UI strings,
+documentation, shell scripts, commit messages, and specification artifacts.
 
-## Fluxo de desenvolvimento
+This is not a style preference. Shared hosting exists everywhere, and a
+contributor must be able to read *why* the quarantine copies before it deletes
+without needing a translator. Discussion between maintainers may happen in any
+language; artifacts that are committed may not.
 
-Spec-driven (Spec Kit): toda feature nasce de spec.md → plan.md → tasks.md.
-Testes de contrato para cada adaptador (amostras de saída bruta versionadas no
-repositório). Corpus de teste com webshells desativadas/sintéticas para
-validar o consenso — nunca malware "vivo" executável no repositório.
+The panel ships English as its base locale. Additional locales are welcome
+through i18n, never by replacing the base.
+
+## Additional constraints
+
+- Panel security: authentication mandatory by default; listens on localhost by
+  default (access via SSH tunnel or a deliberately opened port).
+- Malicious content is never executed nor re-served: snippets shown in the UI
+  are truncated and sanitized; quarantined files lose execute permission and are
+  stored with a neutralized extension.
+- Privacy: no user file ever leaves the hosting account; external lookups send
+  only hashes and version slugs (e.g. the WordPress.org checksums API).
+
+## Development workflow
+
+Spec-driven (Spec Kit): every feature starts from spec.md → plan.md → tasks.md.
+Contract tests for each adapter (raw output samples versioned in the
+repository). A test corpus of disabled/synthetic webshells to validate the
+consensus — never live, executable malware in the repository.
 
 ## Governance
 
-Emendas a esta constituição exigem: registro da motivação, análise de impacto
-nos artefatos de spec existentes e incremento de versão semântica. Pull
-requests que violem um princípio devem ser rejeitados ou acompanhados de
-emenda aprovada.
+Amendments to this constitution require: a record of the motivation, an impact
+analysis on existing spec artifacts, and a semantic version increment. Pull
+requests that violate a principle must be rejected or accompanied by an approved
+amendment.
+
+### Amendment log
+
+**1.1.0 — 2026-07-29 — Principle VIII added (English as the repository language)**
+
+*Motivation.* The project was written in Portuguese, which made it unreadable to
+most of the audience it targets. SentinelHost exists for people running cheap
+shared hosting, and that population is global. A comment explaining why the
+quarantine verifies its copy before deleting the original is safety-critical
+knowledge; locking it behind a language barrier means the next contributor
+reintroduces the bug.
+
+*Impact on existing artifacts.* All of `specs/`, `docs/`, `internal/`, `cmd/`,
+`tests/`, the shell scripts and the panel assets were translated. The
+`spec.md` assumption stating "panel interface in pt-BR for the MVP, with i18n
+prepared for en" is **reversed**: English becomes the base locale and other
+locales arrive through i18n. No functional behaviour changed — the translation
+covers identifiers, comments and strings, and the test suite plus
+`make validate-engines` were used to confirm equivalence.
+
+*Not covered.* This amendment does not require translating captured third-party
+output in `tests/testdata/raw/`. Those files are evidence of what an external
+engine actually printed; rewriting them would destroy their value as fixtures.
