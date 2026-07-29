@@ -1,9 +1,9 @@
-// Package sched roda ciclos continuamente no modo daemon.
+// Package sched runs cycles continuously in daemon mode.
 //
-// O modo daemon e OPCIONAL por design: hospedagem compartilhada raramente
-// mantem um processo vivo por horas, e o Principio III exige que tudo
-// essencial funcione so com o cron do cPanel. O daemon e conforto para quem
-// tem SSH, nunca requisito.
+// Daemon mode is OPTIONAL by design: shared hosting rarely keeps a process alive
+// for hours, and Principle III requires everything essential to work with the
+// cPanel cron alone. The daemon is a comfort for those who have SSH, never a
+// requirement.
 package sched
 
 import (
@@ -21,7 +21,7 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/store"
 )
 
-// Daemon executa ciclos no intervalo configurado.
+// Daemon runs cycles at the configured interval.
 type Daemon struct {
 	cfg    *config.Config
 	runner *cycle.Runner
@@ -29,35 +29,35 @@ type Daemon struct {
 	alerts *alert.Dispatcher
 	vault  *quarantine.Vault
 	now    func() time.Time
-	// OnCycle e chamado apos cada ciclo (usado pela CLI para imprimir).
+	// OnCycle is called after each cycle (used by the CLI to print).
 	OnCycle func(cycle.Summary)
 }
 
-// New monta o daemon.
+// New assembles the daemon.
 func New(cfg *config.Config, r *cycle.Runner, st *store.Store, d *alert.Dispatcher, v *quarantine.Vault) *Daemon {
 	return &Daemon{cfg: cfg, runner: r, store: st, alerts: d, vault: v, now: time.Now}
 }
 
-// Run roda ate o contexto ser cancelado.
+// Run runs until the context is cancelled.
 func (d *Daemon) Run(ctx context.Context) error {
-	intervalo := d.cfg.Schedule.Incremental.Duration
-	if intervalo <= 0 {
-		intervalo = time.Hour
+	interval := d.cfg.Schedule.Incremental.Duration
+	if interval <= 0 {
+		interval = time.Hour
 	}
 
-	// Manutencao no arranque: fecha ciclos interrompidos por um kill anterior,
-	// retoma entregas pendentes e aplica a retencao de disco.
-	d.manutencao(ctx)
+	// Maintenance at start-up: closes cycles interrupted by an earlier kill,
+	// resumes pending deliveries and applies the disk retention.
+	d.maintenance(ctx)
 
-	// Primeiro ciclo imediato: quem sobe o daemon quer saber o estado agora,
-	// nao daqui a uma hora.
+	// The first cycle runs immediately: whoever starts the daemon wants to know
+	// the state now, not an hour from now.
 	d.runOnce(ctx)
 
-	t := time.NewTicker(intervalo)
+	t := time.NewTicker(interval)
 	defer t.Stop()
 
-	// O scan completo tem agenda propria e mais espacada; o daemon so checa
-	// de tempos em tempos se ja passou da hora.
+	// The full scan has its own, more spaced-out schedule; the daemon only checks
+	// from time to time whether its hour has come.
 	checkFull := time.NewTicker(15 * time.Minute)
 	defer checkFull.Stop()
 
@@ -69,24 +69,24 @@ func (d *Daemon) Run(ctx context.Context) error {
 			d.runOnce(ctx)
 		case <-checkFull.C:
 			d.maybeFull(ctx)
-			d.manutencao(ctx)
+			d.maintenance(ctx)
 		}
 	}
 }
 
-// runOnce executa um ciclo incremental.
+// runOnce runs one incremental cycle.
 //
-// Nenhum erro de ciclo derruba o daemon: um scan que falhou hoje nao pode
-// impedir o scan de amanha. A falha e registrada e a vida continua.
+// No cycle error takes the daemon down: a scan that failed today must not keep
+// tomorrow's scan from happening. The failure is recorded and life goes on.
 func (d *Daemon) runOnce(ctx context.Context) {
 	sum, err := d.runner.Run(ctx, cycle.Options{Mode: schema.ModeIncremental})
 	switch {
 	case errors.Is(err, lock.ErrLocked):
-		// Outro processo (o cron, provavelmente) esta rodando. Normal.
-		d.log(ctx, "info", store.CatScan, "ciclo pulado: "+err.Error())
+		// Another process (the cron, most likely) is running. Normal.
+		d.log(ctx, "info", store.CatScan, "cycle skipped: "+err.Error())
 		return
 	case err != nil:
-		d.log(ctx, "error", store.CatScan, "ciclo falhou: "+err.Error())
+		d.log(ctx, "error", store.CatScan, "cycle failed: "+err.Error())
 		return
 	}
 	if d.OnCycle != nil {
@@ -94,28 +94,28 @@ func (d *Daemon) runOnce(ctx context.Context) {
 	}
 }
 
-// maybeFull dispara o scan completo quando a agenda pede.
+// maybeFull triggers the full scan when the schedule calls for it.
 func (d *Daemon) maybeFull(ctx context.Context) {
 	if d.cfg.Schedule.FullCron == "" {
 		return
 	}
-	ultimo, err := d.store.LastScan(ctx)
-	if err == nil && ultimo.Mode == schema.ModeFull && d.now().Sub(ultimo.StartedAt) < 20*time.Hour {
+	last, err := d.store.LastScan(ctx)
+	if err == nil && last.Mode == schema.ModeFull && d.now().Sub(last.StartedAt) < 20*time.Hour {
 		return
 	}
-	agenda, err := ParseCron(d.cfg.Schedule.FullCron)
+	schedule, err := ParseCron(d.cfg.Schedule.FullCron)
 	if err != nil {
-		d.log(ctx, "warn", store.CatSystem, "schedule.full_cron invalido: "+err.Error())
+		d.log(ctx, "warn", store.CatSystem, "invalid schedule.full_cron: "+err.Error())
 		return
 	}
-	if !agenda.Matches(d.now()) {
+	if !schedule.Matches(d.now()) {
 		return
 	}
 
 	sum, err := d.runner.Run(ctx, cycle.Options{Mode: schema.ModeFull})
 	if err != nil {
 		if !errors.Is(err, lock.ErrLocked) {
-			d.log(ctx, "error", store.CatScan, "scan completo falhou: "+err.Error())
+			d.log(ctx, "error", store.CatScan, "the full scan failed: "+err.Error())
 		}
 		return
 	}
@@ -124,20 +124,21 @@ func (d *Daemon) maybeFull(ctx context.Context) {
 	}
 }
 
-// manutencao delega ao pacote housekeeping, o MESMO que o comando `scan` usa.
+// maintenance delegates to the housekeeping package, the SAME one the `scan`
+// command uses.
 //
-// Antes estas rotinas viviam so aqui, e o modo padrao do projeto e `cron` — o
-// resultado era que retentativa de webhook, resumo periodico e retencao de
-// disco nunca aconteciam para a maioria dos usuarios.
-func (d *Daemon) manutencao(ctx context.Context) {
+// These routines used to live only here, and the project's default mode is `cron`
+// — the result was that webhook retries, the periodic summary and the disk
+// retention never happened for most users.
+func (d *Daemon) maintenance(ctx context.Context) {
 	res, err := housekeeping.Run(ctx, housekeeping.Deps{
 		Cfg: d.cfg, Store: d.store, Vault: d.vault, Alerts: d.alerts, Now: d.now,
 	})
 	if err != nil {
-		d.log(ctx, "warn", store.CatSystem, "manutencao periodica: "+err.Error())
+		d.log(ctx, "warn", store.CatSystem, "periodic maintenance: "+err.Error())
 	}
 	if res.DigestSent {
-		d.log(ctx, "info", store.CatAlert, "resumo periodico enviado")
+		d.log(ctx, "info", store.CatAlert, "periodic summary sent")
 	}
 }
 

@@ -1,9 +1,10 @@
-// Package cycle orquestra um ciclo completo: varrer, escanear com os engines
-// disponiveis, consolidar vereditos e agir.
+// Package cycle orchestrates a complete cycle: walk, scan with the available
+// engines, consolidate verdicts and act.
 //
-// E o unico lugar que conhece todas as pecas. Cada uma delas continua sem
-// conhecer as outras: os adaptadores nao sabem do veredito, o veredito nao
-// sabe da quarentena, e a quarentena nao sabe dos alertas.
+// It is the only place that knows every piece. Each of them still knows nothing
+// about the others: the adapters do not know about the verdict, the verdict does
+// not know about the quarantine, and the quarantine does not know about the
+// alerts.
 package cycle
 
 import (
@@ -23,15 +24,15 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/verdict"
 )
 
-// Dispatcher entrega eventos aos canais de alerta.
+// Dispatcher delivers events to the alert channels.
 //
-// E uma interface para que o ciclo nao dependa do pacote de alertas: um
-// webhook fora do ar nao pode ter como derrubar um scan.
+// It is an interface so the cycle does not depend on the alerts package: a
+// webhook that is down must have no way of taking a scan down.
 type Dispatcher interface {
 	Dispatch(ctx context.Context, event string, data any) error
 }
 
-// Runner executa ciclos.
+// Runner runs cycles.
 type Runner struct {
 	cfg      *config.Config
 	store    *store.Store
@@ -43,7 +44,7 @@ type Runner struct {
 	now      func() time.Time
 }
 
-// New monta o runner.
+// New assembles the runner.
 func New(cfg *config.Config, st *store.Store, reg *adapter.Registry, vault *quarantine.Vault) *Runner {
 	return &Runner{
 		cfg:      cfg,
@@ -60,31 +61,32 @@ func New(cfg *config.Config, st *store.Store, reg *adapter.Registry, vault *quar
 	}
 }
 
-// WithDispatcher liga os alertas.
+// WithDispatcher wires the alerts up.
 func (r *Runner) WithDispatcher(d Dispatcher) *Runner {
 	r.dispatch = d
 	return r
 }
 
-// WithClock troca o relogio. Uso restrito a testes.
+// WithClock swaps the clock. Tests only.
 func (r *Runner) WithClock(fn func() time.Time) *Runner {
 	r.now = fn
 	return r
 }
 
-// Options parametriza o ciclo.
+// Options parameterizes the cycle.
 type Options struct {
-	// Mode: incremental, full ou targeted.
+	// Mode: incremental, full or targeted.
 	Mode schema.ScanMode
-	// Paths so e usado em modo targeted.
+	// Paths is only used in targeted mode.
 	Paths []string
-	// DryRun calcula tudo e nao age, mesmo com acao automatica liberada.
+	// DryRun computes everything and acts on nothing, even with automatic action
+	// allowed.
 	DryRun bool
-	// SkipLock desliga o lock de instancia unica. So para teste.
+	// SkipLock turns the single-instance lock off. Tests only.
 	SkipLock bool
 }
 
-// EngineOutcome resume o que aconteceu com um engine.
+// EngineOutcome summarizes what happened to an engine.
 type EngineOutcome struct {
 	Slug      string
 	Available bool
@@ -92,17 +94,17 @@ type EngineOutcome struct {
 	Status    schema.ScanStatus
 	Findings  int
 	Duration  time.Duration
-	// Skipped e o que o engine pulou e por que, vindo do proprio relatorio.
+	// Skipped is what the engine skipped and why, taken from its own report.
 	//
-	// Sobe do ScanReport ate aqui porque o relatorio em texto precisa mostrar
-	// isso: o wp-checksums registra quantos plugins NAO conseguiu verificar, e
-	// esse numero nao pode ficar so no banco. Plugin nao verificado que nao
-	// aparece em lugar nenhum se parece com plugin verificado e limpo — a
-	// mesma falha silenciosa que o projeto combate em todo lugar.
+	// It travels up from the ScanReport to here because the text report has to
+	// show it: wp-checksums records how many plugins it could NOT verify, and that
+	// number must not stay only in the database. An unverified plugin that shows
+	// up nowhere looks like a plugin that was verified and found clean — the same
+	// silent failure the project fights everywhere.
 	Skipped map[string]int
 }
 
-// Summary e o resultado do ciclo.
+// Summary is the cycle's result.
 type Summary struct {
 	ScanID          string
 	Mode            schema.ScanMode
@@ -121,11 +123,11 @@ type Summary struct {
 	LevelCounts map[schema.Level]int
 	ActionCts   map[schema.ActionTaken]int
 
-	// ObservationReason explica por que nenhuma acao automatica ocorreu.
+	// ObservationReason explains why no automatic action took place.
 	ObservationReason string
 }
 
-// Run executa um ciclo completo.
+// Run runs a complete cycle.
 func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 	started := r.now()
 	sum := Summary{
@@ -140,7 +142,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 	sum.ScanID = scanID(started, sum.Mode)
 
 	if len(r.cfg.General.Roots) == 0 {
-		return sum, fmt.Errorf("nenhuma raiz configurada: nao ha o que escanear")
+		return sum, fmt.Errorf("no root configured: there is nothing to scan")
 	}
 
 	if !opts.SkipLock {
@@ -155,9 +157,9 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 		return sum, err
 	}
 
-	// Ciclo com timeout proprio: a hospedagem mata processos longos, e e
-	// melhor terminar por decisao propria (com relatorio parcial gravado) do
-	// que ser morto no meio sem deixar rastro.
+	// The cycle gets a timeout of its own: the hosting kills long processes, and
+	// finishing by our own decision (with a partial report written) beats being
+	// killed halfway leaving no trace.
 	if d := r.cfg.Limits.CycleTimeout.Duration; d > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, d)
@@ -169,46 +171,46 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 	}); err != nil {
 		return sum, err
 	}
-	r.log(ctx, "info", store.CatScan, "ciclo iniciado", sum.ScanID, map[string]any{
+	r.log(ctx, "info", store.CatScan, "cycle started", sum.ScanID, map[string]any{
 		"mode": string(sum.Mode), "roots": sum.Roots,
 	})
 
-	// 1. Descobrir o que escanear.
-	alvos, bl, err := r.collectTargets(ctx, opts, &sum)
+	// 1. Find out what to scan.
+	targets, bl, err := r.collectTargets(ctx, opts, &sum)
 	if err != nil {
 		r.finish(ctx, &sum, schema.StatusFailed)
 		return sum, err
 	}
 
-	// 2. Rodar os engines disponiveis.
-	reports := r.runEngines(ctx, opts, alvos, &sum)
+	// 2. Run the available engines.
+	reports := r.runEngines(ctx, opts, targets, &sum)
 
-	// 3. Consolidar.
-	consolidado := r.verdict.Consolidate(verdict.Input{
+	// 3. Consolidate.
+	consolidated := r.verdict.Consolidate(verdict.Input{
 		ScanID:          sum.ScanID,
 		Reports:         reports,
 		ExpectedEngines: r.enabledSlugs(),
 		Whitelist:       r.cfg.Verdict.Whitelist,
 		Now:             r.now(),
 	})
-	sum.Abstentions = consolidado.Abstentions
-	sum.Verdicts = consolidado.Verdicts
+	sum.Abstentions = consolidated.Abstentions
+	sum.Verdicts = consolidated.Verdicts
 
-	// 4. Persistir achados e vereditos.
-	if err := r.persist(ctx, reports, consolidado.Verdicts); err != nil {
+	// 4. Persist findings and verdicts.
+	if err := r.persist(ctx, reports, consolidated.Verdicts); err != nil {
 		r.finish(ctx, &sum, schema.StatusPartial)
 		return sum, err
 	}
 
-	// 5. Agir.
+	// 5. Act.
 	r.act(ctx, opts, &sum)
 
-	// 6. Atualizar baseline e fechar.
+	// 6. Update the baseline and close.
 	if bl != nil {
 		if err := bl.Save(r.cfg.BaselinePath()); err != nil {
-			// Baseline nao salvo custa um ciclo mais caro depois, nao a
-			// protecao. Registra e segue.
-			r.log(ctx, "warn", store.CatSystem, "nao foi possivel salvar o baseline: "+err.Error(), sum.ScanID, nil)
+			// An unsaved baseline costs a more expensive cycle later, not the
+			// protection. Record it and move on.
+			r.log(ctx, "warn", store.CatSystem, "could not save the baseline: "+err.Error(), sum.ScanID, nil)
 		}
 	}
 
@@ -226,7 +228,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 	return sum, nil
 }
 
-// collectTargets varre as raizes e decide a lista de arquivos do ciclo.
+// collectTargets walks the roots and decides the cycle's file list.
 func (r *Runner) collectTargets(ctx context.Context, opts Options, sum *Summary) ([]string, *baseline.Baseline, error) {
 	if sum.Mode == schema.ModeTargeted {
 		sum.FilesConsidered = len(opts.Paths)
@@ -236,11 +238,11 @@ func (r *Runner) collectTargets(ctx context.Context, opts Options, sum *Summary)
 
 	bl, err := baseline.Load(r.cfg.BaselinePath(), r.cfg.General.Roots)
 	if err != nil {
-		// Baseline corrompido ja devolveu um vazio utilizavel; so registra.
+		// A corrupted baseline already returned a usable empty one; just record it.
 		r.log(ctx, "warn", store.CatSystem, err.Error(), sum.ScanID, nil)
 	}
 
-	var todas []baseline.Entry
+	var all []baseline.Entry
 	for _, root := range r.cfg.General.Roots {
 		res, err := baseline.Walk(ctx, baseline.WalkOptions{
 			Root:             root,
@@ -250,9 +252,9 @@ func (r *Runner) collectTargets(ctx context.Context, opts Options, sum *Summary)
 			MaxFiles:         r.cfg.Limits.MaxFilesPerCycle,
 		})
 		if err != nil {
-			// Raiz inacessivel nao derruba as outras raizes.
+			// An inaccessible root does not take the other roots down.
 			r.log(ctx, "error", store.CatScan,
-				fmt.Sprintf("raiz %s inacessivel: %v", root, err), sum.ScanID, nil)
+				fmt.Sprintf("root %s is inaccessible: %v", root, err), sum.ScanID, nil)
 			sum.SkippedCounts["root_unreadable"]++
 			continue
 		}
@@ -263,60 +265,60 @@ func (r *Runner) collectTargets(ctx context.Context, opts Options, sum *Summary)
 			sum.SkippedCounts["truncated"]++
 		}
 		sum.FilesConsidered += res.Considered
-		todas = append(todas, res.Entries...)
+		all = append(all, res.Entries...)
 	}
 
-	// Hash so do que mudou no par tamanho+mtime: e o que torna o ciclo
-	// incremental barato o bastante para rodar de hora em hora.
-	var paraHashear []baseline.Entry
+	// Hash only what changed in the size+mtime pair: that is what makes the
+	// incremental cycle cheap enough to run hourly.
+	var toHash []baseline.Entry
 	if sum.Mode == schema.ModeFull {
-		paraHashear = todas
+		toHash = all
 	} else {
-		paraHashear = bl.NeedsHash(todas)
+		toHash = bl.NeedsHash(all)
 	}
-	hasheadas := baseline.HashEntries(ctx, paraHashear, sum.SkippedCounts)
+	hashed := baseline.HashEntries(ctx, toHash, sum.SkippedCounts)
 
-	// Reune o estado atual: o que foi hasheado agora + o que o baseline ja
-	// conhecia e nao mudou.
-	novosHashes := make(map[string]baseline.Entry, len(hasheadas))
-	for _, e := range hasheadas {
-		novosHashes[e.Path] = e
+	// Assemble the current state: what was just hashed + what the baseline
+	// already knew and did not change.
+	newHashes := make(map[string]baseline.Entry, len(hashed))
+	for _, e := range hashed {
+		newHashes[e.Path] = e
 	}
-	atual := make([]baseline.Entry, 0, len(todas))
-	for _, e := range todas {
-		if h, ok := novosHashes[e.Path]; ok {
-			atual = append(atual, h)
+	current := make([]baseline.Entry, 0, len(all))
+	for _, e := range all {
+		if h, ok := newHashes[e.Path]; ok {
+			current = append(current, h)
 			continue
 		}
-		if anterior, ok := bl.Get(e.Path); ok {
-			e.SHA256 = anterior.SHA256
+		if previous, ok := bl.Get(e.Path); ok {
+			e.SHA256 = previous.SHA256
 		}
-		atual = append(atual, e)
+		current = append(current, e)
 	}
 
-	var alvos []string
+	var targets []string
 	if sum.Mode == schema.ModeFull {
-		for _, e := range atual {
+		for _, e := range current {
 			if e.SHA256 != "" {
-				alvos = append(alvos, e.Path)
+				targets = append(targets, e.Path)
 			}
 		}
 	} else {
-		d := bl.Compare(atual)
-		alvos = d.Targets()
+		d := bl.Compare(current)
+		targets = d.Targets()
 		sum.SkippedCounts["unchanged"] += d.Unchanged
-		bl.Update(atual, d.Removed)
+		bl.Update(current, d.Removed)
 	}
 	if sum.Mode == schema.ModeFull {
-		bl.Update(atual, nil)
+		bl.Update(current, nil)
 	}
 
-	sum.FilesScanned = len(alvos)
-	return alvos, bl, nil
+	sum.FilesScanned = len(targets)
+	return targets, bl, nil
 }
 
-// runEngines sonda e executa cada engine habilitado.
-func (r *Runner) runEngines(ctx context.Context, opts Options, alvos []string, sum *Summary) []schema.ScanReport {
+// runEngines probes and runs each enabled engine.
+func (r *Runner) runEngines(ctx context.Context, opts Options, targets []string, sum *Summary) []schema.ScanReport {
 	var reports []schema.ScanReport
 	batcher := sexec.NewBatcher(r.cfg.Limits.BatchSize, r.cfg.Limits.BatchPause.Duration)
 
@@ -339,18 +341,18 @@ func (r *Runner) runEngines(ctx context.Context, opts Options, alvos []string, s
 		})
 
 		if !probe.Available {
-			// Engine indisponivel e informacao, nao silencio. O usuario tem
-			// que ver o motivo (FR-001).
+			// An unavailable engine is information, not silence. The user has to
+			// see the reason (FR-001).
 			sum.Engines = append(sum.Engines, EngineOutcome{Slug: slug, Reason: probe.Reason})
 			r.log(ctx, "warn", store.CatEngine,
-				fmt.Sprintf("engine %s indisponivel: %s", slug, probe.Reason), sum.ScanID, nil)
+				fmt.Sprintf("engine %s is unavailable: %s", slug, probe.Reason), sum.ScanID, nil)
 			continue
 		}
 
-		if len(alvos) == 0 {
-			// Nada mudou: o engine nao roda, mas isso NAO e abstencao —
-			// e um ciclo sem alvos. Registrar como relatorio completo com
-			// zero achados mantem a contabilidade honesta.
+		if len(targets) == 0 {
+			// Nothing changed: the engine does not run, but that is NOT an
+			// abstention — it is a cycle with no targets. Recording it as a
+			// completed report with zero findings keeps the accounting honest.
 			reports = append(reports, schema.ScanReport{
 				SchemaVersion: schema.Version, ScanID: sum.ScanID, Engine: slug,
 				EngineVersion: probe.Version, Status: schema.StatusCompleted,
@@ -362,14 +364,14 @@ func (r *Runner) runEngines(ctx context.Context, opts Options, alvos []string, s
 			continue
 		}
 
-		inicio := r.now()
-		parciais := r.runEngineBatches(ctx, a, env, slug, alvos, sum, batcher, probe.Version)
-		merged := mergeReports(sum.ScanID, slug, probe.Version, parciais, firstRoot(r.cfg), sum.Mode)
+		start := r.now()
+		partials := r.runEngineBatches(ctx, a, env, slug, targets, sum, batcher, probe.Version)
+		merged := mergeReports(sum.ScanID, slug, probe.Version, partials, firstRoot(r.cfg), sum.Mode)
 		reports = append(reports, merged)
 
 		outcome := EngineOutcome{
 			Slug: slug, Available: true, Status: merged.Status,
-			Findings: len(merged.Findings), Duration: r.now().Sub(inicio),
+			Findings: len(merged.Findings), Duration: r.now().Sub(start),
 			Skipped: merged.Scope.SkippedReasonCounts,
 		}
 		if merged.Abstains() {
@@ -389,31 +391,31 @@ func (r *Runner) runEngines(ctx context.Context, opts Options, alvos []string, s
 	return reports
 }
 
-// runEngineBatches executa o engine em lotes, com pausa entre eles.
+// runEngineBatches runs the engine in batches, with a pause between them.
 //
-// Engines que NAO sabem limitar a varredura a uma lista de arquivos
-// (Info().ScopeAware == false) sao executados UMA vez, com a lista inteira.
-// Executa-los por lote multiplicaria o trabalho pelo numero de lotes, porque
-// cada invocacao varre a raiz completa de novo — medido no container de
-// validacao: num WordPress de 3 mil arquivos, o AMWScan levou 13m54s e o
-// wp-checksums 7m02s num ciclo que deveria custar minutos.
+// Engines that do NOT know how to restrict their scan to a file list
+// (Info().ScopeAware == false) are run ONCE, with the whole list. Running them
+// per batch would multiply the work by the number of batches, because each
+// invocation walks the entire root again — measured in the validation container:
+// on a 3,000-file WordPress, AMWScan took 13m54s and wp-checksums 7m02s in a
+// cycle that should cost minutes.
 func (r *Runner) runEngineBatches(
 	ctx context.Context,
 	a adapter.Adapter,
 	env adapter.Environment,
 	slug string,
-	alvos []string,
+	targets []string,
 	sum *Summary,
 	batcher *sexec.Batcher,
 	engineVersion string,
 ) []schema.ScanReport {
-	var parciais []schema.ScanReport
+	var partials []schema.ScanReport
 
-	executar := func(ctx context.Context, lote []string) error {
+	run := func(ctx context.Context, batch []string) error {
 		rep := adapter.SafeScanAndParse(ctx, a, env, adapter.ScanRequest{
 			ScanID:           sum.ScanID,
 			Root:             firstRoot(r.cfg),
-			Paths:            lote,
+			Paths:            batch,
 			Mode:             sum.Mode,
 			Timeout:          r.cfg.EngineTimeoutFor(slug),
 			MaxFileSizeBytes: int64(r.cfg.Limits.MaxFileSizeMB) << 20,
@@ -421,24 +423,24 @@ func (r *Runner) runEngineBatches(
 		if rep.EngineVersion == "" {
 			rep.EngineVersion = engineVersion
 		}
-		parciais = append(parciais, rep)
+		partials = append(partials, rep)
 		return nil
 	}
 
 	if !safeInfo(a).ScopeAware {
-		// Uma execucao so. A pausa entre lotes nao se aplica aqui — o que
-		// segura o consumo e o nice/ionice do executor.
-		if err := executar(ctx, alvos); err != nil {
-			parciais = append(parciais, schema.FailedReport(sum.ScanID, slug, schema.StatusKilled, err, r.now()))
+		// A single execution. The pause between batches does not apply here — what
+		// holds the consumption down is the executor's nice/ionice.
+		if err := run(ctx, targets); err != nil {
+			partials = append(partials, schema.FailedReport(sum.ScanID, slug, schema.StatusKilled, err, r.now()))
 		}
-		return parciais
+		return partials
 	}
 
-	err := batcher.Each(ctx, alvos, func(ctx context.Context, lote []string) error {
+	err := batcher.Each(ctx, targets, func(ctx context.Context, batch []string) error {
 		rep := adapter.SafeScanAndParse(ctx, a, env, adapter.ScanRequest{
 			ScanID:           sum.ScanID,
 			Root:             firstRoot(r.cfg),
-			Paths:            lote,
+			Paths:            batch,
 			Mode:             sum.Mode,
 			Timeout:          r.cfg.EngineTimeoutFor(slug),
 			MaxFileSizeBytes: int64(r.cfg.Limits.MaxFileSizeMB) << 20,
@@ -446,23 +448,23 @@ func (r *Runner) runEngineBatches(
 		if rep.EngineVersion == "" {
 			rep.EngineVersion = engineVersion
 		}
-		parciais = append(parciais, rep)
+		partials = append(partials, rep)
 		return nil
 	})
 	if err != nil {
-		// Cancelamento do ciclo inteiro. O que ja rodou continua valendo.
-		parciais = append(parciais, schema.FailedReport(sum.ScanID, slug, schema.StatusKilled, err, r.now()))
+		// The whole cycle was cancelled. What already ran still counts.
+		partials = append(partials, schema.FailedReport(sum.ScanID, slug, schema.StatusKilled, err, r.now()))
 	}
-	return parciais
+	return partials
 }
 
-// envFor monta o ambiente do adaptador.
+// envFor assembles the adapter's environment.
 func (r *Runner) envFor(slug string) adapter.Environment {
 	e := r.cfg.Engines[slug]
 	binPath := e.Path
 	if slug == "wp-checksums" && binPath == "" {
-		// Adaptador nativo: o que ele precisa saber e onde procurar, nao
-		// qual binario rodar.
+		// A native adapter: what it needs to know is where to look, not which
+		// binary to run.
 		binPath = firstRoot(r.cfg)
 	}
 	return adapter.Environment{
@@ -484,15 +486,15 @@ func (r *Runner) enabledSlugs() []string {
 	return out
 }
 
-// safeInfo le o Info do adaptador sem deixar um panico derrubar o ciclo.
+// safeInfo reads the adapter's Info without letting a panic take the cycle down.
 //
-// Um adaptador de terceiro nao pode decidir o destino do ciclo nem no metodo
-// mais trivial que ele expoe.
+// A third-party adapter must not decide the cycle's fate, not even in the most
+// trivial method it exposes.
 func safeInfo(a adapter.Adapter) (info adapter.Info) {
 	defer func() {
 		if recover() != nil {
-			// Sem informacao confiavel, o lado seguro e tratar como
-			// scope-aware: uma execucao por lote e mais lenta, nunca incorreta.
+			// With no trustworthy information, the safe side is to treat it as
+			// scope-aware: one execution per batch is slower, never incorrect.
 			info = adapter.Info{ScopeAware: true}
 		}
 	}()
@@ -514,9 +516,9 @@ func orMode(m schema.ScanMode) schema.ScanMode {
 }
 
 func scanID(t time.Time, mode schema.ScanMode) string {
-	prefixo := "s"
+	prefix := "s"
 	if mode == schema.ModeFull {
-		prefixo = "sf"
+		prefix = "sf"
 	}
-	return fmt.Sprintf("%s_%s", prefixo, t.UTC().Format("20060102_150405"))
+	return fmt.Sprintf("%s_%s", prefix, t.UTC().Format("20060102_150405"))
 }

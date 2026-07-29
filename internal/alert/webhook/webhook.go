@@ -1,6 +1,6 @@
-// Package webhook entrega eventos como POST JSON assinado.
+// Package webhook delivers events as a signed JSON POST.
 //
-// Contrato completo: specs/001-orquestrador-mvp/contracts/webhooks.md.
+// Full contract: specs/001-orquestrador-mvp/contracts/webhooks.md.
 package webhook
 
 import (
@@ -19,7 +19,7 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/config"
 )
 
-// Cabecalhos do contrato.
+// Headers of the contract.
 const (
 	HeaderEvent     = "X-Sentinel-Event"
 	HeaderDelivery  = "X-Sentinel-Delivery"
@@ -27,17 +27,17 @@ const (
 	HeaderSignature = "X-Sentinel-Signature"
 )
 
-// MaxAttempts e o numero total de tentativas (1 inicial + 4 retentativas).
+// MaxAttempts is the total number of attempts (1 initial + 4 retries).
 const MaxAttempts = 5
 
-// RequestTimeout de cada tentativa.
+// RequestTimeout of each attempt.
 const RequestTimeout = 10 * time.Second
 
-// maxResponseBody limita o que lemos da resposta. O corpo so serve para o
-// usuario diagnosticar; um endpoint hostil nao pode encher nossa memoria.
+// maxResponseBody caps what we read from the response. The body only helps the
+// user diagnose; a hostile endpoint must not be able to fill our memory.
 const maxResponseBody = 8 << 10
 
-// Envelope e o corpo entregue.
+// Envelope is the body that gets delivered.
 type Envelope struct {
 	SchemaVersion string    `json:"schema_version"`
 	Event         string    `json:"event"`
@@ -47,14 +47,14 @@ type Envelope struct {
 	Data          any       `json:"data"`
 }
 
-// Instance identifica de onde veio a entrega.
+// Instance identifies where the delivery came from.
 type Instance struct {
 	ID       string `json:"id"`
 	Hostname string `json:"hostname"`
 	Root     string `json:"root"`
 }
 
-// Result e o desfecho de uma tentativa.
+// Result is the outcome of one attempt.
 type Result struct {
 	OK         bool
 	HTTPStatus int
@@ -63,22 +63,21 @@ type Result struct {
 	Duration   time.Duration
 }
 
-// Client entrega webhooks.
+// Client delivers webhooks.
 type Client struct {
 	http *http.Client
 }
 
-// New cria o cliente.
+// New creates the client.
 func New() *Client {
 	return &Client{http: &http.Client{Timeout: RequestTimeout}}
 }
 
-// Sign calcula a assinatura de uma entrega.
+// Sign computes a delivery's signature.
 //
-// O timestamp entra na assinatura para que uma entrega capturada nao possa ser
-// reenviada indefinidamente. Sem ele, quem interceptasse um POST de
-// `quarantine.action` poderia repeti-lo para sempre, e a assinatura continuaria
-// valida.
+// The timestamp enters the signature so a captured delivery cannot be replayed
+// indefinitely. Without it, whoever intercepted a `quarantine.action` POST could
+// repeat it forever and the signature would stay valid.
 func Sign(secret string, timestamp int64, body []byte) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(strconv.FormatInt(timestamp, 10)))
@@ -87,32 +86,32 @@ func Sign(secret string, timestamp int64, body []byte) string {
 	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
 }
 
-// Verify confere uma assinatura em tempo constante.
+// Verify checks a signature in constant time.
 //
-// Exportada porque o teste do proprio projeto e qualquer implementacao de
-// receptor precisam da mesma logica — e porque comparar assinatura com `==`
-// vaza tempo e e o erro classico deste tipo de codigo.
+// Exported because the project's own tests and any receiver implementation need
+// the same logic — and because comparing a signature with `==` leaks timing and is
+// the classic mistake in this kind of code.
 func Verify(secret string, timestamp int64, body []byte, signature string) bool {
-	esperado := Sign(secret, timestamp, body)
-	return hmac.Equal([]byte(esperado), []byte(signature))
+	expected := Sign(secret, timestamp, body)
+	return hmac.Equal([]byte(expected), []byte(signature))
 }
 
-// Deliver faz UMA tentativa de entrega.
+// Deliver makes ONE delivery attempt.
 //
-// A retentativa e responsabilidade do chamador (o despachante), que persiste o
-// estado entre tentativas: um processo morto pela hospedagem no meio de um
-// backoff nao pode perder a entrega.
+// Retrying is the caller's responsibility (the dispatcher), which persists the
+// state between attempts: a process killed by the hosting in the middle of a
+// backoff must not lose the delivery.
 func (c *Client) Deliver(ctx context.Context, w config.Webhook, env Envelope) (Result, []byte, error) {
-	inicio := time.Now()
+	start := time.Now()
 
 	body, err := json.Marshal(env)
 	if err != nil {
-		return Result{Err: err}, nil, fmt.Errorf("serializando payload: %w", err)
+		return Result{Err: err}, nil, fmt.Errorf("serializing the payload: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.URL, bytes.NewReader(body))
 	if err != nil {
-		return Result{Err: err}, body, fmt.Errorf("montando requisicao: %w", err)
+		return Result{Err: err}, body, fmt.Errorf("building the request: %w", err)
 	}
 
 	ts := env.OccurredAt.Unix()
@@ -127,7 +126,7 @@ func (c *Client) Deliver(ctx context.Context, w config.Webhook, env Envelope) (R
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return Result{Err: err, Duration: time.Since(inicio)}, body, nil
+		return Result{Err: err, Duration: time.Since(start)}, body, nil
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -135,22 +134,22 @@ func (c *Client) Deliver(ctx context.Context, w config.Webhook, env Envelope) (R
 	res := Result{
 		HTTPStatus: resp.StatusCode,
 		Body:       string(respBody),
-		Duration:   time.Since(inicio),
+		Duration:   time.Since(start),
 		OK:         resp.StatusCode >= 200 && resp.StatusCode < 300,
 	}
 	if !res.OK {
-		res.Err = fmt.Errorf("o endpoint respondeu %s", resp.Status)
+		res.Err = fmt.Errorf("the endpoint answered %s", resp.Status)
 	}
 	return res, body, nil
 }
 
-// Backoff devolve o intervalo antes da proxima tentativa.
+// Backoff returns the interval before the next attempt.
 //
-// 1s, 4s, 16s, 64s, 256s — potencias de 4. Cresce rapido de proposito: um
-// endpoint fora do ar costuma demorar minutos para voltar, e insistir de
-// segundo em segundo so gera trafego e log.
+// 1s, 4s, 16s, 64s, 256s — powers of 4. It grows fast on purpose: an endpoint that
+// is down usually takes minutes to come back, and insisting once per second only
+// produces traffic and log noise.
 //
-// Devolve zero quando as tentativas acabaram.
+// It returns zero when the attempts have run out.
 func Backoff(attempt int) time.Duration {
 	if attempt < 1 || attempt >= MaxAttempts {
 		return 0

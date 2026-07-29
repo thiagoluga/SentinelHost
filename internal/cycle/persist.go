@@ -12,14 +12,13 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/verdict"
 )
 
-// mergeReports junta os relatorios parciais de um engine num relatorio unico.
+// mergeReports joins an engine's partial reports into a single report.
 //
-// Um engine que roda em 10 lotes produz 10 relatorios; o consenso trabalha com
-// um por engine. A regra de fusao importa: se QUALQUER lote falhou, o
-// relatorio inteiro fica com status de falha. Aceitar "9 de 10 lotes deram
-// certo" como sucesso declararia limpos os arquivos do lote que ninguem
-// conseguiu olhar.
-func mergeReports(scanID, slug, engineVersion string, parciais []schema.ScanReport, root string, mode schema.ScanMode) schema.ScanReport {
+// An engine that runs in 10 batches produces 10 reports; the consensus works with
+// one per engine. The merge rule matters: if ANY batch failed, the whole report
+// carries a failure status. Accepting "9 out of 10 batches worked" as success
+// would declare clean the files of the batch nobody managed to look at.
+func mergeReports(scanID, slug, engineVersion string, partials []schema.ScanReport, root string, mode schema.ScanMode) schema.ScanReport {
 	out := schema.ScanReport{
 		SchemaVersion: schema.Version,
 		ScanID:        scanID,
@@ -29,14 +28,14 @@ func mergeReports(scanID, slug, engineVersion string, parciais []schema.ScanRepo
 		Scope:         schema.Scope{Root: root, Mode: mode},
 		Findings:      []schema.Finding{},
 	}
-	if len(parciais) == 0 {
+	if len(partials) == 0 {
 		out.Status = schema.StatusFailed
-		out.Error = "o engine nao produziu nenhum relatorio"
+		out.Error = "the engine produced no report at all"
 		return out
 	}
 
-	var erros []string
-	for i, p := range parciais {
+	var failures []string
+	for i, p := range partials {
 		if i == 0 || p.StartedAt.Before(out.StartedAt) {
 			out.StartedAt = p.StartedAt
 		}
@@ -65,79 +64,79 @@ func mergeReports(scanID, slug, engineVersion string, parciais []schema.ScanRepo
 		}
 
 		if p.Abstains() {
-			out.Status = piorStatus(out.Status, p.Status)
+			out.Status = worstStatus(out.Status, p.Status)
 			if p.Error != "" {
-				erros = append(erros, p.Error)
+				failures = append(failures, p.Error)
 			}
 		}
 	}
 
 	if out.Abstains() {
-		out.Error = fmt.Sprintf("%d de %d lotes falharam: %v", len(erros), len(parciais), erros)
-		// Um relatorio de falha nao carrega achados: o engine nao terminou de
-		// olhar, e um achado parcial dele nao pode virar voto.
+		out.Error = fmt.Sprintf("%d of %d batches failed: %v", len(failures), len(partials), failures)
+		// A failure report carries no findings: the engine did not finish looking,
+		// and a partial finding of its own cannot become a vote.
 		out.Findings = []schema.Finding{}
 		out.CleanFiles = nil
 	}
 	return out
 }
 
-// piorStatus escolhe o status mais grave entre dois.
-func piorStatus(a, b schema.ScanStatus) schema.ScanStatus {
-	gravidade := map[schema.ScanStatus]int{
+// worstStatus picks the more severe of two statuses.
+func worstStatus(a, b schema.ScanStatus) schema.ScanStatus {
+	severity := map[schema.ScanStatus]int{
 		schema.StatusCompleted: 0,
 		schema.StatusPartial:   1,
 		schema.StatusTimeout:   2,
 		schema.StatusKilled:    3,
 		schema.StatusFailed:    4,
 	}
-	if gravidade[b] > gravidade[a] {
+	if severity[b] > severity[a] {
 		return b
 	}
 	return a
 }
 
-// persist grava achados e vereditos.
+// persist writes findings and verdicts.
 func (r *Runner) persist(ctx context.Context, reports []schema.ScanReport, verdicts []schema.Verdict) error {
-	var erros []error
+	var failures []error
 
 	for _, rep := range reports {
 		for _, f := range rep.Findings {
 			if f.ID == "" {
-				// O orquestrador gera os ids, nunca o adaptador (esquema 1.1).
+				// The orchestrator generates the ids, never the adapter (schema 1.1).
 				f.ID = verdict.FindingID(rep.ScanID, f.Engine, f.Rule, f.File.SHA256)
 			}
 			if err := r.store.SaveFinding(ctx, f); err != nil {
-				erros = append(erros, err)
+				failures = append(failures, err)
 			}
 		}
 	}
 	for _, v := range verdicts {
 		if err := r.store.SaveVerdict(ctx, v); err != nil {
-			erros = append(erros, err)
+			failures = append(failures, err)
 		}
 	}
-	return errors.Join(erros...)
+	return errors.Join(failures...)
 }
 
-// act aplica a acao automatica aos vereditos confirmados.
+// act applies the automatic action to the confirmed verdicts.
 //
-// Toda a decisao de "pode agir?" esta concentrada em config.AutomaticActionAllowed
-// e em Verdict.Actionable(). Este metodo nao adiciona nenhuma condicao propria:
-// se adicionasse, existiriam duas fontes de verdade sobre quando a ferramenta
-// mexe nos arquivos do usuario.
+// The whole "may we act?" decision is concentrated in
+// config.AutomaticActionAllowed and in Verdict.Actionable(). This method adds no
+// condition of its own: if it did, there would be two sources of truth about when
+// the tool touches the user's files.
 func (r *Runner) act(ctx context.Context, opts Options, sum *Summary) {
-	permitido, motivo := r.cfg.AutomaticActionAllowed(r.now())
+	allowed, reason := r.cfg.AutomaticActionAllowed(r.now())
 	if opts.DryRun {
-		permitido, motivo = false, "execucao em modo simulacao (--dry-run)"
+		allowed, reason = false, "running in simulation mode (--dry-run)"
 	}
-	sum.ObservationReason = motivo
+	sum.ObservationReason = reason
 
 	for i := range sum.Verdicts {
 		v := &sum.Verdicts[i]
 
-		// Whitelist e checksum oficial ja definiram a acao no motor de
-		// veredito; nao se mexe nelas aqui.
+		// The whitelist and the official checksum already set the action in the
+		// verdict engine; they are not touched here.
 		if v.ActionTaken != schema.ActionNone {
 			r.emitVerdict(ctx, *v)
 			continue
@@ -147,13 +146,13 @@ func (r *Runner) act(ctx context.Context, opts Options, sum *Summary) {
 			continue
 		}
 
-		if !permitido {
+		if !allowed {
 			v.ActionTaken = schema.ActionRecommended
 			v.ActionAt = r.now()
-			v.ActionError = motivo
-			_ = r.store.UpdateVerdictAction(ctx, v.VerdictID, v.ActionTaken, "", motivo)
+			v.ActionError = reason
+			_ = r.store.UpdateVerdictAction(ctx, v.VerdictID, v.ActionTaken, "", reason)
 			r.log(ctx, "warn", store.CatVerdict,
-				fmt.Sprintf("veredito confirmado em %s, acao recomendada: %s", v.FilePath, motivo),
+				fmt.Sprintf("verdict confirmed on %s, action recommended: %s", v.FilePath, reason),
 				sum.ScanID, map[string]any{"verdict_id": v.VerdictID, "score": v.Score})
 			r.emitVerdict(ctx, *v)
 			continue
@@ -173,30 +172,30 @@ func (r *Runner) quarantineOne(ctx context.Context, v *schema.Verdict, sum *Summ
 		v.QuarantineRef = item.Ref
 		_ = r.store.UpdateVerdictAction(ctx, v.VerdictID, v.ActionTaken, item.Ref, "")
 		r.log(ctx, "warn", store.CatQuarantine,
-			fmt.Sprintf("arquivo quarentenado: %s", v.FilePath), sum.ScanID,
+			fmt.Sprintf("file quarantined: %s", v.FilePath), sum.ScanID,
 			map[string]any{"ref": item.Ref, "verdict_id": v.VerdictID, "score": v.Score})
 		r.emit(ctx, "quarantine.action", quarantineEvent(item, "quarantined"))
 
 	case errors.Is(err, quarantine.ErrHashMismatch):
-		// O arquivo mudou entre o scan e a acao. Reescaneia em vez de
-		// quarentenar as cegas (edge case explicito da spec).
+		// The file changed between the scan and the action. Re-scan instead of
+		// quarantining blindly (an explicit edge case in the spec).
 		v.ActionTaken = schema.ActionRescanNeeded
 		v.ActionAt = r.now()
 		v.ActionError = err.Error()
 		_ = r.store.UpdateVerdictAction(ctx, v.VerdictID, v.ActionTaken, "", err.Error())
 		r.log(ctx, "info", store.CatQuarantine,
-			fmt.Sprintf("%s mudou desde o scan; sera reescaneado em vez de quarentenado", v.FilePath),
+			fmt.Sprintf("%s changed since the scan; it will be re-scanned instead of quarantined", v.FilePath),
 			sum.ScanID, map[string]any{"verdict_id": v.VerdictID})
 
 	default:
-		// Disco cheio ou sem permissao no cofre: alerta critico "nao foi
-		// possivel neutralizar", nunca falha silenciosa.
+		// A full disk or no permission in the vault: a critical "could not
+		// neutralize" alert, never a silent failure.
 		v.ActionTaken = schema.ActionFailed
 		v.ActionAt = r.now()
 		v.ActionError = err.Error()
 		_ = r.store.UpdateVerdictAction(ctx, v.VerdictID, v.ActionTaken, "", err.Error())
 		r.log(ctx, "error", store.CatQuarantine,
-			fmt.Sprintf("NAO foi possivel neutralizar %s: %v", v.FilePath, err), sum.ScanID,
+			fmt.Sprintf("could NOT neutralize %s: %v", v.FilePath, err), sum.ScanID,
 			map[string]any{"verdict_id": v.VerdictID})
 		r.emit(ctx, "quarantine.action", map[string]any{
 			"action": "failed", "verdict_id": v.VerdictID,
@@ -218,7 +217,7 @@ func quarantineEvent(item store.QuarantineItem, action string) map[string]any {
 	}
 }
 
-// emitVerdict manda o evento do nivel correspondente.
+// emitVerdict sends the event matching the level.
 func (r *Runner) emitVerdict(ctx context.Context, v schema.Verdict) {
 	switch v.Level {
 	case schema.LevelConfirmed:
@@ -230,16 +229,16 @@ func (r *Runner) emitVerdict(ctx context.Context, v schema.Verdict) {
 	}
 }
 
-// emit entrega um evento sem deixar o alerta derrubar o ciclo.
+// emit delivers an event without letting the alert take the cycle down.
 func (r *Runner) emit(ctx context.Context, event string, data any) {
 	if r.dispatch == nil {
 		return
 	}
 	if err := r.dispatch.Dispatch(ctx, event, data); err != nil {
-		// Falha de alerta e registrada, nunca propagada: um webhook fora do
-		// ar nao pode impedir uma quarentena de acontecer.
+		// An alert failure is recorded, never propagated: a webhook that is down
+		// must not keep a quarantine from happening.
 		r.log(ctx, "warn", store.CatAlert,
-			fmt.Sprintf("nao foi possivel despachar %s: %v", event, err), "", nil)
+			fmt.Sprintf("could not dispatch %s: %v", event, err), "", nil)
 	}
 }
 
@@ -259,18 +258,19 @@ func (r *Runner) finish(ctx context.Context, sum *Summary, status schema.ScanSta
 		Summary: sum.Event(),
 	})
 	r.log(ctx, "info", store.CatScan,
-		fmt.Sprintf("ciclo terminado com status %s", status), sum.ScanID,
+		fmt.Sprintf("cycle finished with status %s", status), sum.ScanID,
 		map[string]any{
-			"arquivos_considerados": sum.FilesConsidered,
-			"arquivos_escaneados":   sum.FilesScanned,
-			"duracao_s":             sum.FinishedAt.Sub(sum.StartedAt).Seconds(),
+			"files_considered": sum.FilesConsidered,
+			"files_scanned":    sum.FilesScanned,
+			"duration_s":       sum.FinishedAt.Sub(sum.StartedAt).Seconds(),
 		})
 }
 
-// Event monta o payload de scan.completed do contrato de webhooks.
+// Event assembles the scan.completed payload of the webhooks contract.
 //
-// E o mesmo objeto usado pelo `--json` da CLI e pelo resumo gravado no banco:
-// tres consumidores, uma unica definicao de "o que aconteceu neste ciclo".
+// It is the same object the CLI's `--json` uses and the summary written to the
+// database: three consumers, one single definition of "what happened in this
+// cycle".
 func (s Summary) Event() map[string]any {
 	var ran []string
 	abstained := make([]map[string]string, 0)
@@ -279,13 +279,13 @@ func (s Summary) Event() map[string]any {
 			ran = append(ran, e.Slug)
 			continue
 		}
-		// Engine indisponivel ou que falhou SEMPRE acompanha o resumo: um
-		// ciclo em que metade dos engines falhou nao pode parecer limpo.
-		motivo := e.Reason
-		if motivo == "" {
-			motivo = string(e.Status)
+		// An unavailable or failed engine ALWAYS travels with the summary: a cycle
+		// in which half the engines failed must not look clean.
+		reason := e.Reason
+		if reason == "" {
+			reason = string(e.Status)
 		}
-		abstained = append(abstained, map[string]string{"engine": e.Slug, "reason": motivo})
+		abstained = append(abstained, map[string]string{"engine": e.Slug, "reason": reason})
 	}
 
 	verdicts := map[string]int{}

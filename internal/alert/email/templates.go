@@ -9,184 +9,185 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
 
-// Os templates sao montados em Go, sem html/template, porque sao poucos e
-// fixos. A regra que importa: TODO dado vindo do sistema de arquivos ou de um
-// engine passa por html.EscapeString antes de entrar no HTML.
+// The templates are built in Go, without html/template, because there are few of
+// them and they are fixed. The rule that matters: EVERY piece of data coming from
+// the filesystem or from an engine goes through html.EscapeString before entering
+// the HTML.
 //
-// Isso nao e formalidade. O caminho de um arquivo malicioso e escolhido pelo
-// atacante — um arquivo chamado `<img src=x onerror=...>.php` transformaria o
-// e-mail de alerta num vetor de ataque contra quem o abre.
+// That is not a formality. A malicious file's path is chosen by the attacker — a
+// file named `<img src=x onerror=...>.php` would turn the alert e-mail into an
+// attack vector against whoever opens it.
 
-// VerdictMessage monta o alerta de um veredito.
-func VerdictMessage(v schema.Verdict, panelURL string, acaoRecomendada bool) Message {
-	nivel := strings.ToUpper(string(v.Level))
-	acao := "Quarentenado automaticamente"
+// VerdictMessage builds a verdict's alert.
+func VerdictMessage(v schema.Verdict, panelURL string, actionRecommended bool) Message {
+	level := strings.ToUpper(string(v.Level))
+	action := "Quarantined automatically"
 	switch {
-	case acaoRecomendada:
-		acao = "AÇÃO RECOMENDADA — nada foi movido"
+	case actionRecommended:
+		action = "ACTION RECOMMENDED — nothing was moved"
 	case v.ActionTaken == schema.ActionSkippedWhitelist:
-		acao = "Protegido pela whitelist — nada foi movido"
+		action = "Protected by the whitelist — nothing was moved"
 	case v.ActionTaken == schema.ActionFailed:
-		acao = "NÃO foi possível neutralizar: " + v.ActionError
+		action = "Could NOT neutralize: " + v.ActionError
 	case v.ActionTaken != schema.ActionQuarantined:
-		acao = "Nenhuma ação automática"
+		action = "No automatic action"
 	}
 
-	assunto := fmt.Sprintf("[SentinelHost] %s: %s", nivel, curtoCaminho(v.FilePath))
+	subject := fmt.Sprintf("[SentinelHost] %s: %s", level, shortPath(v.FilePath))
 
-	var texto strings.Builder
-	fmt.Fprintf(&texto, "Veredito: %s (score %.2f)\n", nivel, v.Score)
-	fmt.Fprintf(&texto, "Arquivo:  %s\n", v.FilePath)
-	fmt.Fprintf(&texto, "Hash:     %s\n", v.FileSHA256)
-	fmt.Fprintf(&texto, "Ação:     %s\n\n", acao)
+	var text strings.Builder
+	fmt.Fprintf(&text, "Verdict: %s (score %.2f)\n", level, v.Score)
+	fmt.Fprintf(&text, "File:    %s\n", v.FilePath)
+	fmt.Fprintf(&text, "Hash:    %s\n", v.FileSHA256)
+	fmt.Fprintf(&text, "Action:  %s\n\n", action)
 
-	// Os votos SAO a explicacao. Um alerta sem eles obriga o usuario a
-	// confiar cegamente na ferramenta (Principio V).
-	texto.WriteString("Por que este veredito:\n")
-	for _, voto := range v.Votes {
-		fmt.Fprintf(&texto, "  • %s — peso %.2f × %s = %.2f (regra: %s)\n",
-			voto.Engine, voto.Weight, voto.Confidence, voto.EffectiveWeight, voto.Rule)
+	// The votes ARE the explanation. An alert without them forces the user to
+	// trust the tool blindly (Principle V).
+	text.WriteString("Why this verdict:\n")
+	for _, vote := range v.Votes {
+		fmt.Fprintf(&text, "  • %s — weight %.2f × %s = %.2f (rule: %s)\n",
+			vote.Engine, vote.Weight, vote.Confidence, vote.EffectiveWeight, vote.Rule)
 	}
 	if len(v.Abstentions) > 0 {
-		fmt.Fprintf(&texto, "\nEngines que se abstiveram: %s\n", strings.Join(v.Abstentions, ", "))
-		texto.WriteString("(a cobertura deste ciclo foi reduzida)\n")
+		fmt.Fprintf(&text, "\nEngines that abstained: %s\n", strings.Join(v.Abstentions, ", "))
+		text.WriteString("(this cycle's coverage was reduced)\n")
 	}
 	if v.CleanReason != "" {
-		fmt.Fprintf(&texto, "\nVeto aplicado: %s\n", v.CleanReason)
+		fmt.Fprintf(&text, "\nVeto applied: %s\n", v.CleanReason)
 	}
 	if v.QuarantineRef != "" {
-		fmt.Fprintf(&texto, "\nO arquivo está no cofre (ref %s) e pode ser restaurado a qualquer momento.\n", v.QuarantineRef)
+		fmt.Fprintf(&text, "\nThe file is in the vault (ref %s) and can be restored at any time.\n", v.QuarantineRef)
 	}
 	if panelURL != "" {
-		fmt.Fprintf(&texto, "\nDecidir no painel: %s\n", panelURL)
+		fmt.Fprintf(&text, "\nDecide in the panel: %s\n", panelURL)
 	}
 
 	var htmlB strings.Builder
 	fmt.Fprintf(&htmlB, `<div style="font-family:system-ui,-apple-system,sans-serif;max-width:640px">`)
 	fmt.Fprintf(&htmlB, `<h2 style="margin:0 0 4px">%s <span style="color:%s">%s</span></h2>`,
-		"Veredito", corDoNivel(v.Level), html.EscapeString(nivel))
+		"Verdict", levelColor(v.Level), html.EscapeString(level))
 	fmt.Fprintf(&htmlB, `<p style="margin:0 0 16px;color:#666">score %.2f</p>`, v.Score)
 	fmt.Fprintf(&htmlB, `<table cellpadding="6" style="border-collapse:collapse;width:100%%">`)
-	linhaHTML(&htmlB, "Arquivo", v.FilePath)
-	linhaHTML(&htmlB, "Hash", v.FileSHA256)
-	linhaHTML(&htmlB, "Ação", acao)
+	htmlRow(&htmlB, "File", v.FilePath)
+	htmlRow(&htmlB, "Hash", v.FileSHA256)
+	htmlRow(&htmlB, "Action", action)
 	fmt.Fprintf(&htmlB, `</table>`)
 
-	fmt.Fprintf(&htmlB, `<h3>Por que este veredito</h3><ul>`)
-	for _, voto := range v.Votes {
-		fmt.Fprintf(&htmlB, `<li><strong>%s</strong> — peso %.2f × %s = %.2f <em>(regra: %s)</em></li>`,
-			html.EscapeString(voto.Engine), voto.Weight, html.EscapeString(string(voto.Confidence)),
-			voto.EffectiveWeight, html.EscapeString(voto.Rule))
+	fmt.Fprintf(&htmlB, `<h3>Why this verdict</h3><ul>`)
+	for _, vote := range v.Votes {
+		fmt.Fprintf(&htmlB, `<li><strong>%s</strong> — weight %.2f × %s = %.2f <em>(rule: %s)</em></li>`,
+			html.EscapeString(vote.Engine), vote.Weight, html.EscapeString(string(vote.Confidence)),
+			vote.EffectiveWeight, html.EscapeString(vote.Rule))
 	}
 	fmt.Fprintf(&htmlB, `</ul>`)
 	if len(v.Abstentions) > 0 {
-		fmt.Fprintf(&htmlB, `<p style="color:#a60"><strong>%d engine(s) se abstiveram</strong> (%s): a cobertura deste ciclo foi reduzida.</p>`,
+		fmt.Fprintf(&htmlB, `<p style="color:#a60"><strong>%d engine(s) abstained</strong> (%s): this cycle's coverage was reduced.</p>`,
 			len(v.Abstentions), html.EscapeString(strings.Join(v.Abstentions, ", ")))
 	}
 	if v.QuarantineRef != "" {
-		fmt.Fprintf(&htmlB, `<p>O arquivo está no cofre (ref <code>%s</code>) e pode ser restaurado a qualquer momento.</p>`,
+		fmt.Fprintf(&htmlB, `<p>The file is in the vault (ref <code>%s</code>) and can be restored at any time.</p>`,
 			html.EscapeString(v.QuarantineRef))
 	}
 	if panelURL != "" {
-		fmt.Fprintf(&htmlB, `<p><a href="%s">Decidir no painel</a></p>`, html.EscapeString(panelURL))
+		fmt.Fprintf(&htmlB, `<p><a href="%s">Decide in the panel</a></p>`, html.EscapeString(panelURL))
 	}
 	fmt.Fprintf(&htmlB, `</div>`)
 
-	return Message{Subject: assunto, Text: texto.String(), HTML: htmlB.String()}
+	return Message{Subject: subject, Text: text.String(), HTML: htmlB.String()}
 }
 
-// DigestMessage monta o resumo periodico.
-func DigestMessage(inicio, fim time.Time, contagem map[schema.Level]int, acoes map[schema.ActionTaken]int, pendentes []schema.Verdict, panelURL string) Message {
-	assunto := fmt.Sprintf("[SentinelHost] Resumo de %s", fim.Format("02/01/2006"))
+// DigestMessage builds the periodic summary.
+func DigestMessage(start, end time.Time, counts map[schema.Level]int, actions map[schema.ActionTaken]int, pending []schema.Verdict, panelURL string) Message {
+	subject := fmt.Sprintf("[SentinelHost] Summary for %s", end.Format("2006-01-02"))
 
 	var t strings.Builder
-	fmt.Fprintf(&t, "Resumo do período %s a %s\n\n",
-		inicio.Format("02/01 15:04"), fim.Format("02/01 15:04"))
-	fmt.Fprintf(&t, "Vereditos:\n")
+	fmt.Fprintf(&t, "Summary for the period %s to %s\n\n",
+		start.Format("2006-01-02 15:04"), end.Format("2006-01-02 15:04"))
+	fmt.Fprintf(&t, "Verdicts:\n")
 	for _, l := range []schema.Level{schema.LevelConfirmed, schema.LevelLikely, schema.LevelSuspicious, schema.LevelClean} {
-		fmt.Fprintf(&t, "  %-12s %d\n", l, contagem[l])
+		fmt.Fprintf(&t, "  %-12s %d\n", l, counts[l])
 	}
-	fmt.Fprintf(&t, "\nAções:\n")
-	for a, n := range acoes {
+	fmt.Fprintf(&t, "\nActions:\n")
+	for a, n := range actions {
 		fmt.Fprintf(&t, "  %-26s %d\n", a, n)
 	}
-	if len(pendentes) > 0 {
-		fmt.Fprintf(&t, "\nAguardando sua decisão (%d):\n", len(pendentes))
-		for _, v := range pendentes {
+	if len(pending) > 0 {
+		fmt.Fprintf(&t, "\nWaiting for your decision (%d):\n", len(pending))
+		for _, v := range pending {
 			fmt.Fprintf(&t, "  [%s] %s (score %.2f)\n", v.Level, v.FilePath, v.Score)
 		}
 	}
 	if panelURL != "" {
-		fmt.Fprintf(&t, "\nPainel: %s\n", panelURL)
+		fmt.Fprintf(&t, "\nPanel: %s\n", panelURL)
 	}
 
 	var h strings.Builder
 	fmt.Fprintf(&h, `<div style="font-family:system-ui,-apple-system,sans-serif;max-width:640px">`)
-	fmt.Fprintf(&h, `<h2>Resumo do SentinelHost</h2><p style="color:#666">%s a %s</p>`,
-		html.EscapeString(inicio.Format("02/01 15:04")), html.EscapeString(fim.Format("02/01 15:04")))
+	fmt.Fprintf(&h, `<h2>SentinelHost summary</h2><p style="color:#666">%s to %s</p>`,
+		html.EscapeString(start.Format("2006-01-02 15:04")), html.EscapeString(end.Format("2006-01-02 15:04")))
 	fmt.Fprintf(&h, `<table cellpadding="6" style="border-collapse:collapse">`)
 	for _, l := range []schema.Level{schema.LevelConfirmed, schema.LevelLikely, schema.LevelSuspicious, schema.LevelClean} {
 		fmt.Fprintf(&h, `<tr><td style="color:%s"><strong>%s</strong></td><td>%d</td></tr>`,
-			corDoNivel(l), html.EscapeString(string(l)), contagem[l])
+			levelColor(l), html.EscapeString(string(l)), counts[l])
 	}
 	fmt.Fprintf(&h, `</table>`)
-	if len(pendentes) > 0 {
-		fmt.Fprintf(&h, `<h3>Aguardando sua decisão (%d)</h3><ul>`, len(pendentes))
-		for _, v := range pendentes {
+	if len(pending) > 0 {
+		fmt.Fprintf(&h, `<h3>Waiting for your decision (%d)</h3><ul>`, len(pending))
+		for _, v := range pending {
 			fmt.Fprintf(&h, `<li>[%s] %s — score %.2f</li>`,
 				html.EscapeString(string(v.Level)), html.EscapeString(v.FilePath), v.Score)
 		}
 		fmt.Fprintf(&h, `</ul>`)
 	}
 	if panelURL != "" {
-		fmt.Fprintf(&h, `<p><a href="%s">Abrir o painel</a></p>`, html.EscapeString(panelURL))
+		fmt.Fprintf(&h, `<p><a href="%s">Open the panel</a></p>`, html.EscapeString(panelURL))
 	}
 	fmt.Fprintf(&h, `</div>`)
 
-	return Message{Subject: assunto, Text: t.String(), HTML: h.String()}
+	return Message{Subject: subject, Text: t.String(), HTML: h.String()}
 }
 
-// EngineFailedMessage avisa que um engine parou de funcionar.
+// EngineFailedMessage warns that an engine stopped working.
 //
-// Existe porque a degradacao silenciosa de cobertura e o modo de falha mais
-// perigoso de um orquestrador: o usuario continua vendo "0 achados" e acha que
-// esta protegido.
-func EngineFailedMessage(engine, motivo, scanID string) Message {
-	assunto := fmt.Sprintf("[SentinelHost] Engine %s parou de funcionar", engine)
-	texto := fmt.Sprintf(
-		"O engine %s não conseguiu rodar no ciclo %s.\n\nMotivo: %s\n\n"+
-			"A cobertura do seu site está reduzida até isso ser resolvido: os demais "+
-			"engines continuam rodando, mas o consenso perdeu um voto.\n",
-		engine, scanID, motivo)
+// It exists because silent coverage degradation is an orchestrator's most
+// dangerous failure mode: the user keeps seeing "0 findings" and believes they are
+// protected.
+func EngineFailedMessage(engine, reason, scanID string) Message {
+	subject := fmt.Sprintf("[SentinelHost] Engine %s stopped working", engine)
+	text := fmt.Sprintf(
+		"The engine %s could not run in cycle %s.\n\nReason: %s\n\n"+
+			"Your site's coverage is reduced until this is resolved: the other engines "+
+			"keep running, but the consensus lost a vote.\n",
+		engine, scanID, reason)
 	htmlBody := fmt.Sprintf(
 		`<div style="font-family:system-ui,sans-serif;max-width:640px">`+
-			`<h2>Engine %s parou de funcionar</h2>`+
-			`<p><strong>Motivo:</strong> %s</p>`+
-			`<p>A cobertura do seu site está reduzida: os demais engines continuam `+
-			`rodando, mas o consenso perdeu um voto.</p></div>`,
-		html.EscapeString(engine), html.EscapeString(motivo))
-	return Message{Subject: assunto, Text: texto, HTML: htmlBody}
+			`<h2>Engine %s stopped working</h2>`+
+			`<p><strong>Reason:</strong> %s</p>`+
+			`<p>Your site's coverage is reduced: the other engines keep running, `+
+			`but the consensus lost a vote.</p></div>`,
+		html.EscapeString(engine), html.EscapeString(reason))
+	return Message{Subject: subject, Text: text, HTML: htmlBody}
 }
 
-// TestMessage e a entrega de teste.
+// TestMessage is the test delivery.
 func TestMessage() Message {
 	return Message{
-		Subject: "[SentinelHost] Teste de configuração de e-mail",
-		Text: "Se você recebeu esta mensagem, o SentinelHost consegue enviar alertas " +
-			"por este servidor SMTP.\n\nNenhuma ação é necessária.\n",
+		Subject: "[SentinelHost] E-mail configuration test",
+		Text: "If you received this message, SentinelHost can send alerts " +
+			"through this SMTP server.\n\nNo action is required.\n",
 		HTML: `<div style="font-family:system-ui,sans-serif">` +
-			`<h2>Teste de e-mail</h2>` +
-			`<p>Se você recebeu esta mensagem, o SentinelHost consegue enviar alertas por este servidor SMTP.</p>` +
-			`<p>Nenhuma ação é necessária.</p></div>`,
+			`<h2>E-mail test</h2>` +
+			`<p>If you received this message, SentinelHost can send alerts through this SMTP server.</p>` +
+			`<p>No action is required.</p></div>`,
 	}
 }
 
-func linhaHTML(b *strings.Builder, rotulo, valor string) {
+func htmlRow(b *strings.Builder, label, value string) {
 	fmt.Fprintf(b, `<tr><td style="color:#666;white-space:nowrap">%s</td><td><code>%s</code></td></tr>`,
-		html.EscapeString(rotulo), html.EscapeString(valor))
+		html.EscapeString(label), html.EscapeString(value))
 }
 
-func corDoNivel(l schema.Level) string {
+func levelColor(l schema.Level) string {
 	switch l {
 	case schema.LevelConfirmed:
 		return "#c0392b"
@@ -199,7 +200,7 @@ func corDoNivel(l schema.Level) string {
 	}
 }
 
-func curtoCaminho(p string) string {
+func shortPath(p string) string {
 	if len(p) <= 60 {
 		return p
 	}

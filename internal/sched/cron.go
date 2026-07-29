@@ -7,11 +7,11 @@ import (
 	"time"
 )
 
-// Schedule e uma agenda cron de 5 campos.
+// Schedule is a 5-field cron schedule.
 //
-// Implementacao propria e minima em vez de uma dependencia: o projeto usa
-// exatamente um formato de agenda, para um caso de uso, e "sem dependencias
-// externas obrigatorias" e um principio, nao uma preferencia (Principio VII).
+// A minimal in-house implementation rather than a dependency: the project uses
+// exactly one schedule format, for one use case, and "no mandatory external
+// dependencies" is a principle, not a preference (Principle VII).
 type Schedule struct {
 	Minutes  []int
 	Hours    []int
@@ -20,43 +20,43 @@ type Schedule struct {
 	Weekdays []int
 }
 
-// ParseCron interpreta "minuto hora dia mes diadasemana".
+// ParseCron interprets "minute hour day month weekday".
 //
-// Suporta `*`, listas (`1,15`), intervalos (`1-5`) e passos (`*/15`). Nao
-// suporta nomes (`MON`, `JAN`) nem `@daily`: o que a ferramenta gera e
-// documenta usa so numeros, e aceitar sintaxe que nao geramos aumentaria a
-// superficie de bug sem beneficio.
+// It supports `*`, lists (`1,15`), ranges (`1-5`) and steps (`*/15`). It does not
+// support names (`MON`, `JAN`) or `@daily`: what the tool generates and documents
+// uses only numbers, and accepting syntax we do not generate would grow the bug
+// surface for no benefit.
 func ParseCron(expr string) (Schedule, error) {
-	campos := strings.Fields(expr)
-	if len(campos) != 5 {
-		return Schedule{}, fmt.Errorf("cron precisa de 5 campos, veio %d em %q", len(campos), expr)
+	fields := strings.Fields(expr)
+	if len(fields) != 5 {
+		return Schedule{}, fmt.Errorf("a cron needs 5 fields, got %d in %q", len(fields), expr)
 	}
 
 	var s Schedule
 	var err error
-	if s.Minutes, err = parseField(campos[0], 0, 59); err != nil {
-		return s, fmt.Errorf("campo minuto: %w", err)
+	if s.Minutes, err = parseField(fields[0], 0, 59); err != nil {
+		return s, fmt.Errorf("minute field: %w", err)
 	}
-	if s.Hours, err = parseField(campos[1], 0, 23); err != nil {
-		return s, fmt.Errorf("campo hora: %w", err)
+	if s.Hours, err = parseField(fields[1], 0, 23); err != nil {
+		return s, fmt.Errorf("hour field: %w", err)
 	}
-	if s.Days, err = parseField(campos[2], 1, 31); err != nil {
-		return s, fmt.Errorf("campo dia: %w", err)
+	if s.Days, err = parseField(fields[2], 1, 31); err != nil {
+		return s, fmt.Errorf("day field: %w", err)
 	}
-	if s.Months, err = parseField(campos[3], 1, 12); err != nil {
-		return s, fmt.Errorf("campo mes: %w", err)
+	if s.Months, err = parseField(fields[3], 1, 12); err != nil {
+		return s, fmt.Errorf("month field: %w", err)
 	}
-	if s.Weekdays, err = parseField(campos[4], 0, 6); err != nil {
-		return s, fmt.Errorf("campo dia da semana: %w", err)
+	if s.Weekdays, err = parseField(fields[4], 0, 6); err != nil {
+		return s, fmt.Errorf("weekday field: %w", err)
 	}
 	return s, nil
 }
 
-// Matches responde se o instante bate com a agenda.
+// Matches answers whether an instant matches the schedule.
 //
-// Segue a regra do cron tradicional: quando dia-do-mes e dia-da-semana estao
-// ambos restritos, basta UM deles casar. E contraintuitivo, mas e o que todo
-// administrador espera de uma linha de cron.
+// It follows traditional cron's rule: when day-of-month and day-of-week are both
+// restricted, only ONE of them has to match. It is counter-intuitive, but it is
+// what every administrator expects from a cron line.
 func (s Schedule) Matches(t time.Time) bool {
 	if !contains(s.Minutes, t.Minute()) ||
 		!contains(s.Hours, t.Hour()) ||
@@ -64,76 +64,76 @@ func (s Schedule) Matches(t time.Time) bool {
 		return false
 	}
 
-	diaRestrito := len(s.Days) < 31
-	semanaRestrita := len(s.Weekdays) < 7
-	diaCasa := contains(s.Days, t.Day())
-	semanaCasa := contains(s.Weekdays, int(t.Weekday()))
+	dayRestricted := len(s.Days) < 31
+	weekRestricted := len(s.Weekdays) < 7
+	dayMatches := contains(s.Days, t.Day())
+	weekMatches := contains(s.Weekdays, int(t.Weekday()))
 
 	switch {
-	case diaRestrito && semanaRestrita:
-		return diaCasa || semanaCasa
-	case diaRestrito:
-		return diaCasa
-	case semanaRestrita:
-		return semanaCasa
+	case dayRestricted && weekRestricted:
+		return dayMatches || weekMatches
+	case dayRestricted:
+		return dayMatches
+	case weekRestricted:
+		return weekMatches
 	default:
 		return true
 	}
 }
 
-func parseField(campo string, min, max int) ([]int, error) {
+func parseField(field string, min, max int) ([]int, error) {
 	var out []int
-	visto := map[int]bool{}
+	seen := map[int]bool{}
 
-	for _, parte := range strings.Split(campo, ",") {
-		parte = strings.TrimSpace(parte)
-		if parte == "" {
-			return nil, fmt.Errorf("valor vazio")
+	for _, part := range strings.Split(field, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return nil, fmt.Errorf("empty value")
 		}
 
-		passo := 1
-		if base, p, ok := strings.Cut(parte, "/"); ok {
+		step := 1
+		if base, p, ok := strings.Cut(part, "/"); ok {
 			n, err := strconv.Atoi(p)
 			if err != nil || n <= 0 {
-				return nil, fmt.Errorf("passo invalido em %q", parte)
+				return nil, fmt.Errorf("invalid step in %q", part)
 			}
-			passo = n
-			parte = base
+			step = n
+			part = base
 		}
 
-		inicio, fim := min, max
+		start, end := min, max
 		switch {
-		case parte == "*":
-			// intervalo inteiro
-		case strings.Contains(parte, "-"):
-			a, b, _ := strings.Cut(parte, "-")
+		case part == "*":
+			// the whole range
+		case strings.Contains(part, "-"):
+			a, b, _ := strings.Cut(part, "-")
 			var err error
-			if inicio, err = strconv.Atoi(strings.TrimSpace(a)); err != nil {
-				return nil, fmt.Errorf("inicio invalido em %q", parte)
+			if start, err = strconv.Atoi(strings.TrimSpace(a)); err != nil {
+				return nil, fmt.Errorf("invalid start in %q", part)
 			}
-			if fim, err = strconv.Atoi(strings.TrimSpace(b)); err != nil {
-				return nil, fmt.Errorf("fim invalido em %q", parte)
+			if end, err = strconv.Atoi(strings.TrimSpace(b)); err != nil {
+				return nil, fmt.Errorf("invalid end in %q", part)
 			}
 		default:
-			n, err := strconv.Atoi(parte)
+			n, err := strconv.Atoi(part)
 			if err != nil {
-				return nil, fmt.Errorf("valor invalido: %q", parte)
+				return nil, fmt.Errorf("invalid value: %q", part)
 			}
-			inicio, fim = n, n
+			start, end = n, n
 		}
 
-		if inicio < min || fim > max || inicio > fim {
-			return nil, fmt.Errorf("valor fora do intervalo %d-%d: %q", min, max, parte)
+		if start < min || end > max || start > end {
+			return nil, fmt.Errorf("value out of the %d-%d range: %q", min, max, part)
 		}
-		for v := inicio; v <= fim; v += passo {
-			if !visto[v] {
-				visto[v] = true
+		for v := start; v <= end; v += step {
+			if !seen[v] {
+				seen[v] = true
 				out = append(out, v)
 			}
 		}
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("campo sem valores")
+		return nil, fmt.Errorf("field with no values")
 	}
 	return out, nil
 }
