@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
-	"time"
 
 	"github.com/thiagoluga/SentinelHost/internal/store"
 )
@@ -201,11 +200,4 @@ func quarantineVerify(ctx context.Context, args []string) error {
 		fmt.Printf("  ! %s\n", p)
 	}
 	return fmt.Errorf("o cofre tem copias que nao conferem; a restauracao desses itens nao esta garantida")
-}
-
-func formatarQuando(t time.Time) string {
-	if t.IsZero() {
-		return "-"
-	}
-	return t.Local().Format("2006-01-02 15:04")
 }
