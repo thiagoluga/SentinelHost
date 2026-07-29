@@ -1,0 +1,38 @@
+{
+  "version": "0.10.4",
+  "path": "/home/user/public_html",
+  "scanned": 412,
+  "detected": 3,
+  "removed": 0,
+  "ignored": 0,
+  "whitelist": 0,
+  "edited": 0,
+  "quarantine": 0,
+  "time": 276.4,
+  "logs": [
+    {
+      "file": "/home/user/public_html/wp-content/uploads/2026/07/x.php",
+      "exploit": "SIGNATURE_KNOWN_MARKER",
+      "line": 12,
+      "details": "assinatura conhecida encontrada",
+      "match": "SENTINELHOST-CORPUS-SIGNATURE-TEST-FILE",
+      "size": 842
+    },
+    {
+      "file": "/home/user/public_html/wp-content/plugins/cache-helper/init.php",
+      "exploit": "EVAL_POST",
+      "line": 3,
+      "details": "avaliacao de codigo vindo de requisicao",
+      "match": "SENTINELHOST-SYNTHETIC-CORPUS",
+      "size": 691
+    },
+    {
+      "file": "/home/user/public_html/wp-content/themes/tema/inc/loader.php",
+      "exploit": "OBFUSCATED_BLOB",
+      "line": 9,
+      "details": "blob codificado longo sem codigo legivel",
+      "match": "SENTINELHOST-SYNTHETIC-CORPUS",
+      "size": 1204
+    }
+  ]
+}

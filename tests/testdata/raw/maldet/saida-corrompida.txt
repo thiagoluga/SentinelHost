@@ -1,0 +1,9 @@
+malware detect scan report for user:
+SCAN ID: 260723-0500.12347
+PATH: /home/user/public_html
+TOTAL FILES: 412
+TOTAL HITS: 5
+TOTAL CLEANED: 0
+
+FILE HIT LIST:
+{HEX}php.corpus.marker.v1 : /home/user/public_html/x.php

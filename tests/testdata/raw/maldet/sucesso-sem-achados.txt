@@ -1,0 +1,10 @@
+malware detect scan report for user:
+SCAN ID: 260723-0400.12346
+TIME: Jul 23 04:02:11 -0300
+PATH: /home/user/public_html
+TOTAL FILES: 412
+TOTAL HITS: 0
+TOTAL CLEANED: 0
+
+===============================================
+Linux Malware Detect v1.6.5 < proj@rfxn.com >

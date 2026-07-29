@@ -161,9 +161,16 @@ de teste, e isso mantém o repositório livre de amostras vivas.
 **Decisão**: cada amostra do corpus é um arquivo PHP **inerte** que contém um
 marcador fixo do projeto (`SENTINELHOST-SYNTHETIC-CORPUS`) e reproduz a
 *estrutura* de um padrão malicioso (concatenação ofuscada, callback dinâmico,
-blob base64) sem nunca montar uma chamada executável funcional. Cada amostra tem
-um `.md` irmão explicando o que simula, por que é inofensiva e qual categoria do
-esquema deveria receber.
+blob base64) sem nunca montar uma chamada executável funcional. Três garantias
+valem para todas: a primeira instrução executável é um `exit()`; os fragmentos
+de nome de função nunca são reunidos numa chamada dinâmica; nenhuma faz rede,
+escreve em disco, lê entrada ou abre processo.
+
+`tests/testdata/corpus/AMOSTRAS.md` documenta uma a uma o que simulam e qual
+categoria/severidade/confiança deveriam receber, e `manifesto.json` traz a
+mesma informação em formato legível por máquina. O teste do SC-001 falha se
+encontrar um arquivo do corpus que não esteja no manifesto — assim ninguém
+adiciona amostra sem declarar a expectativa.
 
 **Motivo**: a constituição proíbe malware executável no repositório. O corpus
 precisa exercitar o consenso, e para isso basta que os adaptadores *sintéticos
@@ -197,3 +204,49 @@ antivírus pode ser necessária para clonar o repositório em Windows.
 
 **Motivo**: um repositório de ferramenta de segurança que não pode ser clonado
 sem desligar o antivírus é um repositório inútil na prática.
+
+---
+
+## D-013 — `kind` e `component` no esquema desde o MVP
+
+**Ambiguidade**: a spec 002 (scanner de vulnerabilidades) não deve ser
+implementada agora, mas `docs/esquema-e-adaptadores.md` seção 3 já define o
+campo discriminador `kind` e o bloco `component`.
+
+**Decisão**: os dois entram no pacote `internal/schema` desde já, com
+`kind` vazio sendo tratado como `malware`. Nenhuma lógica de pipeline de
+vulnerabilidade é implementada.
+
+**Motivo**: a instrução era não tomar decisões que inviabilizem a 002.
+Adicionar um campo discriminador depois obrigaria a incrementar a versão maior
+do esquema e a reprocessar toda a saída bruta arquivada — enquanto adicioná-lo
+agora, opcional e com default, custa nada. A validação já cobre a diferença que
+importa: achado de vulnerabilidade é consolidado por componente, não por
+arquivo, e por isso não exige `file.sha256`.
+
+---
+
+## D-014 — Log estruturado no SQLite, saída bruta em arquivo
+
+**Ambiguidade**: o plan.md lista "logs" no diretório de dados e o FR-015 exige
+log estruturado **consultável no painel**.
+
+**Decisão**: o log estruturado (`events`) fica no SQLite; a saída bruta dos
+engines fica em arquivo, sob `<data_dir>/raw/<scan_id>/`.
+
+**Motivo**: consultar com filtro por categoria, nível e período é exatamente o
+que o painel precisa e exatamente o que arquivo de texto faz mal. A saída bruta
+segue em arquivo porque é grande, é lida inteira quando é lida, e precisa
+sobreviver a um banco corrompido para permitir reprocessamento por `Parse()`.
+
+---
+
+## D-015 — Purga de log não é ação destrutiva no sentido do Princípio I
+
+**Decisão**: `PruneEvents` apaga eventos além da retenção sem exigir confirmação
+do usuário.
+
+**Motivo**: o Princípio I protege **arquivos do usuário**. Log é dado gerado
+pela ferramenta, e numa conta com cota de disco um log que cresce sem limite
+acaba derrubando o site — o oposto do que a ferramenta promete. A retenção é
+configurável e o padrão (90 dias) é generoso.

@@ -1,0 +1,155 @@
+{
+  "versao": "1.0",
+  "descricao": "Expectativa por arquivo do corpus, lida pelo teste do SC-001. Toda amostra em sintetico/ e limpo/ precisa estar aqui: o teste falha se encontrar arquivo nao declarado, para que ninguem adicione amostra sem dizer o que espera dela.",
+  "marcador_inerte": "SENTINELHOST-SYNTHETIC-CORPUS",
+  "amostras": [
+    {
+      "arquivo": "sintetico/01-webshell-parametro.php",
+      "caminho_simulado": "wp-content/uploads/2026/07/cache.php",
+      "simula": "webshell que recebe comando por parametro de requisicao",
+      "category": "webshell",
+      "severity": "critical",
+      "confidence": "heuristic",
+      "nivel_minimo_esperado": "likely",
+      "engines_que_devem_apontar": ["amwscan", "php-malware-finder"]
+    },
+    {
+      "arquivo": "sintetico/02-backdoor-eval-post.php",
+      "caminho_simulado": "wp-content/plugins/cache-helper/init.php",
+      "simula": "backdoor que avalia codigo vindo de POST",
+      "category": "backdoor",
+      "severity": "critical",
+      "confidence": "heuristic",
+      "nivel_minimo_esperado": "likely",
+      "engines_que_devem_apontar": ["amwscan", "php-malware-finder"]
+    },
+    {
+      "arquivo": "sintetico/03-ofuscacao-blob.php",
+      "caminho_simulado": "wp-content/themes/tema/inc/loader.php",
+      "simula": "blob codificado longo e nomes ininteligiveis, sem codigo legivel",
+      "category": "obfuscation",
+      "severity": "high",
+      "confidence": "heuristic",
+      "nivel_minimo_esperado": "likely",
+      "engines_que_devem_apontar": ["amwscan", "php-malware-finder"]
+    },
+    {
+      "arquivo": "sintetico/04-uploader-sem-validacao.php",
+      "caminho_simulado": "public_html/up.php",
+      "simula": "upload sem validacao de tipo dentro da raiz web",
+      "category": "dropper",
+      "severity": "high",
+      "confidence": "heuristic",
+      "nivel_minimo_esperado": "likely",
+      "engines_que_devem_apontar": ["amwscan", "php-malware-finder"]
+    },
+    {
+      "arquivo": "sintetico/05-spam-seo-links.php",
+      "caminho_simulado": "wp-content/themes/tema/footer-extra.php",
+      "simula": "links de spam servidos so ao robo do buscador",
+      "category": "spam_seo",
+      "severity": "medium",
+      "confidence": "heuristic",
+      "nivel_minimo_esperado": "likely",
+      "engines_que_devem_apontar": ["amwscan", "php-malware-finder"]
+    },
+    {
+      "arquivo": "sintetico/06-phishing-coleta.php",
+      "caminho_simulado": "public_html/secure/login.php",
+      "simula": "pagina clonada que coleta credenciais e exfiltra",
+      "category": "phishing",
+      "severity": "critical",
+      "confidence": "heuristic",
+      "nivel_minimo_esperado": "likely",
+      "engines_que_devem_apontar": ["amwscan", "php-malware-finder"]
+    },
+    {
+      "arquivo": "sintetico/07-injecao-em-tema.php",
+      "caminho_simulado": "wp-content/themes/tema/footer.php",
+      "simula": "arquivo legitimo de tema com uma linha injetada",
+      "category": "injection",
+      "severity": "high",
+      "confidence": "heuristic",
+      "nivel_minimo_esperado": "likely",
+      "engines_que_devem_apontar": ["amwscan", "php-malware-finder"]
+    },
+    {
+      "arquivo": "sintetico/08-localizacao-suspeita.php",
+      "caminho_simulado": "wp-content/uploads/2026/03/imagem.php",
+      "simula": "PHP em pasta de midia; o sinal e o lugar, nao o conteudo",
+      "category": "suspicious_location",
+      "severity": "medium",
+      "confidence": "anomaly",
+      "nivel_minimo_esperado": "suspicious",
+      "engines_que_devem_apontar": ["php-malware-finder"]
+    },
+    {
+      "arquivo": "sintetico/09-marcador-conhecido.php",
+      "caminho_simulado": "wp-content/uploads/2026/07/x.php",
+      "simula": "marcador deterministico, o EICAR deste corpus",
+      "category": "known_malware",
+      "severity": "critical",
+      "confidence": "signature",
+      "nivel_minimo_esperado": "confirmed",
+      "engines_que_devem_apontar": ["amwscan", "php-malware-finder"]
+    },
+    {
+      "arquivo": "sintetico/10-core-adulterado.php",
+      "caminho_simulado": "wp-includes/pluggable.php",
+      "simula": "arquivo de core que nao bate com o checksum oficial",
+      "category": "core_integrity",
+      "severity": "critical",
+      "confidence": "signature",
+      "nivel_minimo_esperado": "confirmed",
+      "engines_que_devem_apontar": ["wp-checksums", "amwscan"]
+    },
+    {
+      "arquivo": "sintetico/11-permissoes-frouxas.php",
+      "caminho_simulado": "public_html/config-extra.php",
+      "simula": "arquivo 0777 na raiz web; o sinal e o modo",
+      "category": "suspicious_perms",
+      "severity": "medium",
+      "confidence": "anomaly",
+      "nivel_minimo_esperado": "suspicious",
+      "engines_que_devem_apontar": ["php-malware-finder"]
+    },
+    {
+      "arquivo": "sintetico/12-shell-reverso-descrito.php",
+      "caminho_simulado": "wp-content/uploads/2026/07/conn.php",
+      "simula": "shell reverso: so os dados, nenhuma primitiva de rede",
+      "category": "backdoor",
+      "severity": "critical",
+      "confidence": "heuristic",
+      "nivel_minimo_esperado": "likely",
+      "engines_que_devem_apontar": ["amwscan", "php-malware-finder"]
+    }
+  ],
+  "limpos": [
+    {
+      "arquivo": "limpo/base64-legitimo.php",
+      "caminho_simulado": "wp-content/plugins/util/helpers.php",
+      "falso_positivo_tipico": "uso legitimo de base64_encode",
+      "nivel_maximo_aceitavel": "suspicious"
+    },
+    {
+      "arquivo": "limpo/util.min.js",
+      "caminho_simulado": "wp-content/themes/tema/js/util.min.js",
+      "falso_positivo_tipico": "entropia alta de codigo minificado",
+      "nivel_maximo_aceitavel": "suspicious"
+    },
+    {
+      "arquivo": "limpo/wp-includes/version.php",
+      "caminho_simulado": "wp-includes/version.php",
+      "falso_positivo_tipico": "arquivo oficial do core apontado por engine",
+      "nivel_maximo_aceitavel": "clean",
+      "checksum_oficial": true,
+      "observacao": "Dois engines o apontam com confidence=signature no teste. O veredito TEM que sair clean com clean_reason=official_checksum_match: a protecao por checksum e veto, nao voto."
+    },
+    {
+      "arquivo": "limpo/plugin-legitimo.php",
+      "caminho_simulado": "wp-content/plugins/corpus-limpo/corpus-limpo.php",
+      "falso_positivo_tipico": "nenhum; linha de base do corpus",
+      "nivel_maximo_aceitavel": "clean"
+    }
+  ]
+}

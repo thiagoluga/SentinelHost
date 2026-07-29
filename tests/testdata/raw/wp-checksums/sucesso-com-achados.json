@@ -1,0 +1,10 @@
+{
+  "checksums": {
+    "readme.html": "5d41402abc4b2a76b9719d911017c592",
+    "wp-includes/version.php": "098f6bcd4621d373cade4e832627b4f6",
+    "wp-includes/pluggable.php": "ad0234829205b9033196ba818f7a872b",
+    "wp-includes/functions.php": "8ad8757baa8564dc136c1e07507f4a98",
+    "wp-admin/admin.php": "7c211433f02071597741e6ff5a8ea34789abbf43",
+    "wp-login.php": "b1946ac92492d2347c6235b4d2611184"
+  }
+}
