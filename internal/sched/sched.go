@@ -16,6 +16,7 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/config"
 	"github.com/thiagoluga/SentinelHost/internal/cycle"
 	"github.com/thiagoluga/SentinelHost/internal/lock"
+	"github.com/thiagoluga/SentinelHost/internal/quarantine"
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 	"github.com/thiagoluga/SentinelHost/internal/store"
 )
@@ -26,14 +27,15 @@ type Daemon struct {
 	runner *cycle.Runner
 	store  *store.Store
 	alerts *alert.Dispatcher
+	vault  *quarantine.Vault
 	now    func() time.Time
 	// OnCycle e chamado apos cada ciclo (usado pela CLI para imprimir).
 	OnCycle func(cycle.Summary)
 }
 
 // New monta o daemon.
-func New(cfg *config.Config, r *cycle.Runner, st *store.Store, d *alert.Dispatcher) *Daemon {
-	return &Daemon{cfg: cfg, runner: r, store: st, alerts: d, now: time.Now}
+func New(cfg *config.Config, r *cycle.Runner, st *store.Store, d *alert.Dispatcher, v *quarantine.Vault) *Daemon {
+	return &Daemon{cfg: cfg, runner: r, store: st, alerts: d, vault: v, now: time.Now}
 }
 
 // Run roda ate o contexto ser cancelado.
@@ -146,13 +148,23 @@ func (d *Daemon) maybeDigest(ctx context.Context) {
 }
 
 // maybeAutoPurge so age quando o usuario ligou a purga automatica.
+//
+// A purga em si e delegada ao cofre, que recusa qualquer item ainda dentro da
+// retencao — o daemon nao tem como contornar essa barreira nem por engano.
 func (d *Daemon) maybeAutoPurge(ctx context.Context) {
-	if !d.cfg.Quarantine.AutoPurge {
+	if !d.cfg.Quarantine.AutoPurge || d.vault == nil {
 		return
 	}
-	// A purga em si e delegada ao cofre, que recusa qualquer item ainda
-	// dentro da retencao.
-	d.log(ctx, "debug", store.CatQuarantine, "verificando itens expirados")
+	n, err := d.vault.PurgeExpired(ctx)
+	if err != nil {
+		d.log(ctx, "warn", store.CatQuarantine, "purga automatica: "+err.Error())
+	}
+	if n > 0 {
+		// Remocao definitiva de arquivo do usuario sempre vira registro, mesmo
+		// tendo sido autorizada de antemao pela configuracao.
+		d.log(ctx, "warn", store.CatQuarantine,
+			fmt.Sprintf("%d item(ns) expirado(s) purgado(s) definitivamente pela rotina automatica", n))
+	}
 }
 
 // recoverInterrupted registra ciclos que ficaram sem desfecho.

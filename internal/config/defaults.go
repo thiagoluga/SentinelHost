@@ -112,7 +112,12 @@ func Default() *Config {
 			"wp-checksums":       {Enabled: true, Weight: WeightWPChecksums},
 			"amwscan":            {Enabled: true, Weight: WeightAMWScan},
 			"php-malware-finder": {Enabled: true, Weight: WeightPMF},
-			"maldet":             {Enabled: true, Weight: WeightMaldet},
+			// maldet vem DESLIGADO porque este binario ainda nao traz o
+			// adaptador dele. Habilitar um engine sem adaptador o faria
+			// constar como abstencao em todo ciclo — um alarme permanente
+			// sobre algo que o usuario nao tem como resolver. O peso fica
+			// registrado para quando o adaptador chegar.
+			"maldet": {Enabled: false, Weight: WeightMaldet},
 		},
 		Alerts: Alerts{
 			Email: EmailConfig{

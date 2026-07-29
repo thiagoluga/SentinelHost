@@ -19,3 +19,6 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+
+# Artefatos de release gerados localmente
+/dist/
