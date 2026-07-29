@@ -10,6 +10,7 @@ import (
 	"github.com/thiagoluga/SentinelHost/internal/alert"
 	"github.com/thiagoluga/SentinelHost/internal/config"
 	"github.com/thiagoluga/SentinelHost/internal/cycle"
+	"github.com/thiagoluga/SentinelHost/internal/housekeeping"
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 	"github.com/thiagoluga/SentinelHost/internal/store"
 )
@@ -538,7 +539,21 @@ func (s *Server) handleScanNow(w http.ResponseWriter, req *http.Request) {
 	// durante toda a execucao e o que impede o painel de trocar limiares ou
 	// exclusoes no meio de um scan.
 	var sum cycle.Summary
-	err := s.withConfigRead(func(*config.Config) error {
+	err := s.withConfigRead(func(cfg *config.Config) error {
+		// A manutencao periodica acompanha o ciclo nos TRES caminhos que
+		// disparam um scan: cron, daemon e painel. Deixar o painel de fora
+		// faria quem so usa a interface nunca ter retentativa de webhook nem
+		// poda de disco.
+		if _, err := housekeeping.Run(req.Context(), housekeeping.Deps{
+			Cfg: cfg, Store: s.store, Vault: s.vault, Alerts: s.alerts, Now: s.now,
+		}); err != nil {
+			// Manutencao que falha nunca impede o scan.
+			_ = s.store.Log(req.Context(), store.Event{
+				Level: "warn", Category: store.CatSystem,
+				Message: "manutencao periodica: " + err.Error(),
+			})
+		}
+
 		var err error
 		sum, err = s.runner.Run(req.Context(), cycle.Options{Mode: modo})
 		return err

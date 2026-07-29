@@ -47,15 +47,40 @@ fi
 # ---------------------------------------------------------------------------
 secao "Montando o site de teste"
 
-# Um site que parece real: WordPress mínimo + o corpus sintético espalhado nos
-# lugares que o manifesto declara.
-mkdir -p "$SITE"/{wp-admin,wp-includes,wp-content/{plugins/cache-helper,themes/tema/inc,uploads/2026/{03,07}}}
-
-cat > "$SITE/wp-includes/version.php" <<'PHP'
+# WordPress DE VERDADE, não um esqueleto.
+#
+# Com um wp-includes/version.php falso, o wp-checksums encontra 2997 arquivos
+# de core ausentes e se abstém — comportamento correto, mas que deixa sem
+# exercício justamente o engine de maior peso (1.5), o único que sozinho chega
+# perto de `confirmed`, e com ele o caminho inteiro de quarentena.
+WP_VERSAO="6.5.2"
+mkdir -p "$SITE"
+if curl -fsSL "https://wordpress.org/wordpress-${WP_VERSAO}.tar.gz" -o /tmp/wp.tar.gz 2>/dev/null; then
+  tar -xzf /tmp/wp.tar.gz -C /tmp
+  cp -r /tmp/wordpress/. "$SITE/"
+  rm -rf /tmp/wordpress /tmp/wp.tar.gz
+  ok "WordPress ${WP_VERSAO} real instalado ($(find "$SITE" -type f | wc -l) arquivos)"
+  WP_REAL=1
+else
+  aviso "não foi possível baixar o WordPress; caindo para um esqueleto"
+  aviso "o wp-checksums vai se abster e NÃO será exercitado nesta execução"
+  mkdir -p "$SITE/wp-includes"
+  cat > "$SITE/wp-includes/version.php" <<PHP
 <?php
-$wp_version = '6.5.2';
-$wp_db_version = 57155;
+\$wp_version = '${WP_VERSAO}';
 PHP
+  WP_REAL=0
+fi
+
+mkdir -p "$SITE"/wp-content/{plugins/cache-helper,themes/tema/inc,uploads/2026/{03,07}}
+
+# A adulteração do core: uma linha a mais num arquivo oficial. É o sinal de
+# maior peso do projeto, e sem plantá-lo o wp-checksums não tem o que apontar.
+if [ "$WP_REAL" = "1" ]; then
+  echo '// SENTINELHOST-SYNTHETIC-CORPUS: linha extra que o core oficial nao tem' \
+    >> "$SITE/wp-includes/pluggable.php"
+  ok "arquivo de core adulterado (wp-includes/pluggable.php)"
+fi
 
 cp /corpus/limpo/base64-legitimo.php  "$SITE/wp-content/plugins/legitimo.php"
 cp /corpus/limpo/util.min.js          "$SITE/wp-content/themes/tema/util.min.js"
@@ -217,6 +242,24 @@ if [ "${n_yara:-0}" -gt 0 ] && [ "$orq_pmf" -eq 0 ]; then
 elif [ "${n_yara:-0}" -eq 0 ]; then
   aviso "o yara não casou nenhuma regra nem sozinho: o corpus sintético é inerte demais para o php.yar real"
   info "isso NÃO é bug do adaptador, mas significa que o pmf não está sendo exercitado de verdade aqui"
+else
+  ok "o orquestrador viu o que o yara viu sozinho ($orq_pmf achado(s))"
+fi
+
+# O engine de maior peso do projeto. Se ele não roda, o caminho que leva a
+# `confirmed` — e portanto à quarentena automática — nunca é exercitado.
+if [ "${WP_REAL:-0}" = "1" ]; then
+  if grep -qE '✓ wp-checksums' <<<"$saida_scan"; then
+    ok "wp-checksums executou sobre um WordPress real"
+    if grep -q 'core_file_modified' <<<"$saida_scan"; then
+      ok "a adulteração do core foi detectada (peso 1.50)"
+    else
+      falha "o core adulterado NÃO foi detectado pelo wp-checksums"
+      info "é o sinal de maior peso do projeto; sem ele o consenso perde seu voto mais forte"
+    fi
+  else
+    falha "wp-checksums se absteve mesmo com um WordPress real na raiz"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -231,7 +274,15 @@ sentinelhost scan --full --config "$CFG" >/dev/null 2>&1
 lista=$(sentinelhost quarantine list --config "$CFG" 2>&1)
 
 if grep -q 'cofre esta vazio' <<<"$lista"; then
-  aviso "nada foi quarentenado (esperado se nenhum achado chegou a 'confirmed')"
+  if [ "${WP_REAL:-0}" = "1" ]; then
+    # Com WordPress real e core adulterado, o consenso DEVE chegar a
+    # `confirmed` e a quarentena DEVE acontecer. Se não aconteceu, o caminho
+    # que justifica a ferramenta existir não funciona.
+    falha "nada foi quarentenado mesmo com core adulterado e ação automática liberada"
+    info "o caminho veredito -> confirmed -> quarentena reversível não fechou"
+  else
+    aviso "nada foi quarentenado (esperado sem um WordPress real para adulterar)"
+  fi
 else
   echo "$lista" | sed 's/^/  /'
   ref=$(grep -oE 'q_[0-9]+_[0-9a-f]+' <<<"$lista" | head -1)
