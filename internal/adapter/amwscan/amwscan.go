@@ -110,7 +110,10 @@ func (a *Adapter) Info() adapter.Info {
 			schema.CategoryObfuscation, schema.CategoryDropper, schema.CategoryInjection,
 			schema.CategorySpamSEO, schema.CategoryPhishing, schema.CategoryOther,
 		},
-		Cost:          adapter.CostMedium,
+		Cost: adapter.CostMedium,
+		// --filter-paths filtra o RELATORIO, nao a varredura: o engine le a
+		// raiz inteira toda vez. Ver D-018.
+		ScopeAware:    false,
 		DefaultWeight: config.WeightAMWScan,
 	}
 }

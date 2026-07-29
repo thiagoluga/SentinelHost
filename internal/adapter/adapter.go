@@ -44,6 +44,20 @@ type Info struct {
 	// consulta a API do WordPress.org). Numa hospedagem com saida bloqueada,
 	// eles se abstem em vez de travar o ciclo.
 	RequiresNetwork bool
+
+	// ScopeAware diz se o engine consegue limitar a VARREDURA a uma lista de
+	// arquivos, em vez de so filtrar o relatorio no fim.
+	//
+	// Isto nao e detalhe de otimizacao: o orquestrador executa cada engine uma
+	// vez por LOTE, e um engine que ignora a lista varre a raiz inteira a cada
+	// lote. Num WordPress de 3 mil arquivos com lotes de 200, isso multiplica
+	// o trabalho por 16 — medido no container de validacao: 13m54s do AMWScan
+	// e 7m02s do wp-checksums num ciclo que deveria levar minutos.
+	//
+	// Engines assim sao executados UMA vez por ciclo, com a lista inteira. O
+	// custo continua sendo o de varrer tudo, porque e o que o engine sabe
+	// fazer — mas uma vez, nao dezesseis.
+	ScopeAware bool
 	// DefaultWeight e o peso sugerido no consenso. A configuracao do usuario
 	// sempre vence.
 	DefaultWeight float64

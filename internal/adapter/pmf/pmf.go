@@ -83,7 +83,9 @@ func (a *Adapter) Info() adapter.Info {
 			schema.CategoryDropper, schema.CategorySuspiciousLocation,
 			schema.CategorySuspiciousPerms, schema.CategoryKnownMalware, schema.CategoryOther,
 		},
-		Cost:          adapter.CostMedium,
+		Cost: adapter.CostMedium,
+		// O yara honra --scan-list: ele varre exatamente a lista recebida.
+		ScopeAware:    true,
 		DefaultWeight: config.WeightPMF,
 	}
 }

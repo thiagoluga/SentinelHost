@@ -381,6 +381,13 @@ func (r *Runner) runEngines(ctx context.Context, opts Options, alvos []string, s
 }
 
 // runEngineBatches executa o engine em lotes, com pausa entre eles.
+//
+// Engines que NAO sabem limitar a varredura a uma lista de arquivos
+// (Info().ScopeAware == false) sao executados UMA vez, com a lista inteira.
+// Executa-los por lote multiplicaria o trabalho pelo numero de lotes, porque
+// cada invocacao varre a raiz completa de novo — medido no container de
+// validacao: num WordPress de 3 mil arquivos, o AMWScan levou 13m54s e o
+// wp-checksums 7m02s num ciclo que deveria custar minutos.
 func (r *Runner) runEngineBatches(
 	ctx context.Context,
 	a adapter.Adapter,
@@ -392,6 +399,31 @@ func (r *Runner) runEngineBatches(
 	engineVersion string,
 ) []schema.ScanReport {
 	var parciais []schema.ScanReport
+
+	executar := func(ctx context.Context, lote []string) error {
+		rep := adapter.SafeScanAndParse(ctx, a, env, adapter.ScanRequest{
+			ScanID:           sum.ScanID,
+			Root:             firstRoot(r.cfg),
+			Paths:            lote,
+			Mode:             sum.Mode,
+			Timeout:          r.cfg.EngineTimeoutFor(slug),
+			MaxFileSizeBytes: int64(r.cfg.Limits.MaxFileSizeMB) << 20,
+		})
+		if rep.EngineVersion == "" {
+			rep.EngineVersion = engineVersion
+		}
+		parciais = append(parciais, rep)
+		return nil
+	}
+
+	if !safeInfo(a).ScopeAware {
+		// Uma execucao so. A pausa entre lotes nao se aplica aqui — o que
+		// segura o consumo e o nice/ionice do executor.
+		if err := executar(ctx, alvos); err != nil {
+			parciais = append(parciais, schema.FailedReport(sum.ScanID, slug, schema.StatusKilled, err, r.now()))
+		}
+		return parciais
+	}
 
 	err := batcher.Each(ctx, alvos, func(ctx context.Context, lote []string) error {
 		rep := adapter.SafeScanAndParse(ctx, a, env, adapter.ScanRequest{
@@ -441,6 +473,21 @@ func (r *Runner) enabledSlugs() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// safeInfo le o Info do adaptador sem deixar um panico derrubar o ciclo.
+//
+// Um adaptador de terceiro nao pode decidir o destino do ciclo nem no metodo
+// mais trivial que ele expoe.
+func safeInfo(a adapter.Adapter) (info adapter.Info) {
+	defer func() {
+		if recover() != nil {
+			// Sem informacao confiavel, o lado seguro e tratar como
+			// scope-aware: uma execucao por lote e mais lenta, nunca incorreta.
+			info = adapter.Info{ScopeAware: true}
+		}
+	}()
+	return a.Info()
 }
 
 func firstRoot(cfg *config.Config) string {

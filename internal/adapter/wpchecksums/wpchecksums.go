@@ -44,7 +44,11 @@ func (a *Adapter) Info() adapter.Info {
 			schema.CategoryCoreIntegrity,
 			schema.CategorySuspiciousLocation,
 		},
-		Cost:            adapter.CostLight,
+		Cost: adapter.CostLight,
+		// A integridade e uma pergunta sobre o CORE inteiro; o adaptador
+		// inventaria todos os arquivos que a API conhece, nao a lista do
+		// ciclo.
+		ScopeAware:      false,
 		RequiresNetwork: true,
 		DefaultWeight:   config.WeightWPChecksums,
 	}
