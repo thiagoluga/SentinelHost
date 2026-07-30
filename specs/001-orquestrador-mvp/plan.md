@@ -1,4 +1,4 @@
-# Implementation Plan: Orquestrador multi-engine com veredito por consenso (MVP)
+# Implementation Plan: A multi-engine orchestrator with a consensus verdict (MVP)
 
 **Branch**: `001-orquestrador-mvp` | **Date**: 2026-07-23 | **Spec**: specs/001-orquestrador-mvp/spec.md
 
@@ -6,65 +6,64 @@
 
 ## Summary
 
-Construir o SentinelHost: um binário Go único que (1) sonda e orquestra engines
-open source de detecção de malware como subprocessos com limites de recursos,
-(2) normaliza as saídas para um esquema versionado, (3) consolida achados num
-veredito por consenso ponderado, (4) quarentena reversivelmente vereditos
-confirmados, (5) alerta por e-mail SMTP e webhooks assinados e (6) serve um
-painel web embutido (referência visual: docs/painel-mockup.html). Tudo operável
-sem root numa conta de hospedagem compartilhada.
+Build SentinelHost: a single Go binary that (1) probes and orchestrates open source
+malware-detection engines as subprocesses under resource limits, (2) normalizes their
+output into a versioned schema, (3) consolidates findings into a weighted consensus
+verdict, (4) reversibly quarantines confirmed verdicts, (5) alerts through SMTP e-mail
+and signed webhooks and (6) serves an embedded web panel (visual reference:
+docs/painel-mockup.html). All of it operable without root on a shared hosting account.
 
 ## Technical Context
 
-**Language/Version**: Go 1.24 (binário estático, CGO_ENABLED=0)
+**Language/Version**: Go 1.24 (a static binary, CGO_ENABLED=0)
 
 **Primary Dependencies**:
-- stdlib para HTTP (net/http), embed (painel), os/exec (subprocessos)
-- modernc.org/sqlite (SQLite puro Go, sem CGO) — estado e histórico
-- BurntSushi/toml — arquivo de configuração
-- wneessen/go-mail — envio SMTP
-- hillu/go-yara é EVITADO (CGO); regras YARA rodam via binário `yara`
-  externo quando presente (adaptador php-malware-finder)
-- Painel: HTML/CSS/JS vanilla embutido via go:embed (sem framework JS,
-  sem build step) — evolução direta do mockup
+- the stdlib for HTTP (net/http), embed (the panel), os/exec (subprocesses)
+- modernc.org/sqlite (pure-Go SQLite, no CGO) — state and history
+- BurntSushi/toml — the configuration file
+- wneessen/go-mail — SMTP sending
+- hillu/go-yara is AVOIDED (CGO); the YARA rules run through the external `yara`
+  binary when present (the php-malware-finder adapter)
+- The panel: vanilla HTML/CSS/JS embedded through go:embed (no JS framework, no build
+  step) — a direct evolution of the mockup
 
-**Storage**: SQLite (vereditos, quarentena, histórico, entregas de alerta) +
-arquivo TOML (configuração) + diretório de dados (~/.sentinelhost/): baseline,
-cofre de quarentena, saídas brutas, logs
+**Storage**: SQLite (verdicts, quarantine, history, alert deliveries) + a TOML file
+(the configuration) + a data directory (~/.sentinelhost/): the baseline, the quarantine
+vault, the raw output, the logs
 
-**Testing**: go test; testes de contrato por adaptador com amostras de saída
-bruta versionadas em testdata/; corpus de integração com webshells sintéticas
-(nunca malware vivo); teste round-trip de quarentena
+**Testing**: go test; contract tests per adapter with raw-output samples versioned in
+testdata/; an integration corpus with synthetic webshells (never live malware); a
+quarantine round-trip test
 
-**Target Platform**: Linux x86_64 e arm64, userland sem root (contas cPanel);
-dev/CI em qualquer SO via containers
+**Target Platform**: Linux x86_64 and arm64, userland without root (cPanel accounts);
+dev/CI on any OS through containers
 
-**Project Type**: CLI + daemon com painel web embutido (projeto único)
+**Project Type**: a CLI + daemon with an embedded web panel (a single project)
 
-**Performance Goals**: ciclo incremental de site com 20k arquivos e 1% de
-mudança < 5 min dentro dos limites padrão; baseline completo de 100k arquivos
-< 30 min em CPU limitada
+**Performance Goals**: an incremental cycle of a 20k-file site with 1% changed in under
+5 min within the default limits; a full baseline of 100k files in under 30 min on a
+limited CPU
 
-**Constraints**: nice 19 + pausas entre lotes por padrão; memória < 128 MB no
-orquestrador (engines têm seus próprios limites/timeouts); nenhuma dependência
-de sistema obrigatória; painel escuta 127.0.0.1 por padrão
+**Constraints**: nice 19 + pauses between batches by default; under 128 MB of memory in
+the orchestrator (the engines have their own limits/timeouts); no mandatory system
+dependency; the panel listens on 127.0.0.1 by default
 
-**Scale/Scope**: MVP para 1 conta/1 raiz por instância; multi-site na mesma
-conta via múltiplas raízes na config (pós-MVP: painel multi-instância)
+**Scale/Scope**: an MVP for 1 account/1 root per instance; multi-site on the same
+account through multiple roots in the config (post-MVP: a multi-instance panel)
 
 ## Constitution Check
 
-| Princípio | Como o plano cumpre |
+| Principle | How the plan satisfies it |
 |---|---|
-| I Reversibilidade | Cofre de quarentena + metadados em SQLite; purga só por retenção/manual; round-trip testado |
-| II Orquestrar | Zero assinatura própria; engines via os/exec; licença MIT viável (nada GPL linkado — YARA via binário externo) |
-| III Sem root | Binário estático userland; dados em ~/.sentinelhost; modo somente-cron |
-| IV Cidadão educado | Executor central de subprocess aplica nice/ionice/timeout/batch-pause a todo engine |
-| V Consenso transparente | Verdict guarda votos/pesos/regras; UI e CLI exibem; modo observação |
-| VI Esquema-contrato | Pacote schema versionado; Parse separado de Scan; raw output arquivado |
-| VII Simplicidade | 1 binário, 1 TOML, SQLite, painel embutido; sem build step JS |
+| I Reversibility | The quarantine vault + metadata in SQLite; a purge only by retention/manually; the round trip is tested |
+| II Orchestrate | Zero signatures of our own; engines through os/exec; an MIT license is feasible (nothing GPL is linked — YARA through an external binary) |
+| III Without root | A static userland binary; data in ~/.sentinelhost; a cron-only mode |
+| IV A polite citizen | A central subprocess executor applies nice/ionice/timeout/batch-pause to every engine |
+| V Transparent consensus | The Verdict keeps the votes/weights/rules; the UI and CLI display them; observation mode |
+| VI The schema as a contract | A versioned schema package; Parse separate from Scan; the raw output archived |
+| VII Simplicity | 1 binary, 1 TOML, SQLite, an embedded panel; no JS build step |
 
-Sem violações. Complexity Tracking vazio.
+No violations. Complexity Tracking is empty.
 
 ## Project Structure
 
@@ -73,59 +72,60 @@ Sem violações. Complexity Tracking vazio.
 ```text
 specs/001-orquestrador-mvp/
 ├── spec.md
-├── plan.md              # este arquivo
-├── data-model.md        # → docs/esquema-e-adaptadores.md (fonte) + DDL SQLite
-├── quickstart.md        # instalação em 1 comando + primeiro scan
-├── contracts/           # JSON Schema do esquema normalizado + payloads de webhook
+├── plan.md              # this file
+├── data-model.md        # → docs/schema-and-adapters.md (the source) + the SQLite DDL
+├── quickstart.md        # the one-command installation + the first scan
+├── contracts/           # the JSON Schema of the normalized schema + the webhook payloads
 └── tasks.md
 ```
 
 ### Source Code (repository root)
 
 ```text
-cmd/sentinelhost/        # main: subcomandos scan|serve|daemon|quarantine|config
+cmd/sentinelhost/        # main: the scan|serve|daemon|quarantine|config subcommands
 internal/
-├── schema/              # tipos Finding/ScanReport/Verdict + versionamento
-├── adapter/             # interface Adapter + registro
-│   ├── wpchecksums/     # nativo: API checksums WordPress.org
-│   ├── amwscan/         # phar via PHP CLI
-│   ├── pmf/             # php-malware-finder via binário yara
-│   └── maldet/          # opcional, quando ambiente permite
-├── exec/                # executor de subprocess: nice, timeout, batch-pause, captura raw
-├── verdict/             # motor de consenso: pesos, limiares, whitelist, proteção checksum
-├── baseline/            # hashes incrementais, walker com exclusões e limites
-├── quarantine/          # cofre, neutralização, restore, retenção
+├── schema/              # the Finding/ScanReport/Verdict types + versioning
+├── adapter/             # the Adapter interface + the registry
+│   ├── wpchecksums/     # native: the WordPress.org checksums API
+│   ├── amwscan/         # a phar through the PHP CLI
+│   ├── pmf/             # php-malware-finder through the yara binary
+│   └── maldet/          # optional, when the environment allows
+├── exec/                # the subprocess executor: nice, timeout, batch-pause, raw capture
+├── verdict/             # the consensus engine: weights, thresholds, whitelist, checksum protection
+├── baseline/            # incremental hashes, a walker with exclusions and limits
+├── quarantine/          # the vault, neutralization, restore, retention
 ├── alert/
-│   ├── email/           # SMTP, templates pt-BR, digest
-│   └── webhook/         # HMAC, retries com backoff, histórico
-├── sched/               # daemon, ciclos, lock de instância, watchdog cron
-├── store/               # SQLite (modernc), migrações
-├── config/              # TOML load/save/validate (fonte da verdade do painel)
-└── web/                 # painel: handlers JSON + go:embed dos assets
-    └── assets/          # HTML/CSS/JS (evolução do docs/painel-mockup.html)
+│   ├── email/           # SMTP, templates, the digest
+│   └── webhook/         # HMAC, retries with backoff, the history
+├── sched/               # the daemon, cycles, the instance lock, the cron watchdog
+├── store/               # SQLite (modernc), migrations
+├── config/              # TOML load/save/validate (the panel's source of truth)
+└── web/                 # the panel: JSON handlers + go:embed of the assets
+    └── assets/          # HTML/CSS/JS (an evolution of docs/painel-mockup.html)
 tests/
-├── contract/            # por adaptador, com testdata/ de saídas brutas
-├── integration/         # corpus sintético, round-trip de quarentena, e2e do ciclo
-└── testdata/corpus/     # WordPress limpo (parcial) + webshells sintéticas inertes
+├── contract/            # per adapter, with testdata/ of raw output
+├── integration/         # the synthetic corpus, the quarantine round trip, the cycle's e2e
+└── testdata/corpus/     # a clean (partial) WordPress + inert synthetic webshells
 ```
 
-**Structure Decision**: projeto único Go (opção 1) — CLI, daemon e painel no
-mesmo binário, painel embutido sem frontend separado, conforme Princípio VII.
+**Structure Decision**: a single Go project (option 1) — the CLI, the daemon and the
+panel in the same binary, the panel embedded with no separate frontend, per Principle
+VII.
 
-## Decisões técnicas registradas
+## Recorded technical decisions
 
-1. **YARA sem CGO**: php-malware-finder requer YARA. Linkar libyara quebraria o
-   binário estático e a licença. Decisão: o adaptador sonda o binário `yara`
-   no PATH ou o instala no espaço do usuário; sem `yara`, o engine fica
-   indisponível com motivo claro (consenso segue com os demais).
-2. **Painel sem framework**: o mockup aprovado é vanilla; o painel de produção
-   evolui dele com fetch() para a API JSON local. Elimina Node/build do repo.
-3. **Autenticação do painel**: senha única definida no primeiro acesso, hash
-   argon2id no SQLite, sessão por cookie; TLS fica a cargo de túnel SSH ou
-   proxy da hospedagem (documentado no quickstart).
-4. **Eventos de webhook**: `verdict.confirmed`, `verdict.likely`,
-   `verdict.suspicious`, `quarantine.action`, `scan.completed`,
-   `engine.failed` — payload = objeto normalizado correspondente + metadados
-   de entrega. Contrato em contracts/webhooks.md.
-5. **Digest**: agregação lida do SQLite no horário configurado — nenhum estado
-   extra em memória; perder o processo não perde o digest.
+1. **YARA without CGO**: php-malware-finder requires YARA. Linking libyara would break
+   the static binary and the license. Decision: the adapter probes for the `yara` binary
+   on PATH or installs it in the user's space; without `yara`, the engine is unavailable
+   with a clear reason (the consensus proceeds with the others).
+2. **A panel with no framework**: the approved mockup is vanilla; the production panel
+   evolves from it with fetch() against the local JSON API. It removes Node and any
+   build step from the repo.
+3. **The panel's authentication**: a single password set on first access, an argon2id
+   hash in SQLite, a cookie session; TLS is left to an SSH tunnel or the hosting's proxy
+   (documented in the quickstart).
+4. **Webhook events**: `verdict.confirmed`, `verdict.likely`, `verdict.suspicious`,
+   `quarantine.action`, `scan.completed`, `engine.failed` — the payload = the matching
+   normalized object + delivery metadata. The contract is in contracts/webhooks.md.
+5. **The digest**: an aggregation read from SQLite at the configured time — no extra
+   state in memory; losing the process does not lose the digest.
