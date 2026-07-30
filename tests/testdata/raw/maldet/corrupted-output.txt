@@ -1,8 +1,11 @@
-malware detect scan report for user:
-SCAN ID: 260723-0500.12347
-PATH: /home/user/public_html
-TOTAL FILES: 412
-TOTAL HITS: 5
+Linux Malware Detect v1.6.6
+            (C) 2002-2023, R-fx Networks <proj@rfxn.com>
+
+HOST:      9994ee811b3d
+SCAN ID:   260730-0836.3300
+PATH:          /home/user/public_html
+TOTAL FILES:   412
+TOTAL HITS:    5
 TOTAL CLEANED: 0
 
 FILE HIT LIST:

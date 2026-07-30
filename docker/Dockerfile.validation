@@ -30,11 +30,64 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       time \
       unzip \
       busybox \
+      # maldet's installer expects these present.
+      inotify-tools \
+      cron \
     && rm -rf /var/lib/apt/lists/*
+
+# The real maldet, installed system-wide the way a sysadmin installs it.
+#
+# It cannot be installed without root, which is exactly why the adapter never tries
+# (Principle III). Here the image plays the part of a host whose administrator
+# installed it, and the validation still runs as the unprivileged account. Without
+# this, the only thing ever exercised was the adapter's absence path, and every
+# assumption inside its Scan() stayed unverified. Six of them were wrong — see
+# DECISIONS.md D-025.
+RUN curl -fsSL --proto '=https' --proto-redir '=https' \
+      https://www.rfxn.com/downloads/maldetect-current.tar.gz -o /tmp/maldet.tar.gz \
+    && tar -xzf /tmp/maldet.tar.gz -C /tmp \
+    && (cd /tmp/maldetect-* && ./install.sh) >/dev/null 2>&1 \
+    && rm -rf /tmp/maldet.tar.gz /tmp/maldetect-* \
+    # The host default is left ON deliberately. The adapter disables the quarantine
+    # per invocation; if that flag ever stops working, maldet moves the user's files
+    # somewhere `sentinelhost quarantine restore` cannot reach. Leaving the default
+    # ON is what makes the empty-quarantine assertion in validate-engines meaningful.
+    && sed -i 's/^quarantine_hits=.*/quarantine_hits="1"/' /usr/local/maldetect/conf.maldet \
+    # scan_user_access="0" is maldet's shipped default, and it makes maldet refuse
+    # every unprivileged account: the banner, a refusal, exit 0 — from `--version` too.
+    # Left at the default, the ONLY thing this image could ever exercise is that
+    # refusal, so the real command line would stay unverified. So the image ships the
+    # configuration of a provider that deploys maldet FOR its users, and
+    # validate-engines closes the gate itself to cover the refusal path as well.
+    && sed -i 's/^scan_user_access=.*/scan_user_access="1"/' /usr/local/maldetect/conf.maldet \
+    && sed -i 's/^scan_user_access_minuid=.*/scan_user_access_minuid="500"/' /usr/local/maldetect/conf.maldet
 
 # An unprivileged account, as on shared hosting. Running the validation as root
 # would hide precisely the permission problems Principle III exists to prevent.
 RUN useradd --create-home --shell /bin/bash hosting
+
+# maldet's SECOND gate, and the one nothing in its documentation warns about: with
+# scan_user_access=1 it still refuses every account until root has created the
+# per-user public paths. `--mkpubpaths` is what creates them, and it needs the account
+# to exist already — hence this step being here rather than above.
+#
+# A real provider does this once, from cron.pub. Doing it here is what lets the
+# validation reach maldet's actual scan path instead of only its refusals.
+#
+# conf.maldet and the working directories are handed to the `hosting` account, because
+# validate-engines toggles the access gate itself to assert BOTH refusal paths and then
+# the working one. Ownership rather than world-write on purpose: `chmod 0666`/`0777`
+# would grant every account on the image what only this one needs, which is a habit
+# worth not practising even in a throwaway container. No real host grants either, and
+# nothing in the orchestrator depends on it.
+RUN /usr/local/sbin/maldet --mkpubpaths >/dev/null 2>&1 || true \
+    && chmod -R o+rX /usr/local/maldetect \
+    && chown hosting:hosting /usr/local/maldetect/conf.maldet \
+    && chown -R hosting:hosting /usr/local/maldetect/sess \
+                               /usr/local/maldetect/tmp \
+                               /usr/local/maldetect/quarantine \
+    && chown hosting:hosting /usr/local/maldetect \
+    && (chown -R hosting:hosting /usr/local/maldetect/pub 2>/dev/null || true)
 
 COPY dist/sentinelhost-linux-amd64 /usr/local/bin/sentinelhost
 COPY --chown=hosting:hosting tests/testdata/corpus /corpus
@@ -42,6 +95,14 @@ COPY docker/validate-engines.sh /usr/local/bin/validate-engines
 COPY install.sh /opt/install.sh
 
 RUN chmod +x /usr/local/bin/sentinelhost /usr/local/bin/validate-engines
+
+# Teach maldet one signature for this repository's own inert marker file, so that its
+# hit path is reachable at all — without it maldet scans the corpus and finds zero, and
+# half the adapter is never exercised. The full reasoning belongs with the code that does
+# it: see docker/teach-maldet-the-corpus-marker.sh.
+COPY docker/teach-maldet-the-corpus-marker.sh /usr/local/bin/teach-maldet-marker
+RUN chmod +x /usr/local/bin/teach-maldet-marker \
+    && /usr/local/bin/teach-maldet-marker
 
 USER hosting
 WORKDIR /home/hosting

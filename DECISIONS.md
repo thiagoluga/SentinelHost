@@ -505,3 +505,136 @@ a retry is exactly the path nobody watches.
 **Motive**: the README listed Slack and Discord as "not yet" while US4 promised them.
 Either the promise or the README had to change, and the promise was the reasonable
 one to keep.
+
+---
+
+## D-025 — maldet's own quarantine is disabled on every invocation
+
+**Context**: the maldet adapter is the last MVP engine. maldet ships with its own
+quarantine and its own cleaner, and both are configured host-side in `conf.maldet`.
+
+**Decision**: every invocation passes `--config-option quarantine_hits=0`,
+`quarantine_clean=0` and `quarantine_suspend_user=0`, rather than trusting how the
+host configured maldet. And if the report still comes back with `TOTAL CLEANED` above
+zero, the adapter **abstains with an explicit reason** instead of returning findings.
+
+**Reason**: Principle I. maldet's quarantine is not reversible from our vault, is not
+recorded in our store, and cannot be undone from the panel. A host with
+`quarantine_hits=1` would have maldet moving the user's files somewhere we cannot
+restore from — the tool causing exactly the harm it promises to prevent, through an
+engine the user never configured.
+
+Abstaining on `TOTAL CLEANED > 0` is the harder half of the decision. Returning the
+findings would look more useful, but a cycle where a file was already modified outside
+the vault cannot be reported as a normal cycle: the user has to learn that something
+altered their files before they read a verdict list. Loud beats useful here.
+
+**Also decided**: maldet ships **enabled** by default now. The earlier default was
+disabled, because enabling an engine with no adapter behind it produced an abstention
+every cycle about something the user could not fix. With the adapter present, a host
+without the binary gets an unavailability with a reason to act on — which is
+information, not a false alarm.
+
+**Install() refuses, and says why**: maldet installs as a system package and needs
+root, which Principle III forbids depending on. `ErrNotInstallable` with a generic
+message would leave the user guessing; naming root tells them what to ask the hosting
+support for.
+
+**Seven defects the real engine caught**, and the fixture that was itself invented:
+
+Installing maldet 1.6.6 in a container and running it as an unprivileged account found
+that six of my assumptions about it were wrong, and that the versioned fixture
+describing its report had been written from those same assumptions rather than from a
+real run. Any one of them alone would have made the adapter useless while looking
+correct:
+
+1. **`maldet --report <id>` prints nothing.** It hands the session file to `$EDITOR`.
+   With no EDITOR it prints `vi: command not found`; with vi present it would block
+   forever waiting for input and hang the cycle until the timeout killed it. The
+   undocumented second argument `dump` is what prints to stdout — visible only in
+   maldet's own `internals/functions`, not in `--help`.
+2. **The report has no `malware detect scan report` line.** The format check looked for
+   it, so every genuine report would have been rejected as off-format and the adapter
+   would have abstained every cycle.
+3. **`--config-option` takes one comma-separated value**, not repeated flags. Passing it
+   three times risks the last winning, which would silently drop `quarantine_hits=0` and
+   let maldet move the user's files into its own non-reversible quarantine — a
+   Principle I violation caused by my own untested assumption. The same shape as D-018.
+4. **The hit-line regex was `^\{([A-Za-z]+)\}…`**, which skipped every `{MD5}` line
+   because of the digit — one of maldet's two exact-match types, and a third of the hits
+   in the fixture.
+5. **`scan_user_access="0"` is maldet's shipped default, and it refuses every non-root
+   account** — printing the version banner, then the refusal, then exiting **0**. From
+   `--version` too. So `Probe()` read a version out of a refusal and reported the engine
+   **available and healthy** on a host where it could not scan a single file. That is
+   D-011's mbstring defect exactly, in a new engine, found the same way: by installing
+   the real thing. There is a **second** gate behind it, which nothing in the
+   documentation mentions — with access enabled maldet still refuses until root has run
+   `maldet --mkpubpaths`. The two need different remedies, so the adapter reports them
+   separately (`accessGateReason`): telling an admin to change a setting that is already
+   correct is worse than telling them nothing.
+6. **A finished scan never prints `SCAN ID:`.** It prints
+   `scan report saved, to view run: maldet --report 260730-0913.91`. `SCAN ID:` appears
+   in the **report**, which is the thing that cannot be fetched without the id. The
+   regex matched only `SCAN ID:`, so the adapter found no id after every *successful*
+   scan and abstained on every cycle — an engine listed as installed, contributing
+   nothing, forever.
+
+7. **maldet restricts its walk to a file list, through `-f/--file-list`.** `Info()`
+   declared `ScopeAware: false` with a comment asserting that "it has no flag that
+   restricts the walk to a file list". `--help` documents one, and measuring in the
+   validation container settled it:
+
+   | Invocation | Files | Wall clock |
+   |---|---|---|
+   | `-a <root>` | 2,999 | **28m36s** (37m42s under `nice 19`) |
+   | `-a <root>` | 401 | 3m24s |
+   | `-f <list>` | 2 | **7s**, and the report said `TOTAL FILES: 2` |
+
+   So it walks the list, not the root — at roughly half a second of bash-and-perl per
+   file. With `ScopeAware: false` the orchestrator paid that half hour every cycle to
+   re-read files nothing had touched. It is not waste, it is the CPU burn that gets a
+   shared-hosting account suspended, committed by the tool whose Principle IV exists to
+   prevent exactly that. It is also, precisely, the D-018 defect again: an adapter
+   declaring it cannot narrow its scope when the engine can. With `ScopeAware: true` an
+   incremental cycle over 200 changed files costs ~100s instead of 28m36s.
+
+   The reason it surfaced at all is that maldet **exceeded the 5-minute engine timeout**
+   in the validation container and abstained. The abstention was correct — it is what
+   Principle II is for — but "correct abstention every cycle forever" is an engine that
+   contributes nothing, and chasing why is what found the flag.
+
+Defects 5 and 6 are the two that no amount of care with the documentation would have
+caught, and both end in this project's defining failure mode: an engine that reports
+healthy and scans nothing. Defect 7 is the one a *green suite* would never have caught:
+nothing was wrong with the code, only with a comment stating a fact about the engine that
+was never checked.
+
+**The target list goes under DataDir, not /tmp.** It names every path about to be
+scanned, which on a compromised site is a map of where the interesting files are.
+DataDir is the account's own directory, created 0700, and the list is removed after the
+scan. It is also written with a trailing newline on purpose: maldet reads it with a bash
+`while read`, which drops a final line that has no newline — silently, so the last file
+of every scan would go unexamined while the report still counted it.
+
+The fixtures are now real captured 1.6.6 output — including
+`quarantine-disabled-warning.txt`, the shape of **every** report this adapter will ever
+parse, since it disables the quarantine on every invocation — and the hit-list shape is
+taken from maldet's own parsing code rather than inferred. This is D-022 arriving for
+the fifth time: the tests I wrote from my own reading of the docs all passed.
+
+**And what the container had to be taught to prove the flag works.** maldet loads ~51k
+signatures and finds nothing in this repository's corpus, because the samples are inert
+by construction and Principle VI forbids adding real malware to change that. With zero
+hits, `quarantine_hits=0` is untested: nothing was there to move. So
+`docker/Dockerfile.validation` gives maldet **one custom MD5 signature for our own inert
+marker file**. maldet then hits it and prints, of its own accord:
+
+```
+WARNING: Automatic quarantine is currently disabled, detected threats are still accessible to users!
+```
+
+on a host whose `conf.maldet` says `quarantine_hits="1"`. That line, from the engine
+itself, is the proof — and `validate-engines` additionally asserts maldet's own
+quarantine directory is still empty after the cycle. A test asserting our own flag
+string would have proven only that we can compare strings.

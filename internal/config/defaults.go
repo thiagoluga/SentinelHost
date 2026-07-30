@@ -112,12 +112,12 @@ func Default() *Config {
 			"wp-checksums":       {Enabled: true, Weight: WeightWPChecksums},
 			"amwscan":            {Enabled: true, Weight: WeightAMWScan},
 			"php-malware-finder": {Enabled: true, Weight: WeightPMF},
-			// maldet ships DISABLED because this binary does not carry its
-			// adapter yet. Enabling an engine with no adapter would make it
-			// appear as an abstention in every cycle — a permanent alarm about
-			// something the user has no way to fix. The weight stays recorded
-			// for when the adapter arrives.
-			"maldet": {Enabled: false, Weight: WeightMaldet},
+			// maldet ships ENABLED now that the adapter exists. On a host without
+			// the binary the probe reports it as unavailable with a reason the user
+			// can act on — which is information, not a false alarm. That is
+			// different from the earlier state, where enabling it would have meant
+			// an abstention every cycle about something with no adapter behind it.
+			"maldet": {Enabled: true, Weight: WeightMaldet},
 		},
 		Alerts: Alerts{
 			Email: EmailConfig{
