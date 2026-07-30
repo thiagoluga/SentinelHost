@@ -1,294 +1,296 @@
 # SUMMARY — feature 001-orquestrador-mvp
 
-Estado da implementação do MVP do SentinelHost, com o que ficou pendente e como
-rodar.
+The state of SentinelHost's MVP implementation, with what is still pending and how to
+run it.
 
 ---
 
-## O que foi implementado
+## What was implemented
 
-Todas as 40 tarefas de [`specs/001-orquestrador-mvp/tasks.md`](specs/001-orquestrador-mvp/tasks.md)
-foram executadas. Resumo por fase:
+All 40 tasks in [`specs/001-orquestrador-mvp/tasks.md`](specs/001-orquestrador-mvp/tasks.md)
+were carried out. A summary per phase:
 
-### Fase 1–2 — Setup e fundação
+### Phases 1–2 — Setup and foundation
 
-| Tarefa | Onde |
+| Task | Where |
 |---|---|
-| T001 Módulo Go, estrutura, Makefile estático, golangci-lint | `go.mod`, `Makefile`, `.golangci.yml` |
-| T002 MIT, README, CONTRIBUTING | raiz |
+| T001 Go module, structure, static Makefile, golangci-lint | `go.mod`, `Makefile`, `.golangci.yml` |
+| T002 MIT, README, CONTRIBUTING | the root |
 | T003 CI (lint + test + build amd64/arm64) | `.github/workflows/ci.yml` |
-| T004 Esquema normalizado versionado | `internal/schema/` |
-| T005 JSON Schema dos 3 objetos + contrato de webhooks | `specs/001-orquestrador-mvp/contracts/` |
-| T006 TOML único com defaults seguros | `internal/config/` |
-| T007 SQLite sem CGO, migrações, DAOs | `internal/store/` |
-| T008 Executor com limites de recurso | `internal/exec/` |
-| T009 Interface `Adapter` + registro + blindagem | `internal/adapter/` |
-| T010 Corpus sintético inerte + fixtures por engine | `tests/testdata/` |
+| T004 The versioned normalized schema | `internal/schema/` |
+| T005 JSON Schema of the 3 objects + the webhooks contract | `specs/001-orquestrador-mvp/contracts/` |
+| T006 A single TOML with safe defaults | `internal/config/` |
+| T007 SQLite without CGO, migrations, DAOs | `internal/store/` |
+| T008 An executor with resource limits | `internal/exec/` |
+| T009 The `Adapter` interface + registry + shielding | `internal/adapter/` |
+| T010 An inert synthetic corpus + per-engine fixtures | `tests/testdata/` |
 
-### Fase 3 — US1: scan multi-engine com veredito por consenso
+### Phase 3 — US1: a multi-engine scan with a consensus verdict
 
-| Tarefa | Onde |
+| Task | Where |
 |---|---|
-| T011 Adaptador `wp-checksums` (nativo) | `internal/adapter/wpchecksums/` |
-| T012 Adaptador `amwscan` | `internal/adapter/amwscan/` |
-| T013 Adaptador `php-malware-finder` | `internal/adapter/pmf/` |
-| T014 Motor de consenso | `internal/verdict/` |
-| T015 `sentinelhost scan` (texto + JSON, exit codes) | `cmd/sentinelhost/scan.go` |
-| T016 Testes de contrato sobre as fixtures | `tests/contract/` |
-| T017 SC-001 sobre o corpus | `tests/integration/consenso_test.go` |
+| T011 The `wp-checksums` adapter (native) | `internal/adapter/wpchecksums/` |
+| T012 The `amwscan` adapter | `internal/adapter/amwscan/` |
+| T013 The `php-malware-finder` adapter | `internal/adapter/pmf/` |
+| T014 The consensus engine | `internal/verdict/` |
+| T015 `sentinelhost scan` (text + JSON, exit codes) | `cmd/sentinelhost/scan.go` |
+| T016 Contract tests over the fixtures | `tests/contract/` |
+| T017 SC-001 over the corpus | `tests/integration/consensus_test.go` |
 
-### Fase 4 — US2: quarentena reversível
+### Phase 4 — US2: a reversible quarantine
 
-| Tarefa | Onde |
+| Task | Where |
 |---|---|
-| T018 Cofre com re-hash antes de agir | `internal/quarantine/` |
-| T019 Restore byte a byte, whitelist, purga por retenção | `internal/quarantine/`, `internal/verdict/` |
-| T020 Integração veredito → ação | `internal/cycle/persist.go` |
-| T021 CLI `quarantine list\|restore\|purge\|verify` | `cmd/sentinelhost/quarantine.go` |
-| T022 Round-trip SC-003 + disco cheio/sem permissão | `internal/quarantine/vault_test.go` |
+| T018 The vault, with a re-hash before acting | `internal/quarantine/` |
+| T019 A byte-for-byte restore, whitelist, retention purge | `internal/quarantine/`, `internal/verdict/` |
+| T020 The verdict → action integration | `internal/cycle/persist.go` |
+| T021 The `quarantine list\|restore\|purge\|verify` CLI | `cmd/sentinelhost/quarantine.go` |
+| T022 The SC-003 round trip + full disk / no permission | `internal/quarantine/vault_test.go` |
 
-### Fase 5 — US3: monitoramento contínuo
+### Phase 5 — US3: continuous monitoring
 
-| Tarefa | Onde |
+| Task | Where |
 |---|---|
-| T023 Walker com exclusões, symlinks e limites | `internal/baseline/walk.go` |
-| T024 Ciclo incremental por diff de baseline | `internal/baseline/`, `internal/cycle/` |
-| T025 Daemon, lock de instância única, retomada após kill | `internal/sched/`, `internal/lock/` |
+| T023 A walker with exclusions, symlinks and limits | `internal/baseline/walk.go` |
+| T024 An incremental cycle by baseline diff | `internal/baseline/`, `internal/cycle/` |
+| T025 The daemon, single-instance lock, resuming after a kill | `internal/sched/`, `internal/lock/` |
 | T026 `sentinelhost cron-line` | `cmd/sentinelhost/misc.go` |
-| T027 SC-002 + concorrência do lock | `tests/integration/ciclo_test.go` |
+| T027 SC-002 + the lock's concurrency | `tests/integration/cycle_test.go` |
 
-### Fase 6 — US4: alertas
+### Phase 6 — US4: alerts
 
-| Tarefa | Onde |
+| Task | Where |
 |---|---|
-| T028 SMTP configurável, templates pt-BR, envio de teste | `internal/alert/email/` |
-| T029 Digest periódico agregado do SQLite | `internal/alert/digest.go` |
-| T030 Webhooks HMAC-SHA256 com backoff e histórico | `internal/alert/webhook/` |
-| T031 Despacho de eventos | `internal/alert/dispatcher.go` |
-| T032 Testes com servidor HTTP de teste | `tests/integration/alertas_test.go` |
+| T028 Configurable SMTP, templates, a test send | `internal/alert/email/` |
+| T029 A periodic digest aggregated from SQLite | `internal/alert/digest.go` |
+| T030 HMAC-SHA256 webhooks with backoff and a history | `internal/alert/webhook/` |
+| T031 Event dispatch | `internal/alert/dispatcher.go` |
+| T032 Tests with a test HTTP server | `tests/integration/alerts_test.go` |
 
-### Fase 7 — US5: painel web
+### Phase 7 — US5: the web panel
 
-| Tarefa | Onde |
+| Task | Where |
 |---|---|
-| T033 API JSON sobre store/config, escuta em 127.0.0.1 | `internal/web/api.go` |
-| T034 Senha no primeiro acesso, argon2id, sessão, rate-limit | `internal/web/auth.go` |
-| T035 Porte do mockup para as 7 áreas, consumindo a API real | `internal/web/assets/` |
-| T036 Config bidirecional (FR-014) | `internal/web/patch.go` |
-| T037 e2e do painel | `tests/integration/painel_test.go` |
+| T033 A JSON API over the store/config, listening on 127.0.0.1 | `internal/web/api.go` |
+| T034 A password on first access, argon2id, sessions, rate limiting | `internal/web/auth.go` |
+| T035 Porting the mockup's 7 areas, consuming the real API | `internal/web/assets/` |
+| T036 Bidirectional config (FR-014) | `internal/web/patch.go` |
+| T037 The panel's e2e | `tests/integration/panel_test.go` |
 
-### Fase 8 — Polish
+### Phase 8 — Polish
 
-| Tarefa | Onde |
+| Task | Where |
 |---|---|
-| T038 quickstart | `specs/001-orquestrador-mvp/quickstart.md` |
-| T039 Log estruturado consultável + `sentinelhost doctor` | `internal/store/events.go`, `cmd/sentinelhost/misc.go` |
-| T040 Binários linux/amd64 e linux/arm64 + checksums | `dist/` (ver ressalva abaixo) |
+| T038 The quickstart | `specs/001-orquestrador-mvp/quickstart.md` |
+| T039 A queryable structured log + `sentinelhost doctor` | `internal/store/events.go`, `cmd/sentinelhost/misc.go` |
+| T040 linux/amd64 and linux/arm64 binaries + checksums | `dist/` (see the caveat below) |
 
 ---
 
 ## Success Criteria
 
-| Critério | Estado | Medido |
+| Criterion | State | Measured |
 |---|---|---|
-| **SC-001** — ≥95% do corpus em `confirmed`/`likely`, zero falso positivo `confirmed` em arquivo oficial | ✅ | 10/10 amostras de conteúdo malicioso (100%); 12/12 detectadas em `suspicious`+; zero falso positivo. O arquivo do core apontado por 2 engines com assinatura sai `clean` por veto, com os votos vencidos ainda visíveis. |
-| **SC-002** — ciclo incremental de 20k arquivos com 1% de mudança < 5 min | ✅ | **2,5 s**. Releu do disco exatamente 200 dos 20.000 arquivos (1,00%). |
-| **SC-003** — 100% dos round-trips de quarentena byte a byte | ✅ | Testado com binário, CRLF, arquivo vazio, 1 MiB e UTF-8 multibyte. Permissões originais também restauradas. |
-| **SC-004** — usuário leigo configura alerta e decide um achado em <5 min pelo painel | ⚠️ parcial | O **fluxo funcional** está coberto de ponta a ponta por teste (`TestSC004FluxoCompletoDoPainel`). A parte de **usabilidade real** (tempo, sem documentação) exige validação com pessoa real — ver pendências. |
-| **SC-005** — alerta de `confirmed` entregue em ≤60 s | ✅ por construção | O despacho acontece de forma síncrona dentro do ciclo, logo após o veredito; o timeout de cada entrega é 10 s. Não foi medido sob carga real. |
-| **SC-006** — roda em conta cPanel real sem root, dentro dos limites | ⚠️ pendente | Binários estáticos linux/amd64 e arm64 gerados e verificados (ELF sem interpretador dinâmico). **Falta a validação numa conta cPanel real** — ver pendências. |
+| **SC-001** — ≥95% of the corpus in `confirmed`/`likely`, zero `confirmed` false positives on an official file | ✅ | 10/10 malicious-content samples (100%); 12/12 detected at `suspicious`+; zero false positives. The core file flagged by 2 engines with a signature comes out `clean` by veto, with the overruled votes still visible. |
+| **SC-002** — an incremental cycle of 20k files with 1% changed in under 5 min | ✅ | **2.5 s**. It re-read from disk exactly 200 of the 20,000 files (1.00%). |
+| **SC-003** — 100% of the quarantine round trips byte for byte | ✅ | Tested with a binary, CRLF, an empty file, 1 MiB and multibyte UTF-8. The original permissions are restored too. |
+| **SC-004** — a non-technical user configures an alert and decides a finding in under 5 min through the panel | ⚠️ partial | The **functional flow** is covered end to end by a test (`TestSC004TheCompletePanelFlow`). The **real usability** part (the time, with no documentation) requires validation with a real person — see the pending items. |
+| **SC-005** — a `confirmed` alert delivered within 60 s | ✅ by construction | The dispatch happens synchronously inside the cycle, right after the verdict; each delivery's timeout is 10 s. It was not measured under real load. |
+| **SC-006** — it runs on a real cPanel account without root, within the limits | ⚠️ pending | Static linux/amd64 and arm64 binaries were built and verified (an ELF with no dynamic interpreter). **The validation on a real cPanel account is missing** — see the pending items. |
 
 ---
 
-## O que ficou pendente
+## What is still pending
 
-Nada foi silenciosamente omitido. Esta é a lista completa.
+Nothing was silently omitted. This is the complete list.
 
-### Fechado depois da validação com engines reais
+### Closed after the validation with real engines
 
-| Item | Estado |
+| Item | State |
 |---|---|
-| Linhas de comando dos adaptadores | ✅ validadas contra AMWScan 0.15.1 e yara 4.2.3 reais |
-| `Probe()` confirmando que o engine roda | ✅ executa o engine, não só confere versão e arquivo |
-| Manutenção periódica no modo `cron` | ✅ `internal/housekeeping`, chamada por `scan`, `daemon` e painel |
-| Retenção de log e de saída bruta | ✅ aplicada de fato (antes era só configuração decorativa) |
-| Corrida de dados na config do painel | ✅ `RWMutex` + `Clone()` profundo + teste de concorrência para o `-race` |
-| Flood de achados de core ausente | ✅ abstenção acima de 10%, `anomaly` abaixo |
-| Engine executado uma vez por lote | ✅ `Info().ScopeAware` — ver abaixo |
+| The adapters' command lines | ✅ validated against the real AMWScan 0.15.1 and yara 4.2.3 |
+| `Probe()` confirming the engine runs | ✅ it executes the engine, not just checks a version and a file |
+| The periodic maintenance in `cron` mode | ✅ `internal/housekeeping`, called by `scan`, `daemon` and the panel |
+| Log and raw-output retention | ✅ actually applied (it used to be decorative configuration) |
+| The data race in the panel's config | ✅ `RWMutex` + a deep `Clone()` + a concurrency test for `-race` |
+| A flood of missing-core findings | ✅ an abstention above 10%, `anomaly` below |
+| The engine executed once per batch | ✅ `Info().ScopeAware` — see below |
+| Portuguese throughout the repository | ✅ everything committed is in English (constitution 1.1.0, Principle VIII) |
+| The schema document missing from `HEAD` | ✅ recovered as `docs/schema-and-adapters.md` (`DECISIONS.md` D-012) |
 
-#### O achado de desempenho
+#### The performance finding
 
-Medido num WordPress 6.5.2 real (3008 arquivos), antes e depois:
+Measured on a real WordPress 6.5.2 (3008 files), before and after:
 
-| | Antes | Depois |
+| | Before | After |
 |---|---|---|
-| **Ciclo completo** | **21m45s** | **24,9s** |
-| `amwscan` | 13m54s | 3,3s |
-| `wp-checksums` | 7m02s | 6,2s |
-| `php-malware-finder` | 11s | 8,7s |
+| **Full cycle** | **21m45s** | **24.9s** |
+| `amwscan` | 13m54s | 3.3s |
+| `wp-checksums` | 7m02s | 6.2s |
+| `php-malware-finder` | 11s | 8.7s |
 
-O orquestrador executava cada engine **uma vez por lote**. Com lotes de 200 e
-3008 arquivos são ~16 invocações, e engines que não sabem limitar a varredura
-leem a raiz inteira em cada uma. Não era só desperdício: o `wp-checksums`
-reportava **16 achados** para o mesmo arquivo alterado, um por lote.
+The orchestrator was executing each engine **once per batch**. With batches of 200 and
+3008 files that is ~16 invocations, and engines that cannot restrict their walk read
+the whole root in each one. It was not only waste: `wp-checksums` reported **16
+findings** for the same altered file, one per batch.
 
-21 minutos de CPU a 200% por ciclo é exatamente o que faz uma hospedagem
-suspender a conta — uma violação direta do Princípio IV pela própria
-ferramenta. Só a execução real expôs isso; nenhum teste unitário mediria.
+21 minutes of CPU at 200% per cycle is exactly what makes a hosting provider suspend
+an account — a direct violation of Principle IV by the tool itself. Only a real run
+exposed it; no unit test would have measured it.
 
-### 1. Validação em conta cPanel real (SC-006, parte da T040)
+### 1. Validation on a real cPanel account (SC-006, part of T040)
 
-Os binários estáticos foram gerados e conferidos, mas **não foram executados
-numa hospedagem compartilhada real**. Isso exige uma conta cPanel, que este
-ambiente não tem. O que falta verificar lá:
+The static binaries were built and checked, but they **were not executed on a real
+shared hosting account**. That requires a cPanel account, which this environment does
+not have. What is left to verify there:
 
-- consumo de CPU/memória sob os limites padrão durante um ciclo completo;
-- comportamento do `nice`/`ionice` com as políticas da hospedagem;
-- que o processo não seja morto pelo limite de processos da conta;
-- que a linha de cron gerada funcione no gerenciador do cPanel.
+- the CPU/memory consumption under the default limits during a full cycle;
+- how `nice`/`ionice` behave against the hosting's policies;
+- that the process is not killed by the account's process limit;
+- that the generated cron line works in the cPanel manager.
 
-### 2. Adaptador do `maldet`
+### 2. The `maldet` adapter
 
-Não implementado — **nenhuma tarefa de T001 a T040 o pede**. O `plan.md` o
-descreve como "opcional, quando ambiente permite". O peso (1,0) e a fixture de
-saída bruta com o `PROCEDENCIA.md` já estão versionados para quando o adaptador
-chegar; o engine vem **desabilitado por padrão**, porque habilitar um engine sem
-adaptador o faria constar como abstenção em todo ciclo — um alarme permanente
-sobre algo que o usuário não tem como resolver.
+Not implemented — **no task from T001 to T040 asks for it**. `plan.md` describes it as
+"optional, when the environment allows". Its weight (1.0) and the raw-output fixture
+with its `PROVENANCE.md` are already versioned for when the adapter arrives; the engine
+ships **disabled by default**, because enabling an engine with no adapter would make it
+show up as an abstention in every cycle — a permanent alarm about something the user
+has no way to resolve.
 
-### 3. Cobertura real do php-malware-finder
+### 3. php-malware-finder's real coverage
 
-Os testes automatizados cobrem `Probe()` e `Parse()`; os caminhos de `Install()`
-e `Scan()` são validados no container (`make validar-engines`, item abaixo).
+The automated tests cover `Probe()` and `Parse()`; the `Install()` and `Scan()` paths
+are validated in the container (`make validate-engines`, the item below).
 
-O que **continua sem validação real** é a detecção do php-malware-finder: o
-corpus sintético é inerte demais para casar com as regras reais do `php.yar` —
-o `yara` executado diretamente sobre o corpus casa **zero** regras. O adaptador
-está correto (o container confirma flags, execução e parsing), mas o engine não
-está sendo exercitado com nada que ele reconheça. Validar isso exigiria
-amostras que a constituição proíbe no repositório.
+What **remains unvalidated for real** is php-malware-finder's detection: the synthetic
+corpus is too inert to match the real `php.yar` rules — `yara` run directly over the
+corpus matches **zero** rules. The adapter is correct (the container confirms the
+flags, the execution and the parsing), but the engine is not being exercised with
+anything it recognizes. Validating that would require samples the constitution forbids
+in the repository.
 
-### 4. Usabilidade do painel (parte do SC-004)
+### 4. The panel's usability (part of SC-004)
 
-O teste e2e roda pela API HTTP, sem navegador (`DECISIONS.md` D-017). Não cobre
-renderização, layout, acessibilidade nem o critério de tempo com um usuário
-real. O painel foi verificado manualmente durante o desenvolvimento (primeiro
-acesso, autenticação, carga das 7 áreas com dados reais da API), mas o SC-004
-completo continua sendo validação com pessoa.
+The e2e test runs through the HTTP API, with no browser (`DECISIONS.md` D-017). It does
+not cover rendering, layout, accessibility nor the time criterion with a real user. The
+panel was checked manually during development (first access, authentication, all 7
+areas loading with real data from the API), but the complete SC-004 remains validation
+with a person.
 
-### ~~4a. Checksums de plugins~~ — implementado
+### ~~4a. Plugin checksums~~ — implemented
 
-O FR-005 pede integridade "do core **e, quando disponível, plugins**". A segunda
-metade estava faltando e agora está em `internal/adapter/wpchecksums/plugins.go`.
+FR-005 asks for the integrity "of the core **and, when available, plugins**". The
+second half was missing and is now in `internal/adapter/wpchecksums/plugins.go`.
 
-Plugin abandonado é o vetor de invasão mais comum em WordPress, e um plugin
-legítimo com um arquivo alterado é o esconderijo preferido de backdoor: ele não
-aparece na conferência do core e o usuário nunca suspeita do que ele mesmo
-instalou.
+An abandoned plugin is the most common intrusion vector in WordPress, and a legitimate
+plugin with one altered file is a backdoor's favourite hiding place: it does not show
+up in the core check and the user never suspects what they installed themselves.
 
-Três decisões que a implementação codifica:
+Three decisions the implementation encodes:
 
-- **O slug é o nome do diretório**, não o do cabeçalho `Plugin Name`. É assim
-  que a API indexa; usar o cabeçalho faria toda consulta dar 404 e o
-  verificador nunca acharia nada — falhando em silêncio.
-- **Plugin sem checksum publicado gera abstenção com motivo, nunca silêncio.**
-  Plugin comercial ou próprio não está no diretório oficial. Tratar ausência de
-  *dado* como ausência de *problema* declararia limpo o que ninguém conferiu, e
-  o relatório registra cada plugin não verificado.
-- **Arquivo extra é `signature`; arquivo ausente é `anomaly`.** Plugin oficial
-  não ganha `.php` por conta própria — isso é prova. Já um arquivo que sumiu não
-  contém código malicioso e não pode ser quarentenado; como `signature`, o peso
-  1,50 empurraria sozinho o achado para perto de `confirmed`.
+- **The slug is the directory's name**, not the `Plugin Name` header's. That is how the
+  API indexes them; using the header would make every query 404 and the verifier would
+  never find anything — failing silently.
+- **A plugin with no published checksum produces an abstention with a reason, never
+  silence.** A commercial or in-house plugin is not in the official directory. Treating
+  the absence of *data* as the absence of a *problem* would declare clean what nobody
+  checked, and the report records every unverified plugin.
+- **An extra file is a `signature`; a missing file is an `anomaly`.** An official
+  plugin does not grow a `.php` on its own — that is proof. A file that vanished, on
+  the other hand, holds no malicious code and cannot be quarantined; as a `signature`,
+  weight 1.50 would push the finding on its own close to `confirmed`.
 
-Arquivos intactos de plugin entram em `clean_files` e ganham o mesmo veto do
-core — plugin costuma ter JS minificado e base64, que é exatamente o que gera
-falso positivo em heurística.
+Intact plugin files enter `clean_files` and get the same veto as the core — plugins
+tend to carry minified JS and base64, which is exactly what produces heuristic false
+positives.
 
-16 testes cobrem isso, nenhum tocando a rede.
+16 tests cover this, none of them touching the network.
 
-### 4b. Integração com Slack e Discord
+### 4b. Slack and Discord integration
 
-A US4 diz que os webhooks servem para "integrar com Slack/Discord/n8n ou
-sistemas próprios". Isso vale para **n8n, Zapier e endpoints próprios**, que
-aceitam qualquer JSON — mas **não** para Slack e Discord.
+US4 says the webhooks serve to "integrate with Slack/Discord/n8n or your own systems".
+That holds for **n8n, Zapier and your own endpoints**, which accept any JSON — but
+**not** for Slack and Discord.
 
-Os *incoming webhooks* dos dois não aceitam payload arbitrário: o Slack espera
-`{"text": …}` ou blocos, o Discord espera `{"content": …}` ou `embeds`. Nosso
-envelope (`{schema_version, event, delivery_id, instance, data}`) é rejeitado
-ou vira mensagem vazia.
+Their *incoming webhooks* do not accept an arbitrary payload: Slack expects
+`{"text": …}` or blocks, Discord expects `{"content": …}` or `embeds`. Our envelope
+(`{schema_version, event, delivery_id, instance, data}`) is either rejected or becomes
+an empty message.
 
-Fechar isso exigiria um campo `format` por webhook (`raw`/`slack`/`discord`)
-com um formatador por destino — e a assinatura HMAC continuaria valendo só para
-`raw`, já que nenhum dos dois verifica assinatura. **Não está em nenhuma spec
-nem tarefa**; é escopo novo. Registrado aqui para não ser anunciado como pronto.
+Closing this would require a per-webhook `format` field (`raw`/`slack`/`discord`) with
+a formatter per destination — and the HMAC signature would still only mean something
+for `raw`, since neither of them verifies a signature. **It is in no spec and no
+task**; it is new scope. Recorded here so it is not announced as done.
 
-O Telegram é declarado pós-MVP na própria spec (`spec.md:292`).
+Telegram is declared post-MVP in the spec itself (`spec.md:292`).
 
-### ~~4c. Script de instalação em um comando~~ — implementado
+### ~~4c. A one-command installation script~~ — implemented
 
-`install.sh`, exigido pelo Princípio VII. POSIX `sh` (dash e busybox servem),
-sem root e sem gerenciador de pacotes.
+`install.sh`, required by Principle VII. POSIX `sh` (dash and busybox will do), without
+root and without a package manager.
 
-O ponto que merece nota: **a verificação de checksum não é opcional e a
-ausência dela aborta**. Se o `SHA256SUMS` não estiver disponível, a instalação
-para em vez de seguir com um binário não conferido — `curl | sh` já pede
-confiança suficiente sem isso. O instalador também confirma que o binário
-*executa* antes de declarar sucesso, porque diretório com `noexec` é comum em
-hospedagem compartilhada e o erro precisa aparecer na instalação, não no
-primeiro cron.
+The point worth noting: **the checksum verification is not optional and its absence
+aborts the install**. If `SHA256SUMS` is not available, the installation stops instead
+of carrying on with an unchecked binary — `curl | sh` already asks for enough trust
+without that. The installer also confirms the binary *runs* before declaring success,
+because a directory with `noexec` is common on shared hosting and the error has to
+appear during the installation, not on the first cron run.
 
-Exercitado no container contra um release servido localmente, incluindo o caso
-que mais importa: **binário adulterado é recusado**.
+Exercised in the container against a locally served release, including the case that
+matters most: **a tampered binary is refused**.
 
-### 5. Publicação do release v0.1.0
+### 5. Publishing the v0.1.0 release
 
-Binários e `dist/SHA256SUMS` estão gerados, mas **o release não foi publicado no
-GitHub** e não há changelog. Publicar é uma ação externa que depende de decisão
-sua.
+The binaries and `dist/SHA256SUMS` are built, but **the release was not published on
+GitHub** and there is no changelog. Publishing is an external action that depends on
+your decision.
 
-### 6. Fora do escopo por instrução
+### 6. Out of scope by instruction
 
-- **Feature 002** (scanner de vulnerabilidades): não implementada. O esquema já
-  carrega o campo `kind` e o bloco `component` para não obrigar uma quebra de
-  versão depois (`DECISIONS.md` D-013).
-- `wordfence-cli`, `clamav` e Telegram: pós-MVP pela própria spec.
+- **Feature 002** (the vulnerability scanner): not implemented. The schema already
+  carries the `kind` field and the `component` block so no version break is needed
+  later (`DECISIONS.md` D-013).
+- `wordfence-cli`, `clamav` and Telegram: post-MVP by the spec itself.
 
 ---
 
-## Decisões registradas
+## Recorded decisions
 
-17 pontos onde a spec deixava margem estão em [`DECISIONS.md`](DECISIONS.md),
-cada um com o princípio da constituição que o sustenta. As que mais afetam o
-comportamento:
+The points where the spec left room are in [`DECISIONS.md`](DECISIONS.md), each with
+the constitution principle that settles it. The ones that affect behaviour most:
 
-- **D-003/D-004** — score é soma sobre teto, não média. Com média, cada engine
-  que se abstém diluiria o score, transformando falha técnica em voto de
-  inocência.
-- **D-005** — checksum oficial é **veto** aplicado depois do cálculo, não voto
-  negativo. Um voto poderia ser superado; a regra do esquema é "nunca,
-  independente de votos".
-- **D-006** — whitelist bloqueia a **ação** e mantém o nível, para o arquivo
-  continuar visível no relatório.
-- **D-016** — denominador do SC-001 são as amostras de conteúdo malicioso;
-  anomalia isolada não escala para `likely` e tem teste travando isso.
-- **D-017** — e2e do painel por HTTP em vez de `chromedp`.
+- **D-003/D-004** — the score is a sum over a ceiling, not an average. With an average,
+  every engine that abstains would dilute the score, turning a technical failure into a
+  vote of innocence.
+- **D-005** — the official checksum is a **veto** applied after the calculation, not a
+  negative vote. A vote could be overcome; the schema's rule is "never, regardless of
+  votes".
+- **D-006** — the whitelist blocks the **action** and keeps the level, so the file
+  stays visible in the report.
+- **D-016** — SC-001's denominator is the malicious-content samples; an isolated
+  anomaly does not escalate to `likely`, and a test pins that.
+- **D-017** — the panel's e2e over HTTP instead of `chromedp`.
+- **D-022** — a test built on an assumption does not count as verification. It is the
+  lesson that matters most in this project.
+- **D-023** — English is the repository's language, retroactively.
 
 ---
 
-## Como rodar
+## How to run it
 
-Guia completo em [`specs/001-orquestrador-mvp/quickstart.md`](specs/001-orquestrador-mvp/quickstart.md).
-O essencial:
+The complete guide is in [`specs/001-orquestrador-mvp/quickstart.md`](specs/001-orquestrador-mvp/quickstart.md).
+The essentials:
 
 ```bash
 sentinelhost config init --root ~/public_html
-sentinelhost doctor          # mostra POR QUE cada engine está ou não disponível
-sentinelhost scan            # exit 0 = nada; 1 = achou; 2 = erro; 3 = já rodando
-sentinelhost cron-line       # linha pronta para o cPanel
-sentinelhost serve           # painel em 127.0.0.1:8787
+sentinelhost doctor          # shows WHY each engine is or is not available
+sentinelhost scan            # exit 0 = nothing; 1 = found; 2 = error; 3 = already running
+sentinelhost cron-line       # a line ready for cPanel
+sentinelhost serve           # the panel on 127.0.0.1:8787
 ```
 
-### Desenvolvimento
+### Development
 
 ```bash
 make test
@@ -297,104 +299,107 @@ make build
 make release                 # linux/amd64 + linux/arm64 + SHA256SUMS
 ```
 
-O teste do SC-002 monta 20 mil arquivos e leva ~2 min. Para pular:
+The SC-002 test builds 20 thousand files and takes ~2 min. To skip it:
 
 ```bash
 go test ./... -short
 ```
 
-### Estado da suíte
+### The suite's state
 
 ```text
 ok  internal/adapter      internal/baseline    internal/config
 ok  internal/exec         internal/lock        internal/pathmatch
 ok  internal/quarantine   internal/schema      internal/store
-ok  internal/verdict      tests/contract       tests/integration
+ok  internal/verdict      internal/housekeeping
+ok  cmd/sentinelhost      tests/contract       tests/integration
 ```
 
-Todos verdes. `go vet ./...` limpo. CI (lint + test + build amd64/arm64) verde.
+All green. `go vet ./...` clean. CI (lint + test + build amd64/arm64) green.
 
-### Valide os engines reais antes de confiar num scan
+### Validate the real engines before trusting a scan
 
 ```bash
-make validar-engines
+make validate-engines
 ```
 
-Sobe um Debian com PHP CLI e `yara`, usuário sem root, baixa um WordPress
-6.5.2 real, planta duas adulterações no core, instala os engines e compara o
-que o orquestrador vê com o que cada engine vê sozinho.
+It brings up a Debian with the PHP CLI and `yara`, a non-root user, downloads a real
+WordPress 6.5.2, plants two core tamperings, installs the engines and compares what the
+orchestrator sees with what each engine sees on its own.
 
-**Isso não é opcional.** A suíte automatizada não executa os engines (D-011), e
-por isso as linhas de comando dos adaptadores nunca tinham sido exercitadas. O
-container encontrou **oito** defeitos que nenhum teste unitário pegaria:
+**This is not optional.** The automated suite does not execute the engines (D-011), and
+because of that the adapters' command lines had never been exercised. The container
+found **nine** defects no unit test would have caught:
 
-| Defeito | Como aparecia |
+| Defect | How it showed up |
 |---|---|
-| URL do release do AMWScan | 404 na instalação — visível |
-| `--format json` (não existe; é `--report-format txt`, e escreve em arquivo) | parser inteiro construído sobre um formato fictício |
-| `@arquivo` no yara (é `--scan-list`) | linha de comando inválida |
-| `--filter-paths` com vários caminhos (semântica de E) | **engine verde, relatório limpo, site infectado** |
-| `mbstring` ausente | engine marcado como saudável sem nunca poder rodar |
-| 2998 achados `likely` de core ausente | ruído afogando os achados reais |
-| Engine invocado uma vez por lote | 21m45s por ciclo e 16× achados duplicados |
-| `--config` ignorado depois de argumento posicional | `restore` falhava ou agia na instância errada |
-| Hashes de plugin declarados como array (a API usa string) | **todo plugin pulado, zero achados, nenhum erro** |
+| The AMWScan release URL | a 404 during the install — visible |
+| `--format json` (it does not exist; it is `--report-format txt`, and it writes to a file) | the whole parser was built on a fictional format |
+| `@file` in yara (it is `--scan-list`) | an invalid command line |
+| `--filter-paths` with several paths (AND semantics) | **green engine, clean report, infected site** |
+| A missing `mbstring` | an engine marked as healthy that could never run |
+| 2998 `likely` missing-core findings | noise drowning the real findings |
+| The engine invoked once per batch | 21m45s per cycle and 16× duplicate findings |
+| `--config` ignored after a positional argument | `restore` failed or acted on the wrong instance |
+| Plugin hashes declared as an array (the API uses a string) | **every plugin skipped, zero findings, no error** |
 
-Cinco deles teriam causado dano real: quatro produziriam "0 achados" com
-aparência de saúde — e um scanner que reporta site limpo sem ter escaneado é
-pior que scanner nenhum, porque produz confiança falsa —, e o sétimo poderia
-derrubar a conta por consumo de CPU.
+Five of them would have caused real damage: four would produce "0 findings" with the
+appearance of health — and a scanner that reports a clean site without having scanned
+is worse than no scanner, because it manufactures false confidence — and one could get
+the account suspended for CPU consumption.
 
-**Oito dos nove são o mesmo erro**: uma suposição sobre o mundo externo, com um
-teste escrito a partir da própria suposição. Ver `DECISIONS.md` D-022 — é a
-lição que mais importa deste projeto, e o motivo de as amostras reais estarem
-versionadas.
+**Eight of the nine are the same mistake**: an assumption about the outside world, with
+a test written from that same assumption. See `DECISIONS.md` D-022 — it is the lesson
+that matters most in this project, and the reason the real samples are versioned.
 
-#### O que a validação prova hoje
+#### What the validation proves today
 
 ```text
-✓ o orquestrador viu o que o AMWScan viu sozinho (2 vs 2)
-✓ wp-checksums executou sobre um WordPress real
-✓ a adulteração do core foi detectada (peso 1.50)
-✓ um voto forte sozinho parou em likely (não escalou para confirmed)
-✓ dois votos (checksum + heurística) chegaram a confirmed
-✓ o arquivo foi movido para o cofre (não está mais no lugar)
-✓ cofre íntegro (hashes conferem)
-✓ restauração byte a byte funcionou numa conta sem privilégio
-✓ pico de memória do orquestrador: 51 MB (limite prometido: 128 MB)
+✓ the orchestrator saw what AMWScan saw on its own (2 vs 2)
+✓ wp-checksums ran over a real WordPress
+✓ the core tampering was detected (weight 1.50)
+✓ one strong vote alone stopped at likely (it did not escalate to confirmed)
+✓ two votes (checksum + heuristic) reached confirmed
+✓ the file was moved into the vault (it is no longer in place)
+✓ the vault is intact (the hashes check out)
+✓ the byte-for-byte restore worked on an unprivileged account
+✓ the orchestrator's memory peak: 51 MB (promised limit: 128 MB)
 ```
 
-O escalonamento do consenso é exercitado com engines de verdade: um arquivo com
-só o voto do checksum para em `likely`; outro com checksum **e** heurística
-chega a `confirmed` e dispara a quarentena reversível.
+The consensus's escalation is exercised with real engines: a file with only the
+checksum's vote stops at `likely`; another with the checksum **and** a heuristic reaches
+`confirmed` and fires the reversible quarantine.
 
-### Rode os testes no Linux, não só na estação de trabalho
+### Run the tests on Linux, not only on the workstation
 
-O primeiro CI reprovou e expôs **dois defeitos que o Windows escondia**, ambos
-já corrigidos:
+The first CI run failed and exposed **two defects Windows was hiding**, both already
+fixed:
 
-1. **A quarentena era irrecuperável no Linux.** O cofre aplicava `chmod 000`, e
-   `Restore` e `quarantine verify` precisam *ler* a cópia — os dois falhavam com
-   "permission denied". Isso derrubava o Princípio I inteiro. O Windows ignora
-   permissões POSIX e permite ler um arquivo "0000", então toda a suíte passava
-   local. Agora é `0400`, e o teste de neutralização lê o arquivo de fato.
-2. **O `.gitignore` engolia o programa.** O padrão `sentinelhost` sem barra
-   inicial casa qualquer arquivo *ou diretório* com esse nome em qualquer nível,
-   e o primeiro alvo era `cmd/sentinelhost/`. O primeiro push publicou um
-   repositório sem o pacote `main`, e só o build no CI percebeu.
+1. **The quarantine was unrecoverable on Linux.** The vault applied `chmod 000`, and
+   `Restore` and `quarantine verify` have to *read* the copy — both failed with
+   "permission denied". That took down all of Principle I. Windows ignores POSIX
+   permissions and lets you read a "0000" file, so the whole suite passed locally. It is
+   `0400` now, and the neutralization test actually reads the file.
+2. **`.gitignore` swallowed the program.** The pattern `sentinelhost` with no leading
+   slash matches any file *or directory* with that name at any depth, and the first
+   target was `cmd/sentinelhost/`. The first push published a repository with no `main`
+   package, and only the CI build noticed.
 
-A lição vale para quem for contribuir: este projeto tem semântica de sistema de
-arquivos POSIX no núcleo, e uma suíte verde no Windows não é evidência de nada
-nessa área.
+The lesson holds for anyone contributing: this project has POSIX filesystem semantics
+at its core, and a green suite on Windows is not evidence of anything in that area.
 
 ---
 
-## Ambiente de desenvolvimento
+## The development environment
 
-Durante a implementação o Windows Defender colocou em quarentena o arquivo
-`docs/esquema-e-adaptadores.md` (heurística disparada pelo exemplo de
-`matched_content` na seção 1.1). O arquivo foi recuperado íntegro. Para clonar
-este repositório no Windows pode ser necessária uma exclusão de antivírus para
-a pasta — o corpus sintético é inerte por construção
-(`tests/testdata/corpus/AMOSTRAS.md`), mas heurística acerta no formato, não na
-intenção.
+During the implementation, Windows Defender quarantined the schema document twice (a
+heuristic triggered by the `matched_content` example in section 1.1). The second time
+it cost the file: a `git add -A` recorded the deletion and the document disappeared
+from the repository for several commits. It is back as
+`docs/schema-and-adapters.md`, with that example **redacted** — which is the same rule
+the adapters follow, and what makes the file survivable on a Windows workstation.
+
+To clone this repository on Windows, an antivirus exclusion for the folder may still be
+needed — the synthetic corpus is inert by construction
+(`tests/testdata/corpus/SAMPLES.md`), but a heuristic gets the shape right, not the
+intent.
