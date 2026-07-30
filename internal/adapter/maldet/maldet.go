@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -75,13 +74,17 @@ func (a *Adapter) Info() adapter.Info {
 		},
 		Cost: adapter.CostHeavy,
 		// maldet DOES restrict its walk to a file list, through `-f/--file-list`, and
-		// measuring is what settled it: `-a` over 401 files took 204s, while `-f` with a
-		// 2-line list took 7s and reported `TOTAL FILES: 2`. It walks the list, not the
-		// root.
+		// measuring is what settled it, in the validation container:
 		//
-		// That is roughly half a second of bash-and-perl per file, so a 3,000-file
-		// WordPress costs ~25 minutes of CPU. With ScopeAware false the orchestrator
-		// hands maldet the whole root every cycle and pays that 25 minutes to re-scan
+		//	-a  over 2,999 files   28m36s   (37m42s under nice 19)
+		//	-a  over   401 files    3m24s
+		//	-f  over     2 files       7s   and the report said TOTAL FILES: 2
+		//
+		// So it walks the list, not the root.
+		//
+		// That is roughly half a second of bash-and-perl per file. With ScopeAware false
+		// the orchestrator hands maldet the whole root every cycle and pays that
+		// half hour to re-scan
 		// files nothing touched — which is not merely wasteful, it is the CPU burn that
 		// gets a shared-hosting account suspended, by the tool whose Principle IV exists
 		// to prevent exactly that. The first version of this adapter declared false with
@@ -300,16 +303,20 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 	//
 	// The measured difference is the whole argument: 401 files through `-a` took 204s;
 	// two files through `-f` took 7s and the report said `TOTAL FILES: 2`. On an
-	// incremental cycle where 200 of 3,000 files changed, that is ~100s instead of ~25
-	// minutes, every cycle, forever.
+	// incremental cycle where 200 of 3,000 files changed, that is ~100s instead of
+	// 28m36s, every cycle, forever.
 	//
 	// An empty path list is NOT the same as "scan everything". It means the walker found
-	// nothing changed, and handing maldet the root there would spend 25 minutes of a
+	// nothing changed, and handing maldet the root there would spend 28m36s of a
 	// shared host's CPU to confirm it.
-	var cleanup = func() {}
+	//
+	// cleanup starts as a no-op because only the `-f` branch below creates a file to
+	// remove; the other two branches leave nothing behind, and a single deferred call
+	// keeps the removal in one place rather than on every return path.
+	cleanup := func() { /* nothing was written yet */ }
 	switch {
 	case len(req.Paths) > 0:
-		listFile, done, err := writeTargetList(env.DataDir, req)
+		listFile, done, err := adapter.WriteTargetList(env.DataDir, Slug, req.Paths)
 		if err != nil {
 			out.Status = schema.StatusFailed
 			out.FinishedAt = time.Now()
@@ -328,7 +335,7 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 		out.FinishedAt = time.Now()
 		return out, errors.New(
 			"an incremental scan was requested with no target paths: there is nothing for maldet " +
-				"to scan, and scanning the whole root instead would cost ~25 minutes of CPU nobody asked for")
+				"to scan, and scanning the whole root instead would cost 28m36s of CPU nobody asked for")
 	}
 	defer cleanup()
 
@@ -480,118 +487,13 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 		detectedAt = time.Now()
 	}
 
-	var (
-		declaredHits      = -1
-		totalFiles        = -1
-		cleaned           = 0
-		unknown           int
-		maldetQuarantined int
-		inHitList         bool
-	)
-
-	sc := bufio.NewScanner(strings.NewReader(text))
-	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)
-
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
-			continue
-		}
-
-		if m := totalHitsRe.FindStringSubmatch(line); m != nil {
-			if n, err := strconv.Atoi(m[1]); err == nil {
-				declaredHits = n
-			}
-			continue
-		}
-		if m := totalFilesRe.FindStringSubmatch(line); m != nil {
-			if n, err := strconv.Atoi(m[1]); err == nil {
-				totalFiles = n
-			}
-			continue
-		}
-		if m := cleanedRe.FindStringSubmatch(line); m != nil {
-			if n, err := strconv.Atoi(m[1]); err == nil {
-				cleaned = n
-			}
-			continue
-		}
-		if strings.HasPrefix(strings.ToUpper(line), "FILE HIT LIST") {
-			inHitList = true
-			continue
-		}
-		if strings.HasPrefix(line, "=====") {
-			inHitList = false
-			continue
-		}
-
-		m := hitRe.FindStringSubmatch(line)
-		if m == nil {
-			continue
-		}
-		_ = inHitList // a hit line is unambiguous on its own; the header is a hint
-
-		sigType, signature, path := m[1], m[2], m[3]
-
-		// A hit maldet quarantined itself reads `{TYPE}sig : /original => /vault/copy`
-		// (its internals check `[[ "$hit_line" == *"=>"* ]]`). Two things follow, and
-		// both matter: the path we want is the ORIGINAL, before the arrow; and the
-		// arrow's presence is proof maldet moved a file despite this adapter disabling
-		// its quarantine on every invocation.
-		if orig, _, found := strings.Cut(path, "=>"); found {
-			path = strings.TrimSpace(orig)
-			maldetQuarantined++
-		}
-
-		cls, known := classify(signature)
-		if !known {
-			unknown++
-		}
-
-		st, ok := a.stat(path)
-		if !ok || st.SHA256 == "" {
-			// With no hash there is no deduplication key across engines. Skipping beats
-			// inventing one: the file most likely vanished between the scan and the
-			// report, which for maldet is two separate invocations.
-			if rep.Scope.SkippedReasonCounts == nil {
-				rep.Scope.SkippedReasonCounts = map[string]int{}
-			}
-			rep.Scope.SkippedReasonCounts["vanished_before_hashing"]++
-			continue
-		}
-
-		rep.Findings = append(rep.Findings, schema.Finding{
-			SchemaVersion: schema.Version,
-			Kind:          schema.KindMalware,
-			Engine:        Slug,
-			EngineVersion: raw.EngineVersion,
-			Rule:          signature,
-			RuleRef:       "https://www.rfxn.com/projects/linux-malware-detect/",
-			File: schema.FileRef{
-				Path:      path,
-				SizeBytes: st.Size,
-				SHA256:    st.SHA256,
-				MTime:     st.MTime,
-				Perms:     st.Perms,
-			},
-			Category:   cls.category,
-			Severity:   cls.severity,
-			Confidence: confidenceForType(sigType),
-			// maldet reports no snippet, only the signature that matched. Better that
-			// way: malicious content never needs to travel through the system for the
-			// user to understand a finding.
-			MatchedContent: schema.SanitizeSnippet("{" + sigType + "}" + signature),
-			ScanID:         raw.ScanID,
-			DetectedAt:     detectedAt,
-		})
+	totals, err := a.scanReportLines(text, raw, detectedAt, &rep)
+	if err != nil {
+		return rep, err
 	}
-	if err := sc.Err(); err != nil {
-		return rep, fmt.Errorf("reading the maldet report: %w", err)
-	}
-
-	if totalFiles > 0 {
-		rep.Scope.FilesConsidered = totalFiles
-		rep.Scope.FilesScanned = totalFiles
+	if totals.files > 0 {
+		rep.Scope.FilesConsidered = totals.files
+		rep.Scope.FilesScanned = totals.files
 	}
 
 	// `TOTAL HITS` has to match what the list actually contained. A divergence means
@@ -601,11 +503,11 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 	// The count is against findings + skipped, because a file that vanished before we
 	// could hash it was still a hit maldet reported.
 	skipped := rep.Scope.SkippedReasonCounts["vanished_before_hashing"]
-	if declaredHits >= 0 && declaredHits != len(rep.Findings)+skipped {
+	if totals.declaredHits >= 0 && totals.declaredHits != len(rep.Findings)+skipped {
 		return rep, fmt.Errorf(
 			"the maldet report is truncated: it declares TOTAL HITS: %d but lists %d hit(s). "+
 				"Accepting it would record an engine that found %d things as having found %d",
-			declaredHits, len(rep.Findings)+skipped, declaredHits, len(rep.Findings)+skipped)
+			totals.declaredHits, len(rep.Findings)+skipped, totals.declaredHits, len(rep.Findings)+skipped)
 	}
 
 	// maldet touching a file itself is a Principle I violation that already happened.
@@ -616,20 +518,20 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 	// Returning the findings instead would look more useful and read as a normal
 	// cycle. It is the wrong trade: someone has to learn their files were moved
 	// before they read a verdict list.
-	if cleaned > 0 || maldetQuarantined > 0 {
+	if totals.cleaned > 0 || totals.maldetQuarantined > 0 {
 		return rep, fmt.Errorf(
 			"maldet acted on the files itself, outside the reversible vault: TOTAL CLEANED: %d, "+
 				"%d hit(s) moved into maldet's own quarantine. This adapter disables both on every "+
 				"invocation, so the host's maldet configuration is overriding that. Do not trust this "+
 				"cycle's report: the originals are in maldet's quarantine, not in ours",
-			cleaned, maldetQuarantined)
+			totals.cleaned, totals.maldetQuarantined)
 	}
 
-	if unknown > 0 {
+	if totals.unknownFamilies > 0 {
 		if rep.Scope.SkippedReasonCounts == nil {
 			rep.Scope.SkippedReasonCounts = map[string]int{}
 		}
-		rep.Scope.SkippedReasonCounts["unknown_signature_family"] = unknown
+		rep.Scope.SkippedReasonCounts["unknown_signature_family"] = totals.unknownFamilies
 	}
 	return rep, nil
 }
@@ -691,33 +593,138 @@ func statFile(path string) (FileStat, bool) {
 	}, true
 }
 
-// writeTargetList materializes the scope for `maldet -f`.
+// reportTotals are the numbers the report declares about itself, as opposed to what the
+// hit list actually contains. Keeping the two apart is the point: comparing them is what
+// catches a truncated report, and a truncated report accepted as good is how an engine
+// that found five things gets recorded as having found one.
+type reportTotals struct {
+	declaredHits      int
+	files             int
+	cleaned           int
+	unknownFamilies   int
+	maldetQuarantined int
+}
+
+// scanReportLines walks the report once, appending findings to rep, and returns what the
+// report claimed about itself.
 //
-// It goes under DataDir and not into the system temp directory on purpose: the list
-// names every path about to be scanned, which on a compromised site is a map of where
-// the interesting files are. DataDir is the account's own, created 0700.
-func writeTargetList(dataDir string, req adapter.ScanRequest) (string, func(), error) {
-	dir := filepath.Join(dataDir, "engines", "maldet")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", func() {}, fmt.Errorf("creating the working directory: %w", err)
+// It is split out of Parse so each half can be read alone: this one knows maldet's line
+// formats, and Parse knows what to do when those numbers disagree with the hit list.
+func (a *Adapter) scanReportLines(
+	text string,
+	raw adapter.RawOutput,
+	detectedAt time.Time,
+	rep *schema.ScanReport,
+) (reportTotals, error) {
+	totals := reportTotals{declaredHits: -1, files: -1}
+	var inHitList bool
+
+	sc := bufio.NewScanner(strings.NewReader(text))
+	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)
+
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+
+		if m := totalHitsRe.FindStringSubmatch(line); m != nil {
+			if n, err := strconv.Atoi(m[1]); err == nil {
+				totals.declaredHits = n
+			}
+			continue
+		}
+		if m := totalFilesRe.FindStringSubmatch(line); m != nil {
+			if n, err := strconv.Atoi(m[1]); err == nil {
+				totals.files = n
+			}
+			continue
+		}
+		if m := cleanedRe.FindStringSubmatch(line); m != nil {
+			if n, err := strconv.Atoi(m[1]); err == nil {
+				totals.cleaned = n
+			}
+			continue
+		}
+		if strings.HasPrefix(strings.ToUpper(line), "FILE HIT LIST") {
+			inHitList = true
+			continue
+		}
+		if strings.HasPrefix(line, "=====") {
+			inHitList = false
+			continue
+		}
+
+		// Only inside the hit list. maldet's own parser does the same
+		// (`awk '/FILE HIT LIST:/{flag=1;next}/^=======/{flag=0}flag'`), and the real
+		// 1.6.6 report puts a WARNING block above the list whenever the quarantine is
+		// off — which, since this adapter disables it every invocation, is every report
+		// this code will ever see. Matching hit-shaped lines outside the list is how text
+		// that merely mentions a signature becomes a finding against a file.
+		if !inHitList {
+			continue
+		}
+		m := hitRe.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+
+		sigType, signature, path := m[1], m[2], m[3]
+
+		// A hit maldet quarantined itself reads `{TYPE}sig : /original => /vault/copy`
+		// (its internals check `[[ "$hit_line" == *"=>"* ]]`). Two things follow, and
+		// both matter: the path we want is the ORIGINAL, before the arrow; and the
+		// arrow's presence is proof maldet moved a file despite this adapter disabling
+		// its quarantine on every invocation.
+		if orig, _, found := strings.Cut(path, "=>"); found {
+			path = strings.TrimSpace(orig)
+			totals.maldetQuarantined++
+		}
+
+		cls, known := classify(signature)
+		if !known {
+			totals.unknownFamilies++
+		}
+
+		st, ok := a.stat(path)
+		if !ok || st.SHA256 == "" {
+			// With no hash there is no deduplication key across engines. Skipping beats
+			// inventing one: the file most likely vanished between the scan and the
+			// report, which for maldet is two separate invocations.
+			if rep.Scope.SkippedReasonCounts == nil {
+				rep.Scope.SkippedReasonCounts = map[string]int{}
+			}
+			rep.Scope.SkippedReasonCounts["vanished_before_hashing"]++
+			continue
+		}
+
+		rep.Findings = append(rep.Findings, schema.Finding{
+			SchemaVersion: schema.Version,
+			Kind:          schema.KindMalware,
+			Engine:        Slug,
+			EngineVersion: raw.EngineVersion,
+			Rule:          signature,
+			RuleRef:       "https://www.rfxn.com/projects/linux-malware-detect/",
+			File: schema.FileRef{
+				Path:      path,
+				SizeBytes: st.Size,
+				SHA256:    st.SHA256,
+				MTime:     st.MTime,
+				Perms:     st.Perms,
+			},
+			Category:   cls.category,
+			Severity:   cls.severity,
+			Confidence: confidenceForType(sigType),
+			// maldet reports no snippet, only the signature that matched. Better that
+			// way: malicious content never needs to travel through the system for the
+			// user to understand a finding.
+			MatchedContent: schema.SanitizeSnippet("{" + sigType + "}" + signature),
+			ScanID:         raw.ScanID,
+			DetectedAt:     detectedAt,
+		})
 	}
-	f, err := os.CreateTemp(dir, "targets-*.txt")
-	if err != nil {
-		return "", func() {}, fmt.Errorf("creating the target list: %w", err)
+	if err := sc.Err(); err != nil {
+		return totals, fmt.Errorf("reading the maldet report: %w", err)
 	}
-	name := f.Name()
-	cleanup := func() { _ = os.Remove(name) }
-	// "line spaced file", in maldet's own words. Its file-list reader is a bash `while
-	// read`, so a trailing newline is required or the last path is dropped — silently,
-	// which would make the last file of every scan invisible.
-	if _, err := f.WriteString(strings.Join(req.Paths, "\n") + "\n"); err != nil {
-		_ = f.Close()
-		cleanup()
-		return "", func() {}, fmt.Errorf("writing the target list: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		cleanup()
-		return "", func() {}, fmt.Errorf("closing the target list: %w", err)
-	}
-	return name, cleanup, nil
+	return totals, nil
 }

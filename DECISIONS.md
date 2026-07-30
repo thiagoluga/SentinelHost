@@ -582,17 +582,22 @@ correct:
 
 7. **maldet restricts its walk to a file list, through `-f/--file-list`.** `Info()`
    declared `ScopeAware: false` with a comment asserting that "it has no flag that
-   restricts the walk to a file list". `--help` documents one, and measuring settled it:
-   `-a` over 401 files took **204s**, while `-f` with a two-line list took **7s** and the
-   report said `TOTAL FILES: 2`. It walks the list.
+   restricts the walk to a file list". `--help` documents one, and measuring in the
+   validation container settled it:
 
-   That is ~0.5s of bash-and-perl per file, so a 3,000-file WordPress costs **~25 minutes
-   of CPU** — and with `ScopeAware: false` the orchestrator paid it every cycle to
+   | Invocation | Files | Wall clock |
+   |---|---|---|
+   | `-a <root>` | 2,999 | **28m36s** (37m42s under `nice 19`) |
+   | `-a <root>` | 401 | 3m24s |
+   | `-f <list>` | 2 | **7s**, and the report said `TOTAL FILES: 2` |
+
+   So it walks the list, not the root — at roughly half a second of bash-and-perl per
+   file. With `ScopeAware: false` the orchestrator paid that half hour every cycle to
    re-read files nothing had touched. It is not waste, it is the CPU burn that gets a
    shared-hosting account suspended, committed by the tool whose Principle IV exists to
    prevent exactly that. It is also, precisely, the D-018 defect again: an adapter
    declaring it cannot narrow its scope when the engine can. With `ScopeAware: true` an
-   incremental cycle over 200 changed files costs ~100s instead of ~25 minutes.
+   incremental cycle over 200 changed files costs ~100s instead of 28m36s.
 
    The reason it surfaced at all is that maldet **exceeded the 5-minute engine timeout**
    in the validation container and abstained. The abstention was correct — it is what

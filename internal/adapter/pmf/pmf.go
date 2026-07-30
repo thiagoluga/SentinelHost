@@ -190,7 +190,7 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 	// The target list goes through --scan-list. There is NO "@file" syntax in
 	// yara — that assumption was in the code and only fell when the real engine
 	// was run in a Linux container.
-	listFile, cleanup, err := writeTargetList(env.DataDir, req)
+	listFile, cleanup, err := adapter.WriteTargetList(env.DataDir, Slug, req.Paths)
 	if err != nil {
 		return adapter.RawOutput{Engine: Slug, Status: schema.StatusFailed}, err
 	}
@@ -215,29 +215,6 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 		return out, res.Err
 	}
 	return out, nil
-}
-
-func writeTargetList(dataDir string, req adapter.ScanRequest) (string, func(), error) {
-	dir := filepath.Join(dataDir, "engines", "pmf")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", func() {}, fmt.Errorf("creating the working directory: %w", err)
-	}
-	f, err := os.CreateTemp(dir, "targets-*.txt")
-	if err != nil {
-		return "", func() {}, fmt.Errorf("creating the target list: %w", err)
-	}
-	name := f.Name()
-	cleanup := func() { _ = os.Remove(name) }
-	if _, err := f.WriteString(strings.Join(req.Paths, "\n") + "\n"); err != nil {
-		_ = f.Close()
-		cleanup()
-		return "", func() {}, fmt.Errorf("writing the target list: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		cleanup()
-		return "", func() {}, fmt.Errorf("closing the target list: %w", err)
-	}
-	return name, cleanup, nil
 }
 
 // stringLineRe matches the string lines of yara -s: "0x1f2:$name: snippet".

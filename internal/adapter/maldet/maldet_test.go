@@ -295,9 +295,9 @@ func TestTheSnippetCarriesTheSignatureAndNoContent(t *testing.T) {
 
 // Info and Install ---------------------------------------------------------------
 
-// maldet costs roughly half a second per file — measured, not estimated: `-a` over 401
-// files took 204s in the validation container. On a 3,000-file WordPress that is ~25
-// minutes of CPU, and an adapter that is not ScopeAware pays it EVERY cycle to re-read
+// maldet costs roughly half a second per file — measured, not estimated: in the
+// validation container `-a` took 28m36s over 2,999 files (37m42s under nice 19) and
+// 3m24s over 401. An adapter that is not ScopeAware pays that EVERY cycle to re-read
 // files nothing touched. That is not waste, it is the CPU burn that gets a shared-hosting
 // account suspended — caused by the tool whose Principle IV exists to prevent it.
 //

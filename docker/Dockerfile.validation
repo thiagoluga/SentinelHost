@@ -74,18 +74,20 @@ RUN useradd --create-home --shell /bin/bash hosting
 # A real provider does this once, from cron.pub. Doing it here is what lets the
 # validation reach maldet's actual scan path instead of only its refusals.
 #
-# conf.maldet and the working directories are left writable by the account for one
-# reason: validate-engines toggles the gates itself to assert BOTH refusal paths and
-# then the working one. No real host would grant this, and nothing in the orchestrator
-# depends on it.
+# conf.maldet and the working directories are handed to the `hosting` account, because
+# validate-engines toggles the access gate itself to assert BOTH refusal paths and then
+# the working one. Ownership rather than world-write on purpose: `chmod 0666`/`0777`
+# would grant every account on the image what only this one needs, which is a habit
+# worth not practising even in a throwaway container. No real host grants either, and
+# nothing in the orchestrator depends on it.
 RUN /usr/local/sbin/maldet --mkpubpaths >/dev/null 2>&1 || true \
     && chmod -R o+rX /usr/local/maldetect \
-    && chmod 0666 /usr/local/maldetect/conf.maldet \
-    && chmod 0777 /usr/local/maldetect \
-                  /usr/local/maldetect/sess \
-                  /usr/local/maldetect/tmp \
-                  /usr/local/maldetect/quarantine \
-                  /usr/local/maldetect/pub 2>/dev/null || true
+    && chown hosting:hosting /usr/local/maldetect/conf.maldet \
+    && chown -R hosting:hosting /usr/local/maldetect/sess \
+                               /usr/local/maldetect/tmp \
+                               /usr/local/maldetect/quarantine \
+    && chown hosting:hosting /usr/local/maldetect \
+    && (chown -R hosting:hosting /usr/local/maldetect/pub 2>/dev/null || true)
 
 COPY dist/sentinelhost-linux-amd64 /usr/local/bin/sentinelhost
 COPY --chown=hosting:hosting tests/testdata/corpus /corpus
@@ -115,10 +117,17 @@ RUN chmod +x /usr/local/bin/sentinelhost /usr/local/bin/validate-engines
 # maldet's clothes, so the signature uses the mechanism that demonstrably fires.
 #
 # The format comes from the shipped sigs/md5v2.dat: `<md5>:<size>:{MD5}<name>`.
+#
+# MD5 here is not a security choice and there is nothing to strengthen: it is the wire
+# format of maldet's `{MD5}` signature database, and the value is compared by maldet's
+# own `grep -m1 $hash`. Nothing is authenticated with it, and the file it identifies is
+# a synthetic marker committed to this repository. A stronger digest would simply never
+# match. Hence NOSONAR rather than a change.
 RUN sample=/corpus/synthetic/09-known-marker.php \
     && printf '%s:%s:{MD5}php.corpus.marker.v1\n' \
          "$(md5sum "$sample" | cut -d' ' -f1)" \
          "$(stat -c%s "$sample")" \
+    `# NOSONAR - maldet's signature format mandates MD5; not used for security` \
        > /usr/local/maldetect/sigs/custom.md5.dat \
     && chmod 0644 /usr/local/maldetect/sigs/custom.md5.dat \
     && cat /usr/local/maldetect/sigs/custom.md5.dat

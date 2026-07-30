@@ -182,7 +182,7 @@ fixture was itself invented, written from the same assumptions as the code:
 | The hit-line regex was `[A-Za-z]+`, so `{MD5}` never matched | a third of the hits dropped |
 | `scan_user_access="0"` is the **default** and makes maldet refuse every non-root account — banner, refusal, **exit 0**, from `--version` too | `Probe()` read a version off a refusal and reported the engine **healthy** where it could never scan a file |
 | A finished scan never prints `SCAN ID:`; it prints `to view run: maldet --report <id>` | no id found after every *successful* scan → abstention every cycle, forever |
-| `Info()` declared `ScopeAware: false`, its comment asserting maldet has no flag to narrow the walk. `-f/--file-list` is documented, and measured: `-a` over 401 files 204s, `-f` with 2 files 7s | **~25 minutes of CPU every cycle** on a 3,000-file site, re-reading files nothing touched — the burn that gets a shared-hosting account suspended (D-018 again) |
+| `Info()` declared `ScopeAware: false`, its comment asserting maldet has no flag to narrow the walk. `-f/--file-list` is documented, and measured: `-a` over 2,999 files **28m36s**, `-f` with 2 files **7s** | that half hour of CPU **every cycle** on a 3,000-file site, re-reading files nothing touched — the burn that gets a shared-hosting account suspended (D-018 again) |
 
 Defects 5 and 6 are the ones no reading of the documentation would have caught, and both
 end in this project's defining failure mode: an engine reported healthy that scanned
