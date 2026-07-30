@@ -355,7 +355,7 @@ that matters most in this project, and the reason the real samples are versioned
 #### What the validation proves today
 
 ```text
-✓ the orchestrator saw what AMWScan saw on its own (2 vs 2)
+✓ the orchestrator saw what AMWScan saw on its own (3 vs 3)
 ✓ wp-checksums ran over a real WordPress
 ✓ the core tampering was detected (weight 1.50)
 ✓ one strong vote alone stopped at likely (it did not escalate to confirmed)
