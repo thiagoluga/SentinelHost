@@ -1,425 +1,459 @@
-# Decisões de implementação
+# Implementation decisions
 
-Registro das escolhas feitas onde a spec, o plano ou as tarefas deixavam
-margem de interpretação. O critério de desempate é sempre o princípio da
-constituição mais próximo. Cada decisão cita o princípio que a sustenta.
-
----
-
-## D-001 — Caminho do módulo Go
-
-**Ambiguidade**: T001 pede `go mod init github.com/<org>/sentinelhost`, sem
-definir o org, e o repositório criado é `thiagoluga/SentinelHost` (com maiúsculas).
-
-**Decisão**: `module github.com/thiagoluga/SentinelHost`.
-
-**Motivo**: caminho de módulo em Go é sensível a maiúsculas e precisa bater com
-o caminho real do repositório para `go install github.com/...@latest` funcionar.
-Usar o lowercase convencional quebraria a instalação em um comando, que é
-requisito do Princípio VII (simplicidade operacional).
+A record of the choices made where the spec, the plan or the tasks left room for
+interpretation. The tie-breaker is always the closest constitution principle. Every
+decision cites the principle that settles it.
 
 ---
 
-## D-002 — Ambiente de desenvolvimento é Windows; o alvo é Linux
+## D-001 — The Go module path
 
-**Ambiguidade**: o plano define alvo Linux x86_64/arm64 em userland sem root,
-mas o desenvolvimento está acontecendo em Windows.
+**Ambiguity**: T001 asks for `go mod init github.com/<org>/sentinelhost`, without
+defining the org, and the repository that was created is `thiagoluga/SentinelHost`
+(with capitals).
 
-**Decisão**: todo código específico de plataforma (nice/ionice, chmod 000,
-uid/gid do dono, sinais) fica isolado atrás de arquivos com build tags
-(`_unix.go` / `_windows.go`). Os testes que dependem de semântica POSIX de
-permissão são pulados no Windows com `t.Skip` explícito, nunca silenciosamente.
+**Decision**: `module github.com/thiagoluga/SentinelHost`.
 
-**Motivo**: Princípio III exige que o comportamento real seja o do userland
-Linux; o Windows é só a estação de trabalho. Esconder a diferença com `t.Skip`
-mudo faria a suíte mentir sobre cobertura.
-
----
-
-## D-003 — Score do consenso: soma normalizada por teto, não média
-
-**Ambiguidade**: `docs/esquema-e-adaptadores.md` define os limiares de nível
-(`confirmed` ≥ 0.9 etc.) e os pesos por engine (wp-checksums 1.5, maldet 1.0,
-amwscan 0.8, pmf 0.8), mas não a fórmula que transforma votos em score.
-
-**Decisão**: o score é a soma dos pesos efetivos dos votos dividida por um teto
-de saturação configurável (`saturation`, padrão 2.0), truncada em 1.0. O peso
-efetivo de um voto é `peso_do_engine × multiplicador_de_confiança`, com
-`signature` = 1.0, `heuristic` = 0.8 e `anomaly` = 0.55.
-
-**Motivo**: precisa reproduzir os exemplos que a documentação dá como
-`confirmed`. Dois engines com `confidence=signature` (1.0 + 0.8 = 1.8 sobre
-teto 2.0 = 0.9) chegam exatamente em `confirmed`, e checksum oficial divergente
-(1.5) + um engine (0.8×0.8 = 0.64), somando 2.14, satura em 1.0 — também
-`confirmed`. Uma média puniria o consenso a cada engine adicional que
-abstivesse, o que contraria o Princípio VI ("abstenção nunca é voto limpo"):
-com média, abster-se baixaria o score exatamente como um voto de inocência.
+**Reason**: a module path in Go is case-sensitive and has to match the repository's
+real path for `go install github.com/...@latest` to work. Using the conventional
+lowercase would break the one-command installation, which Principle VII (operational
+simplicity) requires.
 
 ---
 
-## D-004 — Abstenção não entra no denominador
+## D-002 — The development environment is Windows; the target is Linux
 
-**Ambiguidade**: o esquema exige registrar `abstentions`, mas não diz se elas
-afetam o score.
+**Ambiguity**: the plan defines a Linux x86_64/arm64 userland target without root,
+but the development is happening on Windows.
 
-**Decisão**: abstenções são registradas no `Verdict` para transparência e são
-completamente ignoradas no cálculo do score.
+**Decision**: all platform-specific code (nice/ionice, chmod, the owner's uid/gid,
+signals) is isolated behind files with build tags (`_unix.go` / `_windows.go`). The
+tests that depend on POSIX permission semantics are skipped on Windows with an
+explicit `t.Skip`, never silently.
 
-**Motivo**: Princípio VI é explícito — falha de adaptador é abstenção, "nunca
-voto limpo". Se a abstenção entrasse no denominador, um engine que estourou
-timeout diluiria o score e poderia rebaixar um `confirmed` para `likely`,
-transformando falha técnica em decisão de segurança.
-
----
-
-## D-005 — Proteção por checksum oficial é veto, não voto
-
-**Ambiguidade**: o esquema diz que arquivo idêntico ao checksum oficial "nunca é
-quarentenado, independente de votos", mas o cenário 5 da US1 pede veredito
-`clean`.
-
-**Decisão**: bater com o checksum oficial força `level=clean` e `score=0`,
-preservando a lista de votos que existiam e registrando
-`clean_reason="official_checksum_match"`. Não é um voto negativo somado ao
-score: é um veto aplicado depois do cálculo.
-
-**Motivo**: o cenário 5 da spec pede `clean` com "o motivo registrado". Um voto
-negativo poderia ser superado por votos suficientes, o que quebraria o "nunca,
-independente de votos". Veto é a única implementação que honra as duas frases.
+**Reason**: Principle III requires the real behaviour to be that of Linux userland;
+Windows is only the workstation. Hiding the difference with a mute `t.Skip` would
+make the suite lie about coverage.
 
 ---
 
-## D-006 — Whitelist bloqueia a ação, não o veredito
+## D-003 — The consensus score: a sum normalized by a ceiling, not an average
 
-**Ambiguidade**: a whitelist "nunca quarentena, mas continua no relatório".
+**Ambiguity**: `docs/schema-and-adapters.md` defines the level thresholds
+(`confirmed` ≥ 0.9 etc.) and the per-engine weights (wp-checksums 1.5, maldet 1.0,
+amwscan 0.8, pmf 0.8), but not the formula that turns votes into a score.
 
-**Decisão**: o arquivo na whitelist mantém o nível e o score calculados
-(inclusive `confirmed`) e aparece normalmente no relatório; o que muda é
+**Decision**: the score is the sum of the votes' effective weights divided by a
+configurable saturation ceiling (`saturation`, 2.0 by default), truncated at 1.0. A
+vote's effective weight is `engine_weight × confidence_multiplier`, with `signature`
+= 1.0, `heuristic` = 0.8 and `anomaly` = 0.55.
+
+**Reason**: it has to reproduce the examples the documentation gives as `confirmed`.
+Two engines with `confidence=signature` (1.0 + 0.8 = 1.8 over the ceiling of 2.0 =
+0.9) land exactly on `confirmed`, and a divergent official checksum (1.5) + one
+engine (0.8×0.8 = 0.64), adding up to 2.14, saturates at 1.0 — also `confirmed`. An
+average would punish the consensus for every additional engine that abstained, which
+contradicts Principle VI ("an abstention is never a clean vote"): with an average,
+abstaining would lower the score exactly like a vote of innocence.
+
+---
+
+## D-004 — An abstention does not enter the denominator
+
+**Ambiguity**: the schema requires recording `abstentions`, but does not say whether
+they affect the score.
+
+**Decision**: abstentions are recorded in the `Verdict` for transparency and are
+completely ignored in the score's calculation.
+
+**Reason**: Principle VI is explicit — an adapter failure is an abstention, "never a
+clean vote". If an abstention entered the denominator, an engine that hit its timeout
+would dilute the score and could downgrade a `confirmed` to `likely`, turning a
+technical failure into a security decision.
+
+---
+
+## D-005 — The official-checksum protection is a veto, not a vote
+
+**Ambiguity**: the schema says a file identical to the official checksum is "never
+quarantined, regardless of votes", but scenario 5 of US1 asks for a `clean` verdict.
+
+**Decision**: matching the official checksum forces `level=clean` and `score=0`,
+preserving the list of votes that existed and recording
+`clean_reason="official_checksum_match"`. It is not a negative vote added to the
+score: it is a veto applied after the calculation.
+
+**Reason**: scenario 5 of the spec asks for `clean` with "the reason recorded". A
+negative vote could be overcome by enough other votes, which would break the "never,
+regardless of votes". A veto is the only implementation that honours both sentences.
+
+---
+
+## D-006 — The whitelist blocks the action, not the verdict
+
+**Ambiguity**: the whitelist "never quarantines, but stays in the report".
+
+**Decision**: a whitelisted file keeps the level and score that were computed
+(including `confirmed`) and appears normally in the report; what changes is
 `action_taken="skipped_whitelist"`.
 
-**Motivo**: FR-007 e o cenário 5 da US2 exigem que ele "permaneça visível no
-relatório". Rebaixar o nível para `clean` esconderia do usuário que os engines
-continuam apontando aquele arquivo — colidiria com o Princípio V (consenso
-transparente). Diferente do checksum oficial (D-005), onde há prova positiva de
-que o arquivo é legítimo, a whitelist é só uma decisão do usuário.
+**Reason**: FR-007 and scenario 5 of US2 require it to "remain visible in the
+report". Downgrading the level to `clean` would hide from the user that the engines
+keep flagging that file — it would collide with Principle V (transparent consensus).
+Unlike the official checksum (D-005), where there is positive proof that the file is
+legitimate, the whitelist is only a decision of the user's.
 
 ---
 
-## D-007 — Modo observação ligado nos primeiros 7 dias
+## D-007 — Observation mode on for the first 7 days
 
-**Ambiguidade**: T006 pede "observação ON nos primeiros 7 dias"; FR-017 fala em
-"modo observação recomendado nos primeiros dias". Não estava definido de que
-instante conta o prazo nem o que acontece ao expirar.
+**Ambiguity**: T006 asks for "observation ON for the first 7 days"; FR-017 speaks of
+"observation mode recommended in the first days". It was not defined from which
+instant the deadline counts, nor what happens when it expires.
 
-**Decisão**: a config guarda `first_run_at` (gravado no primeiro ciclo). Enquanto
-`now < first_run_at + 7d`, nenhuma quarentena automática ocorre, mesmo com
-`observation_mode=false`; os alertas saem marcados como "ação recomendada". Ao
-expirar, o comportamento passa a seguir `observation_mode` puro, e o evento da
-transição vai para o log estruturado e para o painel.
+**Decision**: the config stores `first_run_at` (written on the first cycle). While
+`now < first_run_at + 7d`, no automatic quarantine happens, even with
+`observation_mode=false`; the alerts go out marked as "action recommended". Once it
+expires, the behaviour follows plain `observation_mode`, and the transition's event
+goes into the structured log and into the panel.
 
-**Motivo**: Princípio I — o período de graça existe para o usuário calibrar
-pesos e whitelist antes que a ferramenta mexa nos arquivos dele. Fazer a
-expiração ser silenciosa seria uma mudança de comportamento sem aviso.
-
----
-
-## D-008 — Ação automática exige `confirmed` E ausência de período de graça
-
-**Decisão**: a quarentena automática só dispara quando, simultaneamente:
-o nível é `confirmed`, `observation_mode=false`, o período de graça expirou, o
-arquivo não está na whitelist, o arquivo não bate com checksum oficial, e o
-re-hash imediatamente anterior à ação confere com o hash do veredito.
-
-**Motivo**: FR-018 e Princípio I. Se o re-hash divergir, o arquivo mudou entre o
-scan e a ação: a ferramenta reescaneia em vez de quarentenar às cegas (edge case
-explícito na spec).
+**Reason**: Principle I — the grace period exists so the user can calibrate weights
+and the whitelist before the tool touches their files. Making the expiry silent would
+be a change of behaviour with no warning.
 
 ---
 
-## D-009 — Fixtures de saída bruta são sintéticas, com procedência declarada
+## D-008 — An automatic action requires `confirmed` AND no grace period
 
-**Ambiguidade**: T010 e o CONTRIBUTING pedem fixtures "de saída bruta"; a
-constituição proíbe malware vivo no repositório.
+**Decision**: the automatic quarantine only fires when, simultaneously: the level is
+`confirmed`, `observation_mode=false`, the grace period has expired, the file is not
+whitelisted, the file does not match an official checksum, and the re-hash taken
+immediately before the action matches the verdict's hash.
 
-**Decisão**: as fixtures em `tests/testdata/raw/<engine>/` reproduzem
-fielmente o **formato** de saída de cada engine, mas os arquivos e trechos
-citados dentro delas apontam para o corpus sintético do próprio repositório.
-Cada diretório de fixtures tem um `README.md` declarando de qual versão do
-engine o formato foi derivado.
-
-**Motivo**: o teste de contrato precisa validar o parser, não a detecção. O
-formato é o contrato; o conteúdo apontado pode ser sintético sem perder poder
-de teste, e isso mantém o repositório livre de amostras vivas.
+**Reason**: FR-018 and Principle I. If the re-hash diverges, the file changed between
+the scan and the action: the tool re-scans instead of quarantining blindly (an
+explicit edge case in the spec).
 
 ---
 
-## D-010 — Corpus sintético usa marcador inerte, no espírito do EICAR
+## D-009 — The raw-output fixtures are synthetic, with declared provenance
 
-**Ambiguidade**: a spec pede "amostras sintéticas de webshell" e
-`docs/esquema-e-adaptadores.md` fala em "EICAR-like para PHP".
+**Ambiguity**: T010 and CONTRIBUTING ask for "raw output" fixtures; the constitution
+forbids live malware in the repository.
 
-**Decisão**: cada amostra do corpus é um arquivo PHP **inerte** que contém um
-marcador fixo do projeto (`SENTINELHOST-SYNTHETIC-CORPUS`) e reproduz a
-*estrutura* de um padrão malicioso (concatenação ofuscada, callback dinâmico,
-blob base64) sem nunca montar uma chamada executável funcional. Três garantias
-valem para todas: a primeira instrução executável é um `exit()`; os fragmentos
-de nome de função nunca são reunidos numa chamada dinâmica; nenhuma faz rede,
-escreve em disco, lê entrada ou abre processo.
+**Decision**: the fixtures under `tests/testdata/raw/<engine>/` faithfully reproduce
+each engine's output **format**, but the files and snippets cited inside them point at
+the repository's own synthetic corpus. Each fixture directory has a `PROVENANCE.md`
+declaring which engine version the format was derived from.
 
-`tests/testdata/corpus/AMOSTRAS.md` documenta uma a uma o que simulam e qual
-categoria/severidade/confiança deveriam receber, e `manifesto.json` traz a
-mesma informação em formato legível por máquina. O teste do SC-001 falha se
-encontrar um arquivo do corpus que não esteja no manifesto — assim ninguém
-adiciona amostra sem declarar a expectativa.
-
-**Motivo**: a constituição proíbe malware executável no repositório. O corpus
-precisa exercitar o consenso, e para isso basta que os adaptadores *sintéticos
-de teste* reconheçam os padrões — o valor do teste está no motor de veredito.
+**Reason**: the contract test has to validate the parser, not the detection. The
+format is the contract; the content it points at can be synthetic without losing any
+testing power, and that keeps the repository free of live samples.
 
 ---
 
-## D-011 — Engines reais não são baixados durante os testes
+## D-010 — The synthetic corpus uses an inert marker, in EICAR's spirit
 
-**Decisão**: nenhum teste automatizado baixa o phar do AMWScan, o binário
-`yara` ou as regras do php-malware-finder. Os testes de contrato rodam sobre
-fixtures; os testes de integração do consenso usam adaptadores falsos que
-emitem `ScanReport` fixos.
+**Ambiguity**: the spec asks for "synthetic webshell samples" and
+`docs/schema-and-adapters.md` speaks of "EICAR-like for PHP".
 
-**Motivo**: Princípio III e IV. Um teste que depende de rede e de binário
-externo falha em CI e na hospedagem do usuário por motivos que não têm nada a
-ver com o código. `Install()` é exercitado manualmente e documentado no
-quickstart.
+**Decision**: each corpus sample is an **inert** PHP file that contains a fixed
+project marker (`SENTINELHOST-SYNTHETIC-CORPUS`) and reproduces the *structure* of a
+malicious pattern (obfuscated concatenation, a dynamic callback, a base64 blob)
+without ever assembling a working executable call. Three guarantees hold for all of
+them: the first executable statement is an `exit()`; the function-name fragments are
+never joined into a dynamic call; none of them makes a network call, writes to disk,
+reads input or opens a process.
 
----
+`tests/testdata/corpus/SAMPLES.md` documents one by one what they simulate and which
+category/severity/confidence they should receive, and `manifest.json` carries the same
+information in a machine-readable format. The SC-001 test fails if it finds a corpus
+file that is not in the manifest — so nobody adds a sample without declaring the
+expectation.
 
-## D-012 — Ambiente de desenvolvimento com antivírus ativo
-
-**Contexto**: durante a implementação, o Windows Defender colocou em quarentena
-`docs/esquema-e-adaptadores.md` por causa do exemplo de `matched_content`.
-
-**Decisão**: o corpus sintético (D-010) nunca contém um payload funcional, o
-que reduz a chance de detecção heurística por antivírus de estação de trabalho.
-O `README.md` de `tests/testdata/corpus/` documenta que uma exclusão de
-antivírus pode ser necessária para clonar o repositório em Windows.
-
-**Motivo**: um repositório de ferramenta de segurança que não pode ser clonado
-sem desligar o antivírus é um repositório inútil na prática.
+**Reason**: the constitution forbids executable malware in the repository. The corpus
+has to exercise the consensus, and for that it is enough that the *synthetic test*
+adapters recognize the patterns — the test's value lies in the verdict engine.
 
 ---
 
-## D-013 — `kind` e `component` no esquema desde o MVP
+## D-011 — The real engines are not downloaded during the tests
 
-**Ambiguidade**: a spec 002 (scanner de vulnerabilidades) não deve ser
-implementada agora, mas `docs/esquema-e-adaptadores.md` seção 3 já define o
-campo discriminador `kind` e o bloco `component`.
+**Decision**: no automated test downloads AMWScan's phar, the `yara` binary or the
+php-malware-finder rules. The contract tests run over fixtures; the consensus
+integration tests use fake adapters that emit fixed `ScanReport`s.
 
-**Decisão**: os dois entram no pacote `internal/schema` desde já, com
-`kind` vazio sendo tratado como `malware`. Nenhuma lógica de pipeline de
-vulnerabilidade é implementada.
-
-**Motivo**: a instrução era não tomar decisões que inviabilizem a 002.
-Adicionar um campo discriminador depois obrigaria a incrementar a versão maior
-do esquema e a reprocessar toda a saída bruta arquivada — enquanto adicioná-lo
-agora, opcional e com default, custa nada. A validação já cobre a diferença que
-importa: achado de vulnerabilidade é consolidado por componente, não por
-arquivo, e por isso não exige `file.sha256`.
+**Reason**: Principles III and IV. A test that depends on the network and on an
+external binary fails in CI and on the user's hosting for reasons that have nothing to
+do with the code. `Install()` is exercised manually and documented in the quickstart —
+and, since then, by the validation container (D-022).
 
 ---
 
-## D-016 — Denominador do SC-001: amostras de conteúdo malicioso
+## D-012 — A development environment with an active antivirus
 
-**Ambiguidade**: o SC-001 exige "≥ 95% das amostras como `confirmed`/`likely`".
-O corpus tem 12 amostras, e duas delas (`08-localizacao-suspeita` e
-`11-permissoes-frouxas`) simulam sinais cujo único indício é **anomalia** — um
-arquivo PHP numa pasta de mídia, um arquivo 0777 na raiz web. Com os pesos e
-multiplicadores do documento de esquema, dois votos de anomalia somam 0,88
-sobre o teto 2,0, ou seja `suspicious`. Com 12 amostras, 95% significa que
-todas as 12 teriam que chegar a `likely`.
+**Context**: during the implementation, Windows Defender quarantined
+`docs/esquema-e-adaptadores.md` because of its `matched_content` example. That
+happened twice, and the second time it cost the file: a `git add -A` recorded the
+deletion, and the document that the constitution calls the heart of the project
+disappeared from the repository for several commits while `CLAUDE.md`,
+`CONTRIBUTING.md` and `internal/adapter/adapter.go` kept pointing at it.
 
-**Decisão**: o SC-001 é medido sobre as amostras de **conteúdo malicioso** —
-aquelas cujo manifesto declara `nivel_minimo_esperado` de `likely` ou
-`confirmed` (10 das 12). As duas amostras de anomalia pura são verificadas
-contra o piso `suspicious` que o manifesto declara, e existe um teste dedicado
-(`TestAnomaliaSozinhaNaoChegaALikely`) que **trava** o comportamento de que
-anomalia isolada não escala.
+**Decision**: the synthetic corpus (D-010) never contains a working payload, which
+lowers the chance of a heuristic detection by a workstation antivirus. The document —
+now `docs/schema-and-adapters.md` — keeps its `matched_content` example **redacted**
+instead of reproducing a payload-looking snippet, which is the same rule the adapters
+already follow. The `README.md` of `tests/testdata/corpus/` documents that an
+antivirus exclusion may be needed in order to clone the repository on Windows.
 
-**Resultado medido**: 10/10 (100%) das amostras de conteúdo malicioso em
-`confirmed`/`likely`, e 12/12 detectadas em `suspicious` ou acima, com zero
-falso positivo `confirmed` nos arquivos limpos.
-
-**Motivo**: forçar anomalia a `likely` seria mexer nos multiplicadores para
-fazer um número passar, e o efeito colateral seria real: `likely` é o nível que
-dispara alerta de "ação recomendada" (FR-010). Um arquivo no lugar errado
-passaria a acordar o usuário no meio da noite, e o Princípio V é explícito ao
-escalonar a resposta pela força da evidência. A alternativa — remover as duas
-amostras do corpus — seria pior: o consenso deixaria de ter cobertura de teste
-para `confidence=anomaly`, que é justamente o caminho mais fácil de quebrar sem
-ninguém perceber.
+**Reason**: a security tool's repository that cannot be cloned without turning the
+antivirus off is a useless repository in practice. And a file that an antivirus can
+silently delete must not be the only place where a design decision lives.
 
 ---
 
-## D-017 — Teste de painel por HTTP, não por navegador
+## D-013 — `kind` and `component` in the schema since the MVP
 
-**Ambiguidade**: T037 pede teste e2e do painel com `chromedp`.
+**Ambiguity**: spec 002 (the vulnerability scanner) is not to be implemented now, but
+section 3 of `docs/schema-and-adapters.md` already defines the discriminating field
+`kind` and the `component` block.
 
-**Decisão**: o teste e2e exercita o painel pela **API HTTP** (`httptest`),
-cobrindo o fluxo completo do SC-004: primeiro acesso → definir senha → listar
-achados → decidir sobre um achado → configurar e-mail → disparar teste de
-webhook. Não há dependência de navegador.
+**Decision**: both enter the `internal/schema` package right away, with an empty
+`kind` treated as `malware`. No vulnerability-pipeline logic is implemented.
 
-**Motivo**: `chromedp` traria uma árvore de dependências grande e exigiria um
-Chrome instalado para a suíte rodar — em CI e na máquina de quem contribui. O
-Princípio VII (sem dependências externas obrigatórias) vale também para o
-ambiente de desenvolvimento: um repositório cuja suíte só passa em quem tem
-Chrome é um repositório com menos gente rodando os testes.
-
-**O que isto NÃO cobre, e assumo explicitamente**: renderização, layout,
-acessibilidade e a parte do SC-004 que é usabilidade real ("um usuário leigo
-consegue, em menos de 5 minutos, sem documentação"). Isso continua sendo
-validação manual, listada como pendente no `SUMMARY.md`.
+**Reason**: the instruction was not to take decisions that would make 002 unfeasible.
+Adding a discriminating field later would force a major schema version bump and a
+reprocessing of all the archived raw output — while adding it now, optional and with a
+default, costs nothing. The validation already covers the difference that matters: a
+vulnerability finding is consolidated per component, not per file, and therefore does
+not require `file.sha256`.
 
 ---
 
-## D-018 — Escopo incremental do AMWScan aplicado pelo adaptador
+## D-016 — SC-001's denominator: the malicious-content samples
 
-**Contexto**: o contrato diz que quem decide o escopo é o orquestrador, e o
-adaptador só executa. Para o AMWScan isso não é implementável como pretendido.
+**Ambiguity**: SC-001 demands "≥ 95% of the samples as `confirmed`/`likely`". The
+corpus has 12 samples, and two of them (`08-suspicious-location` and
+`11-loose-permissions`) simulate signals whose only evidence is an **anomaly** — a PHP
+file in a media folder, a 0777 file in the web root. With the weights and multipliers
+from the schema document, two anomaly votes add up to 0.88 over the ceiling of 2.0,
+that is `suspicious`. With 12 samples, 95% means all 12 would have to reach `likely`.
 
-**Medições no container de validação** (`make validar-engines`):
+**Decision**: SC-001 is measured over the **malicious-content** samples — the ones
+whose manifest declares a `minimum_expected_level` of `likely` or `confirmed` (10 of
+the 12). The two pure-anomaly samples are checked against the `suspicious` floor the
+manifest declares, and there is a dedicated test
+(`TestAnAnomalyAloneDoesNotReachLikely`) that **pins** the behaviour that an isolated
+anomaly does not escalate.
 
-- `--filter-paths` com **um** caminho funciona; com **dois ou mais**, o engine
-  roda, sai com código 0, escreve o relatório e não aponta nada — nem os
-  arquivos que casariam sozinhos. É semântica de E, não de OU.
-- `--filter-paths` filtra o **relatório**, não o conjunto varrido. Uma execução
-  por arquivo custou 1m37s para 11 arquivos.
+**Measured result**: 10/10 (100%) of the malicious-content samples in
+`confirmed`/`likely`, and 12/12 detected at `suspicious` or above, with zero
+`confirmed` false positives on the clean files.
 
-**Decisão**: uma execução por ciclo, sobre a raiz, e o `Parse` descarta os
-achados fora da lista pedida. A lista viaja no `RawOutput.Extra`.
-
-**Motivo**: das opções possíveis, é a única correta. Passar vários caminhos
-produziria "0 achados" com o engine verde — engine saudável, relatório limpo,
-site infectado, que é o modo de falha que o Princípio VI existe para impedir.
-Uma execução por arquivo seria correta mas inviável em custo. O preço é CPU: o
-AMWScan varre o site inteiro a cada ciclo, e nenhuma configuração do
-SentinelHost muda isso, porque o engine não sabe escanear uma lista de arquivos.
-
----
-
-## D-019 — Manutenção periódica também no caminho `scan`
-
-**Ambiguidade**: T025 pede daemon com ciclos, retentativas e digest. Não diz
-onde essas rotinas rodam no modo `cron`.
-
-**Decisão**: retentativa de webhook, resumo periódico, purga por retenção, poda
-de log e de saída bruta, e recuperação de ciclo interrompido vivem em
-`internal/housekeeping` e são chamadas por **`scan` e `daemon`**.
-
-**Motivo**: o modo padrão do projeto é `cron` (Princípio III — não se pode
-pressupor um processo vivo). Com as rotinas só no daemon, no caminho
-recomendado pela própria documentação o backoff de 5 tentativas existia no
-código e nunca acontecia, o digest nunca saía, e o log e a saída bruta cresciam
-até estourar a cota de disco da conta — a ferramenta derrubando o site que ela
-promete proteger.
+**Reason**: forcing an anomaly to `likely` would mean touching the multipliers to make
+a number pass, and the side effect would be real: `likely` is the level that triggers
+an "action recommended" alert (FR-010). A file in the wrong place would start waking
+the user up in the middle of the night, and Principle V is explicit about scaling the
+response by the strength of the evidence. The alternative — removing the two samples
+from the corpus — would be worse: the consensus would lose test coverage for
+`confidence=anomaly`, which is precisely the easiest path to break without anyone
+noticing.
 
 ---
 
-## D-020 — Ausência de arquivo do core não é assinatura
+## D-017 — Panel testing over HTTP, not through a browser
 
-**Contexto**: na primeira execução real, o `wp-checksums` emitiu **2998**
-achados `likely` — um por arquivo de core ausente, incluindo fontes `.woff2`.
+**Ambiguity**: T037 asks for an e2e panel test with `chromedp`.
 
-**Decisão**: acima de 10% de arquivos do core ausentes, o adaptador **se
-abstém** com motivo explícito. Abaixo disso, só arquivo com extensão executável
-vira achado, com `confidence=anomaly` e `severity=medium`.
+**Decision**: the e2e test exercises the panel through the **HTTP API**
+(`httptest`), covering SC-004's complete flow: first access → set the password → list
+findings → decide about a finding → configure e-mail → trigger a webhook test. There
+is no browser dependency.
 
-**Motivo**: um WordPress incompleto quase nunca é ataque — é core em
-subdiretório, deploy parcial, symlink ou raiz mal configurada. E ausência não é
-assinatura de nada: um arquivo que não existe não contém backdoor e não pode
-ser quarentenado. Tratá-lo como `signature` fazia o peso 1,5 empurrar sozinho o
-achado para perto de `confirmed`, autorizando ação sobre um arquivo inexistente.
+**Reason**: `chromedp` would bring a large dependency tree and would require an
+installed Chrome for the suite to run — in CI and on a contributor's machine.
+Principle VII (no mandatory external dependencies) applies to the development
+environment too: a repository whose suite only passes for people who have Chrome is a
+repository with fewer people running the tests.
+
+**What this does NOT cover, stated explicitly**: rendering, layout, accessibility and
+the part of SC-004 that is real usability ("a non-technical user manages it, in under
+5 minutes, with no documentation"). That remains manual validation, listed as pending
+in `SUMMARY.md`.
 
 ---
 
-## D-022 — Teste sobre suposição não vale como verificação
+## D-018 — AMWScan's incremental scope applied by the adapter
 
-**Contexto**: esta é a lição mais caras desta sessão, e vale registrar como
-regra e não como anedota.
+**Context**: the contract says the orchestrator decides the scope and the adapter only
+executes. For AMWScan that is not implementable as intended.
 
-Nove defeitos foram encontrados executando o produto de verdade num Linux com
-os engines e as APIs reais. **Oito deles são o mesmo erro**: eu assumi como o
-mundo externo se comporta, escrevi o teste que confirmava a minha suposição, e
-o teste passou.
+**Measurements in the validation container** (`make validate-engines`):
 
-O caso dos plugins é o mais claro. A API publica hashes como string; eu
-declarei `[]string`, escrevi 16 testes com fixtures em array, todos passaram —
-e contra a API de verdade o `Unmarshal` falhava e **todo plugin era pulado com
-zero achados e nenhum erro visível**.
+- `--filter-paths` with **one** path works; with **two or more**, the engine runs,
+  exits 0, writes the report and flags nothing — not even the files that would match
+  on their own. It is AND semantics, not OR.
+- `--filter-paths` filters the **report**, not the set that gets walked. One execution
+  per file cost 1m37s for 11 files.
 
-**Decisão**: para tudo que cruza a fronteira do processo — CLI de engine,
-formato de saída, resposta de API — o repositório guarda uma **amostra real
-capturada**, e o teste roda sobre ela:
+**Decision**: one execution per cycle, over the root, and `Parse` discards the
+findings outside the requested list. The list travels in `RawOutput.Extra`.
 
-| Fronteira | Fixture real |
+**Reason**: of the possible options, it is the only correct one. Passing several paths
+would produce "0 findings" with the engine green — a healthy engine, a clean report, an
+infected site, which is the failure mode Principle VI exists to prevent. One execution
+per file would be correct but unaffordable. The price is CPU: AMWScan walks the whole
+site on every cycle, and no SentinelHost setting changes that, because the engine does
+not know how to scan a file list.
+
+---
+
+## D-019 — The periodic maintenance also on the `scan` path
+
+**Ambiguity**: T025 asks for a daemon with cycles, retries and a digest. It does not
+say where those routines run in `cron` mode.
+
+**Decision**: webhook retries, the periodic summary, the retention purge, log and
+raw-output pruning, and interrupted-cycle recovery live in `internal/housekeeping` and
+are called by **`scan` and `daemon`**.
+
+**Reason**: the project's default mode is `cron` (Principle III — a live process cannot
+be presupposed). With the routines only in the daemon, on the path the documentation
+itself recommends the 5-attempt backoff existed in the code and never happened, the
+digest never went out, and the log and the raw output grew until they blew the
+account's disk quota — the tool taking down the site it promises to protect.
+
+---
+
+## D-020 — A missing core file is not a signature
+
+**Context**: on the first real run, `wp-checksums` emitted **2998** `likely` findings —
+one per missing core file, including `.woff2` fonts.
+
+**Decision**: above 10% of the core files missing, the adapter **abstains** with an
+explicit reason. Below that, only a file with an executable extension becomes a
+finding, with `confidence=anomaly` and `severity=medium`.
+
+**Reason**: an incomplete WordPress is almost never an attack — it is the core in a
+subdirectory, a partial deploy, a symlink or a misconfigured root. And absence is not a
+signature of anything: a file that does not exist holds no backdoor and cannot be
+quarantined. Treating it as `signature` let weight 1.5 push the finding on its own
+close to `confirmed`, authorizing action on a file that does not exist.
+
+---
+
+## D-021 — Flags accepted at any position on the CLI
+
+**Context**: the standard library's `flag` stops parsing at the first argument that
+does not start with a dash. That made
+
+```
+sentinelhost quarantine restore q_123 --config /path/config.toml
+```
+
+ignore the `--config` silently and fall back to the default path — and that is exactly
+the form the quickstart documents.
+
+**Decision**: `parseArgs` parses in a loop, taking one positional out at a time, and
+accepts flags at any position.
+
+**Reason**: the symptom was a misleading error ("configuration not found") in a command
+that received the configuration correctly. The real risk was worse: on a machine with
+more than one site, the command would act on the wrong instance — and `restore` and
+`purge` are precisely the ones that touch files. A mistyped flag is now an error too,
+instead of becoming a silent positional argument.
+
+---
+
+## D-022 — A test built on an assumption does not count as verification
+
+**Context**: this is the most expensive lesson of this session, and it deserves to be
+recorded as a rule rather than as an anecdote.
+
+Nine defects were found by running the product for real on a Linux with the actual
+engines and APIs. **Eight of them are the same mistake**: I assumed how the outside
+world behaves, wrote the test that confirmed my assumption, and the test passed.
+
+The plugins case is the clearest one. The API publishes hashes as strings; I declared
+`[]string`, wrote 16 tests with array fixtures, all of them passed — and against the
+real API `Unmarshal` failed and **every plugin was skipped with zero findings and no
+visible error**.
+
+**Decision**: for everything that crosses the process boundary — an engine's CLI, an
+output format, an API response — the repository keeps a **captured real sample**, and
+the test runs against it:
+
+| Boundary | Real fixture |
 |---|---|
-| Saída do AMWScan | `tests/testdata/raw/amwscan/` (formato `--report-format txt`) |
-| Saída do yara | `tests/testdata/raw/php-malware-finder/` |
-| API de checksums de plugin | `internal/adapter/wpchecksums/api_formato_test.go` |
-| Flags de cada engine | `docker/validar-engines.sh`, contra o binário instalado |
+| AMWScan output | `tests/testdata/raw/amwscan/` (the `--report-format txt` format) |
+| yara output | `tests/testdata/raw/php-malware-finder/` |
+| Plugin checksums API | `internal/adapter/wpchecksums/api_format_test.go` |
+| Each engine's flags | `docker/validate-engines.sh`, against the installed binary |
 
-E `make validar-engines` compara sempre o que o **orquestrador** vê com o que o
-**engine vê sozinho**. Números diferentes reprovam.
+And `make validate-engines` always compares what the **orchestrator** sees with what
+the **engine sees on its own**. Different numbers fail the run.
 
-**Motivo**: num orquestrador, a suposição errada não produz erro — produz
-"0 achados" com o engine marcado como saudável. É o único modo de falha que o
-usuário não tem como perceber, e por isso o único contra o qual não basta
-cuidado: precisa de evidência.
-
----
-
-## D-021 — Flags aceitas em qualquer posição na CLI
-
-**Contexto**: o `flag` da biblioteca padrão para de parsear no primeiro
-argumento que não começa com traço. Isso fazia
-
-```
-sentinelhost quarantine restore q_123 --config /caminho/config.toml
-```
-
-ignorar o `--config` em silêncio e cair no caminho padrão — e essa é
-exatamente a forma que o quickstart documenta.
-
-**Decisão**: `parseArgs` parseia em laço, retirando um posicional por vez, e
-aceita flags em qualquer posição.
-
-**Motivo**: o sintoma era um erro enganoso ("configuração não encontrada") num
-comando que recebeu a configuração corretamente. O risco real era pior: numa
-máquina com mais de um site, o comando agiria sobre a instância errada — e
-`restore` e `purge` são justamente os que mexem em arquivos. Uma flag digitada
-errado agora também é erro, em vez de virar um argumento posicional silencioso.
+**Reason**: in an orchestrator, a wrong assumption does not produce an error — it
+produces "0 findings" with the engine marked as healthy. It is the only failure mode
+the user has no way of noticing, and therefore the only one against which care is not
+enough: it needs evidence.
 
 ---
 
-## D-014 — Log estruturado no SQLite, saída bruta em arquivo
+## D-014 — The structured log in SQLite, the raw output in a file
 
-**Ambiguidade**: o plan.md lista "logs" no diretório de dados e o FR-015 exige
-log estruturado **consultável no painel**.
+**Ambiguity**: plan.md lists "logs" in the data directory and FR-015 requires a
+structured log **queryable in the panel**.
 
-**Decisão**: o log estruturado (`events`) fica no SQLite; a saída bruta dos
-engines fica em arquivo, sob `<data_dir>/raw/<scan_id>/`.
+**Decision**: the structured log (`events`) lives in SQLite; the engines' raw output
+lives in a file, under `<data_dir>/raw/<scan_id>/`.
 
-**Motivo**: consultar com filtro por categoria, nível e período é exatamente o
-que o painel precisa e exatamente o que arquivo de texto faz mal. A saída bruta
-segue em arquivo porque é grande, é lida inteira quando é lida, e precisa
-sobreviver a um banco corrompido para permitir reprocessamento por `Parse()`.
+**Reason**: querying with a filter by category, level and period is exactly what the
+panel needs and exactly what a text file does badly. The raw output stays in a file
+because it is large, it is read whole when it is read at all, and it has to survive a
+corrupted database in order to allow reprocessing through `Parse()`.
 
 ---
 
-## D-015 — Purga de log não é ação destrutiva no sentido do Princípio I
+## D-015 — Pruning the log is not a destructive action in Principle I's sense
 
-**Decisão**: `PruneEvents` apaga eventos além da retenção sem exigir confirmação
-do usuário.
+**Decision**: `PruneEvents` deletes events beyond the retention without requiring the
+user's confirmation.
 
-**Motivo**: o Princípio I protege **arquivos do usuário**. Log é dado gerado
-pela ferramenta, e numa conta com cota de disco um log que cresce sem limite
-acaba derrubando o site — o oposto do que a ferramenta promete. A retenção é
-configurável e o padrão (90 dias) é generoso.
+**Reason**: Principle I protects **the user's files**. A log is data the tool
+generated, and on an account with a disk quota a log that grows without bound ends up
+taking the site down — the opposite of what the tool promises. The retention is
+configurable and the default (90 days) is generous.
+
+---
+
+## D-023 — English is the repository's language, retroactively
+
+**Context**: the project was written in Portuguese — code, comments, error messages,
+CLI output, panel, documentation and commits. SentinelHost is open source
+infrastructure for shared hosting, and shared hosting exists everywhere.
+
+**Decision**: everything committed to the repository is in English (constitution
+1.1.0, Principle VIII). The whole codebase was translated, not only new code: files
+and directories were renamed to their English names, and the report keys a user reads
+went with them (`regra_desconhecida` → `unknown_rule`, `plugin_sem_checksum` →
+`plugin_without_checksum`, and so on). The panel ships English as its base locale;
+`i18n` may add other locales later.
+
+Two contract strings changed as a consequence, and they are worth naming because they
+are not cosmetic: the purge confirmation token is now `purge` (in the HTTP API and in
+the CLI prompt), and the panel's element ids follow the English names.
+
+**Reason**: a contributor in Jakarta or Lagos has to be able to read a comment
+explaining *why* the quarantine copies before it deletes, without a translator. Half a
+translation would be worse than none: a codebase where the identifiers are English and
+the comments are Portuguese forces every reader to know both.
+
+**What did not get translated**: the captured raw output under `tests/testdata/raw/`.
+Those files are evidence of what an external engine actually printed, and editing them
+would destroy the only thing that makes them worth keeping (D-022). Only the markers
+this repository authored itself — an invented rule name, a base64 blob of our own text
+— were translated.
+
+The conversation with the maintainer stays in whatever language they prefer. The rule
+applies to artifacts that are committed.
