@@ -83,9 +83,29 @@ func (e *Engine) Consolidate(in Input) Result {
 	}
 	sort.Strings(abstentionList)
 
+	// Votes are merged per CONTENT; verdicts are emitted per PATH.
+	//
+	// The group is the right unit for scoring — the same file flagged by N engines is N
+	// votes on one target — and it was the wrong unit for output. Identical content
+	// planted at several paths collapsed into a single verdict naming a single path, and
+	// the other copies appeared in no verdict, no summary bucket and no skipped counter.
+	// They were simply gone: never quarantined, never mentioned, on a site the tool then
+	// reported as handled.
+	//
+	// That is not a corner case. Dropping the same webshell into many directories is
+	// standard practice precisely so that cleaning one accomplishes nothing, and it is
+	// exactly when a scanner must not manufacture confidence. Found on a real account
+	// (DECISIONS.md D-028): three planted copies, three findings, one verdict.
+	//
+	// Each path gets its own verdict carrying the FULL vote set for that content, so a
+	// copy is never less actionable than the one that happened to be named first.
 	verdicts := make([]schema.Verdict, 0, len(groups))
 	for _, sha := range sortedKeys(groups) {
-		verdicts = append(verdicts, e.consolidateFile(in, sha, groups[sha], official, abstentionList, now))
+		findings := groups[sha]
+		for _, path := range distinctPaths(findings) {
+			verdicts = append(verdicts,
+				e.consolidateFile(in, sha, findings, path, official, abstentionList, now))
+		}
 	}
 
 	return Result{
@@ -100,6 +120,7 @@ func (e *Engine) consolidateFile(
 	in Input,
 	sha string,
 	findings []schema.Finding,
+	path string,
 	official map[string]bool,
 	abstentions []string,
 	now time.Time,
@@ -113,13 +134,11 @@ func (e *Engine) consolidateFile(
 	score := e.score(sum)
 	level := e.level(score)
 
-	// The path is that of the most recent finding: if a file moved between
-	// engines, the last path seen is the one the user will find.
-	path, size := representative(findings)
+	size := sizeAt(findings, path)
 
 	v := schema.Verdict{
 		SchemaVersion: schema.Version,
-		VerdictID:     verdictID(in.ScanID, sha),
+		VerdictID:     verdictID(in.ScanID, sha, path),
 		FileSHA256:    sha,
 		FilePath:      path,
 		FileSize:      size,
@@ -319,22 +338,43 @@ func groupBySHA(reports []schema.ScanReport) map[string][]schema.Finding {
 	return out
 }
 
-// representative picks the path and size for the verdict.
-func representative(findings []schema.Finding) (string, int64) {
-	var path string
+// distinctPaths lists every path the findings named, in a stable order.
+//
+// Stable because a verdict list that reorders itself between cycles is one nobody can
+// diff, and diffing two cycles is how a user answers "is this getting better?".
+func distinctPaths(findings []schema.Finding) []string {
+	seen := make(map[string]bool, len(findings))
+	paths := make([]string, 0, len(findings))
+	for _, f := range findings {
+		if f.File.Path == "" || seen[f.File.Path] {
+			continue
+		}
+		seen[f.File.Path] = true
+		paths = append(paths, f.File.Path)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+// sizeAt reports the size recorded for one path, preferring the most recent sighting.
+//
+// Most recent because engines run at different moments within a cycle, and if a file
+// changed underneath them the later reading is the one that describes what is on disk
+// now. The size is only ever descriptive — nothing is decided by it — but a number shown
+// to a user should be the truest one available.
+func sizeAt(findings []schema.Finding, path string) int64 {
 	var size int64
 	var mostRecent time.Time
 	for _, f := range findings {
-		if f.File.Path == "" {
+		if f.File.Path != path {
 			continue
 		}
-		if path == "" || f.DetectedAt.After(mostRecent) {
-			path = f.File.Path
+		if size == 0 || f.DetectedAt.After(mostRecent) {
 			size = f.File.SizeBytes
 			mostRecent = f.DetectedAt
 		}
 	}
-	return path, size
+	return size
 }
 
 // verdictID is deterministic from the cycle and the file.
@@ -342,8 +382,15 @@ func representative(findings []schema.Finding) (string, int64) {
 // Determinism matters: re-running the same cycle has to UPDATE the verdict, not
 // create a second one. Without that, the panel would fill with duplicates on every
 // reprocessing.
-func verdictID(scanID, sha string) string {
-	sum := sha256.Sum256([]byte(scanID + ":" + sha))
+// verdictID identifies one verdict: one content, at one path, in one cycle.
+//
+// The path is part of the identity, not decoration. Now that identical content at
+// several paths produces one verdict each, an id derived from (scan, sha) alone would
+// be the same string for all of them — and two rows sharing a primary key means the
+// store keeps one and loses the rest, which is the very silent loss this change exists
+// to fix, moved one layer down.
+func verdictID(scanID, sha, path string) string {
+	sum := sha256.Sum256([]byte(scanID + ":" + sha + ":" + path))
 	return "v_" + hex.EncodeToString(sum[:])[:12]
 }
 

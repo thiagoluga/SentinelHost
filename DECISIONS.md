@@ -742,3 +742,55 @@ own abuse scanning, and a file that trips it could cost the account. Testing our
 detection is not worth that risk to someone else, which is why only wp-checksums votes
 above and `confirmed` had to be reached by lowering a threshold rather than by adding
 malicious-looking content.
+
+## D-028 — votes are merged per content; verdicts are emitted per path
+
+**Context**: found on the real HostGator account while validating detection by path.
+Three identical files were planted in three WordPress directories. `wp-checksums`
+reported **three findings**. The cycle produced **one verdict**:
+
+```text
+✓ wp-checksums         3 finding(s) in 1.19s
+VERDICTS
+  [LIKELY] score 0.75 — …/wp-admin/includes/update-core-helper.php
+SUMMARY  confirmed=0  likely=1  suspicious=0  clean=0
+```
+
+**The defect**: findings were grouped by `sha256` alone, and the group was also the unit
+of output. Identical content at several paths collapsed into one verdict naming one
+path, chosen by "most recently detected". The other two copies appeared in no verdict,
+in no summary bucket, and in no skipped counter. They were not reported as anything.
+
+The consequence is this project's defining failure mode arriving at the worst possible
+moment. Only the named copy would ever be quarantined; the rest stay on the site while
+the cycle reports it as handled. And it is not a corner case: dropping the same webshell
+into many directories is standard practice, done precisely so that cleaning one copy
+accomplishes nothing. A scanner that helps an attacker there is worse than no scanner.
+
+**Decision**: keep grouping by content, because that is what the grouping is *for* — the
+same file flagged by N engines is N votes on one target, not N targets, and splitting
+those votes would turn one `confirmed` file into several weak verdicts. Emit one verdict
+**per distinct path** within the group, each carrying the **full vote set** for that
+content.
+
+The consequences are deliberate:
+
+- A copy is never less actionable than whichever one happened to be named first. Two
+  identical files are equally proven, so they reach the same level and both get acted on.
+- `VerdictID` now derives from `(scan, sha, path)`. With the old `(scan, sha)` the new
+  verdicts would share a primary key, and the store would keep one and lose the rest —
+  the same silent loss moved one layer down.
+- `distinctPaths` sorts, so the verdict list does not reorder itself between cycles. A
+  list that reorders cannot be diffed, and diffing two cycles is how a user answers "is
+  this getting better?".
+
+**A test was asserting the defect.** `TestDeduplicationByHashJoinsEnginesIntoOneVerdict`
+read: *"The same file seen through different paths (a link, a copy) is still a single
+target: the key is the hash."* That is true of a hardlink and false of a copy, and the
+tool has to act on both paths either way. It was rewritten rather than deleted, with the
+reason recorded — this is D-022 again in a new place: an assumption, plus a test written
+from the same assumption, both passing until reality disagreed.
+
+**How it was found matters.** No unit test in this repository plants the same content
+twice, because whoever wrote them — me — did not think of it. A real account did, in the
+first ten minutes of trying to test detection by path.

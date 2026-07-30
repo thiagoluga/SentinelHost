@@ -305,8 +305,17 @@ func TestTheVoteUsesTheEnginesStrongestRule(t *testing.T) {
 }
 
 func TestDeduplicationByHashJoinsEnginesIntoOneVerdict(t *testing.T) {
-	// The same file seen through different paths (a link, a copy) is still a single
-	// target: the key is the hash.
+	// The hash joins the VOTES; the path decides the VERDICTS.
+	//
+	// This test used to assert that the same content at two paths is "still a single
+	// target". A real account disproved it: three identical files produced three findings
+	// and one verdict, and the two copies that went unnamed would never have been
+	// quarantined and were counted nowhere. Dropping the same webshell in many
+	// directories is standard practice precisely so that cleaning one achieves nothing,
+	// so each copy needs its own actionable verdict. See D-028.
+	//
+	// What the hash still does, and must keep doing, is merge the votes: both engines
+	// below are talking about the same content, so both copies of it are equally proven.
 	r := engine().Consolidate(verdict.Input{
 		ScanID: "s_1",
 		Reports: []schema.ScanReport{
@@ -316,12 +325,20 @@ func TestDeduplicationByHashJoinsEnginesIntoOneVerdict(t *testing.T) {
 		},
 	})
 
-	if len(r.Verdicts) != 2 {
-		t.Fatalf("expected 2 verdicts (2 hashes), got %d", len(r.Verdicts))
+	if len(r.Verdicts) != 3 {
+		t.Fatalf("expected 3 verdicts (3 distinct paths), got %d", len(r.Verdicts))
 	}
+
+	ids := map[string]bool{}
 	for _, v := range r.Verdicts {
+		if ids[v.VerdictID] {
+			t.Errorf("two verdicts share the id %s: one of them would be lost on write", v.VerdictID)
+		}
+		ids[v.VerdictID] = true
+
 		if v.FileSHA256 == shaA && len(v.Votes) != 2 {
-			t.Errorf("both engines should vote on the same target, got %d votes", len(v.Votes))
+			t.Errorf("%s: %d vote(s) — both engines flagged this content, so every copy of it "+
+				"carries both", v.FilePath, len(v.Votes))
 		}
 	}
 }
