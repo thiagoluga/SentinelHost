@@ -960,3 +960,46 @@ reads.
 Verified in a browser against the running panel, driving the real `loadStatus()` with a
 synthesized `/api/status` response for all three cases — no engines, some engines, all
 engines.
+
+## D-033 — the login lock-out is counted in the store, not in process memory
+
+**Context**: found while writing a CGI mode for the panel. The comment I had just written
+claimed the brute-force counter lived in the store. It did not — `rateLimiter` was a
+`map[string][]time.Time` held in the process.
+
+Under `serve` that is fine: one process sees every request. It stops being fine the
+moment the panel is served any other way — CGI, FastCGI, one process per request. There
+the map arrives **empty on every attempt**, so the lock-out does not exist at all, while
+every page looks and behaves exactly as before and nothing in the logs says the
+protection was switched off.
+
+That is worse than having no such mode: the panel's single password would be the only
+barrier on a publicly reachable endpoint, with unlimited attempts against it.
+
+**Decision**: the counter moves into the same SQLite the sessions already use.
+`Store.RecentLoginAttempts` / `RecordLoginAttempt` / `ClearLoginAttempts`, one small
+query per login.
+
+Four details are deliberate:
+
+- **A store error ALLOWS the attempt.** A database hiccup must not lock the legitimate
+  owner out of their own panel. The opposite default turns a transient error into a
+  denial of service against the one person entitled to log in, and the failure is loud
+  elsewhere.
+- **An empty window deletes the row** instead of writing one. Without that, every IP that
+  ever tried once leaves a row forever and the settings table grows with the internet
+  rather than with the account.
+- **Housekeeping prunes counters older than an hour.** The window is one minute, so
+  anything older cannot influence a decision. That covers the IP that never comes back,
+  which the delete-when-empty rule alone does not.
+- **A refused attempt still rewrites the window**, so it keeps sliding and one old burst
+  cannot pin an IP out indefinitely.
+
+**This was written before the mode that needed it**, and shipped on its own. The CGI mode
+turned out not to be viable on the host that motivated it — Apache there refuses to
+execute user CGI — but the defect is real in any per-request deployment, and it was true
+before anyone tried one.
+
+**How it was found**: by checking a claim I had just made in a comment. Thirty seconds in
+`auth.go` against a sentence I had written as fact. That is the fifteenth instance of
+D-022 in this session and the only one where I was the sole reviewer.

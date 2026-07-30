@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/crypto/argon2"
@@ -95,50 +94,55 @@ func newToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
-// rateLimiter caps login attempts per IP.
+// rateLimiter caps login attempts per IP, counting in the store rather than in memory.
 //
-// Without it, an exposed panel (even by accident) becomes a brute-force target,
-// and the panel's single password is the only thing between the attacker and a
-// button that moves the site's files.
+// Without it, an exposed panel (even by accident) becomes a brute-force target, and the
+// panel's single password is the only thing between the attacker and a button that moves
+// the site's files.
+//
+// The count used to live in a map here. That works for exactly one deployment shape —
+// `serve`, where a single process sees every request — and fails silently for every
+// other one. Under any per-request model the map is empty on arrival, so the lock-out
+// does not exist while the panel looks and behaves exactly as before, and nothing says
+// the protection was switched off. Counting in the same SQLite the sessions already use
+// costs one small query and removes the whole class of surprise.
 type rateLimiter struct {
-	mu       sync.Mutex
-	perMin   int
-	window   time.Duration
-	attempts map[string][]time.Time
+	store  *store.Store
+	perMin int
+	window time.Duration
 }
 
-func newRateLimiter(perMin int) *rateLimiter {
+func newRateLimiter(st *store.Store, perMin int) *rateLimiter {
 	if perMin <= 0 {
 		perMin = 10
 	}
-	return &rateLimiter{perMin: perMin, window: time.Minute, attempts: map[string][]time.Time{}}
+	return &rateLimiter{store: st, perMin: perMin, window: time.Minute}
 }
 
 // allow records an attempt and says whether it is permitted.
-func (r *rateLimiter) allow(ip string, now time.Time) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	cutoff := now.Add(-r.window)
-	recent := r.attempts[ip][:0]
-	for _, t := range r.attempts[ip] {
-		if t.After(cutoff) {
-			recent = append(recent, t)
-		}
+//
+// A store error allows the attempt. That is the deliberate direction: a database hiccup
+// must not lock the legitimate owner out of their own panel, and the failure is loud
+// enough elsewhere. The opposite default would turn a transient error into a denial of
+// service against the one person entitled to log in.
+func (r *rateLimiter) allow(ctx context.Context, ip string, now time.Time) bool {
+	recent, err := r.store.RecentLoginAttempts(ctx, ip, now.Add(-r.window))
+	if err != nil {
+		return true
 	}
 	if len(recent) >= r.perMin {
-		r.attempts[ip] = recent
+		// Rewritten anyway, so the window keeps sliding rather than pinning an IP
+		// forever on the strength of one old burst.
+		_ = r.store.RecordLoginAttempt(ctx, ip, recent)
 		return false
 	}
-	r.attempts[ip] = append(recent, now)
+	_ = r.store.RecordLoginAttempt(ctx, ip, append(recent, now))
 	return true
 }
 
 // reset clears an IP's history after a successful login.
-func (r *rateLimiter) reset(ip string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.attempts, ip)
+func (r *rateLimiter) reset(ctx context.Context, ip string) {
+	_ = r.store.ClearLoginAttempts(ctx, ip)
 }
 
 // clientIP extracts the request's IP.

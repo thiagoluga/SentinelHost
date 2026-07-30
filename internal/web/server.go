@@ -96,7 +96,7 @@ func (s *Server) withConfigRead(fn func(*config.Config) error) error {
 func New(cfg *config.Config, st *store.Store, reg *adapter.Registry, v *quarantine.Vault, d *alert.Dispatcher, r *cycle.Runner) *Server {
 	return &Server{
 		cfg: cfg, store: st, registry: reg, vault: v, alerts: d, runner: r,
-		limiter: newRateLimiter(cfg.Web.LoginRateLimit),
+		limiter: newRateLimiter(st, cfg.Web.LoginRateLimit),
 		now:     time.Now,
 	}
 }
