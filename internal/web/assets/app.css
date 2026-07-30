@@ -195,3 +195,12 @@ legend{color:var(--muted);font-size:11px;padding:0 4px}
   .side-foot,.logo{width:100%}
   main{padding:16px}
 }
+
+/* A number nobody measured must not look like a number that came out zero.
+   Dimmed and struck through, so the difference survives a glance — the whole point is
+   that this is read by someone who will not open a log. */
+.kpi b.unmeasured{
+  opacity:.35;
+  text-decoration:line-through;
+  text-decoration-thickness:2px;
+}

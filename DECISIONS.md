@@ -923,3 +923,40 @@ Three details are deliberate:
 **How it was found**: by looking at the JSON at all. The text output had been correct
 this whole session and I had read it a dozen times; the machine interface next to it was
 saying the opposite thing, and nothing checked that the two agreed.
+
+## D-032 — the panel says when nothing was scanned, and stops showing zeros as facts
+
+**Context**: the counterpart of D-031, found immediately after it by asking whether the
+web panel repeated the mistake the CLI had just stopped making. It did.
+
+With every engine unavailable the dashboard showed four KPIs reading zero and one banner:
+
+> 4 of 4 engines are unavailable. This site's coverage is reduced — see the Engines tab.
+
+The same sentence it prints when one engine of four is missing. Nothing on the screen
+distinguished "we looked and found nothing" from "we could not look at all", and the
+zeros were rendered exactly as they are on a genuinely clean site.
+
+That matters more here than in the CLI. The panel exists for the person who is **not**
+going to read a log or check an exit code — FR-014 and SC-004 are about someone
+non-technical deciding what to do — and it was the surface most likely to be believed.
+
+**Decision**: when `engines.available` is 0 the banner becomes an error-styled
+`Nothing was scanned.`, saying in the same breath that the counts below say nothing
+about this site, and pointing at the Engines tab, where each engine already explains what
+it needs. The `confirmed`, `likely` and `suspicious` numbers are dimmed and struck
+through, with a title attribute reading *"Not measured: no engine was able to run in the
+last cycle"*.
+
+**Struck through rather than hidden or blanked.** A missing number invites the reader to
+assume the page is broken; a dash invites them to reload. A struck-through zero says
+the measurement was attempted and did not happen, which is the true statement.
+
+**Partial coverage keeps its existing, milder banner**, for the same reason D-031 keeps
+`completed` for a cycle with one working engine: on most shared hosts two of four engines
+are permanently unavailable, and a warning that is always at full volume is one nobody
+reads.
+
+Verified in a browser against the running panel, driving the real `loadStatus()` with a
+synthesized `/api/status` response for all three cases — no engines, some engines, all
+engines.
