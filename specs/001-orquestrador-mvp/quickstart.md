@@ -5,7 +5,9 @@ From zero to the first scan on a shared hosting account, without root.
 ## Requirements
 
 - A Linux account (cPanel or similar) with access to **cron** — SSH helps, but is not
-  mandatory.
+  mandatory. If your provider has disabled the shell entirely, which is common, see
+  [`contrib/cpanel-no-shell/`](../../contrib/cpanel-no-shell/): every step below can be
+  driven through a single cron entry instead, and that is how SC-006 was validated.
 - Nothing else. SentinelHost is a single static binary; it needs no compatible glibc,
   no systemd, no root and no installed runtime.
 

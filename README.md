@@ -114,6 +114,15 @@ sentinelhost scan --root ~/public_html
 sentinelhost serve
 ```
 
+### If your host gives you no shell
+
+Plenty of shared accounts have SSH disabled by the provider — key authentication
+succeeds and the session closes with `Shell access is not enabled on your account`.
+[`contrib/cpanel-no-shell/`](contrib/cpanel-no-shell/) is the fallback: one unchanging
+cron entry calls a fixed `runner.sh`, which executes a replaceable `task.sh` exactly
+once per distinct content. Everything the CLI does works through it. SC-006 was
+validated that way, on an account with no shell at all.
+
 ## Design documentation
 
 - [`docs/schema-and-adapters.md`](docs/schema-and-adapters.md) — the normalized

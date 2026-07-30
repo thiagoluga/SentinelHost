@@ -830,3 +830,49 @@ belongs. The counter was redundant as well as mislabelled.
 line had appeared in every cycle of this session and I had walked past it repeatedly
 before asking what it actually meant. A counter that no test asserted, printing a
 reassuring-sounding word in the one place reserved for bad news.
+
+## D-030 — a documented operating mode for accounts with no shell
+
+**Context**: validating SC-006 on a real HostGator account ran into a wall that the
+documentation had no answer for. SSH key authentication succeeded, and the server then
+closed the session:
+
+```text
+Shell access is not enabled on your account!
+```
+
+That is a provider setting. It cannot be changed from the account, asking support may
+take days or be refused, and the quickstart assumed a shell throughout.
+
+**Decision**: ship the mechanism that got past it, as `contrib/cpanel-no-shell/`. One
+unchanging cron entry calls a fixed `runner.sh`, which executes a replaceable `task.sh`
+**exactly once per distinct content** — fingerprinting the file, remembering what it last
+ran, exiting silently when nothing changed. The cron entry never needs editing; the
+operator replaces one file.
+
+Principle III says the tool must work without root. A large share of the accounts this
+project exists for do not even have a shell, and until now they had nothing.
+
+**Three properties are load-bearing**, and are commented as such in the script:
+
+- **The fingerprint is written BEFORE the task runs.** A task that trips a resource limit
+  or wedges the account must not run again on the next tick and do it again. A task that
+  failed has still been attempted; repeating it automatically turns one bad command into
+  a loop.
+- **The exit code is always recorded, even when the task printed nothing.** Silence is
+  not evidence of success — the same rule that makes an engine abstain rather than report
+  zero findings.
+- **A lock, and a log ceiling.** Two ticks must not run concurrently against one SQLite
+  database and one quarantine vault, and a runaway log on a disk-quota-limited account is
+  its own small outage.
+
+**The security tradeoff is stated first in the README, not buried.** A file that cron
+executes and that the operator can replace over FTP is an arbitrary-code-execution
+channel on the account — precisely the shape of the backdoors this project exists to
+find. It is worth having while in use and not otherwise, it must live outside the
+document root, and the cron entry should be removed when the work is done. Documenting a
+technique without documenting what it costs would be the wrong kind of helpful.
+
+**Not solved by this**: the web panel listens on `127.0.0.1` and needs an SSH tunnel, so
+it stays out of reach until the provider enables shell access. Everything the CLI does
+works through this.
