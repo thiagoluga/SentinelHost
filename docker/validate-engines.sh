@@ -55,7 +55,8 @@ section "Building the test site"
 # and with it the entire quarantine path.
 WP_VERSION="6.5.2"
 mkdir -p "$SITE"
-if curl -fsSL "https://wordpress.org/wordpress-${WP_VERSION}.tar.gz" -o /tmp/wp.tar.gz 2>/dev/null; then
+if curl --proto '=https' --proto-redir '=https' -fsSL \
+     "https://wordpress.org/wordpress-${WP_VERSION}.tar.gz" -o /tmp/wp.tar.gz 2>/dev/null; then
   tar -xzf /tmp/wp.tar.gz -C /tmp
   cp -r /tmp/wordpress/. "$SITE/"
   rm -rf /tmp/wordpress /tmp/wp.tar.gz
@@ -104,7 +105,8 @@ fi
 # response passes through the parser.
 PLUGIN_SLUG="classic-editor"
 PLUGIN_VERSION="1.6.7"
-if curl -fsSL "https://downloads.wordpress.org/plugin/${PLUGIN_SLUG}.${PLUGIN_VERSION}.zip" \
+if curl --proto '=https' --proto-redir '=https' -fsSL \
+     "https://downloads.wordpress.org/plugin/${PLUGIN_SLUG}.${PLUGIN_VERSION}.zip" \
      -o /tmp/plugin.zip 2>/dev/null; then
   if command -v unzip >/dev/null && unzip -qo /tmp/plugin.zip -d "$SITE/wp-content/plugins/"; then
     ok "real plugin installed: ${PLUGIN_SLUG} ${PLUGIN_VERSION}"

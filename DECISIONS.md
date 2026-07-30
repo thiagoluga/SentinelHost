@@ -457,3 +457,51 @@ this repository authored itself — an invented rule name, a base64 blob of our 
 
 The conversation with the maintainer stays in whatever language they prefer. The rule
 applies to artifacts that are committed.
+
+---
+
+## D-024 — A chat destination gets a chat-shaped body, and a per-destination escape
+
+**Ambiguity**: US4 says the webhooks serve to "integrate with Slack/Discord/n8n or
+your own systems". The generic webhook satisfies that only for the third group:
+Slack's and Discord's incoming webhooks reject an arbitrary payload, so posting this
+project's envelope to either one is rejected or arrives as an empty message.
+
+**Decision**: a per-webhook `format` field — `raw` (the default), `slack`,
+`discord`. `webhook.Body()` decides the shape, and what it returns is both what gets
+POSTed and what gets signed.
+
+Four rules the implementation encodes:
+
+1. **An empty format keeps meaning `raw`.** Every webhook configured before the field
+   existed has none. Silently changing their body shape would break deliveries that
+   work today, which is the kind of upgrade this project cannot afford: the user finds
+   out when an alert does not arrive.
+2. **The message carries the votes.** A chat alert reading "threat confirmed" and
+   nothing else forces the user into the panel to learn anything, and the votes are the
+   whole point of a consensus verdict (Principle V). Abstentions travel with it for the
+   same reason they travel everywhere else — a cycle where half the engines failed must
+   not read as a clean cycle (Principle VI).
+3. **Attacker-chosen text is escaped per destination.** The file path comes from the
+   intruder. `<!channel>.php` is a legitimate filename and a perfectly good way to make
+   our own alert ping an entire Slack workspace; Discord needs `@everyone` broken with a
+   zero-width space and its markdown backslash-escaped. Escaping is per destination
+   because the two have no common encoding.
+4. **An unknown format fails the delivery** rather than falling back to `raw`. A
+   delivery that "worked" in the wrong shape is precisely the quiet wrongness that
+   D-022 is about.
+
+**On the signature**: it is computed over the body actually sent, so it always
+verifies against itself. But neither Slack nor Discord checks one, so it only *means*
+something for `raw` — and the configuration warns when a secret is set on a chat
+format, because saying nothing would let the user believe a signature protects a
+delivery nobody verifies.
+
+**On the retry path**: the first attempt hands the formatter a typed struct; a retry
+hands it whatever `json.Unmarshal` produced from the persisted payload. The formatter
+normalizes both through JSON, and a test pins that a retry renders identically —
+a retry is exactly the path nobody watches.
+
+**Motive**: the README listed Slack and Discord as "not yet" while US4 promised them.
+Either the promise or the README had to change, and the promise was the reasonable
+one to keep.

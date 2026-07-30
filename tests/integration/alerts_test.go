@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -361,6 +362,142 @@ func TestAWebhookRemovedFromTheConfigDoesNotKeepRetryingForever(t *testing.T) {
 	}
 	if deliveries[0].Status != store.DeliveryFailed {
 		t.Errorf("the orphaned delivery should be closed out, got %q", deliveries[0].Status)
+	}
+}
+
+// Chat destinations -------------------------------------------------------------
+
+// TestASlackWebhookReceivesASlackShapedBody closes the gap US4 promised.
+//
+// Slack's incoming webhook does not accept an arbitrary payload, so until the
+// format existed, "integrates with Slack" meant "posts something Slack rejects or
+// renders empty". This runs the real dispatch path — envelope, formatter, HTTP —
+// and inspects what actually arrived on the wire.
+func TestASlackWebhookReceivesASlackShapedBody(t *testing.T) {
+	rec := &receiver{}
+	srv := httptest.NewServer(rec.handler())
+	defer srv.Close()
+
+	d, _, cfg := setupAlerts(t, srv.URL, "s", []string{alert.EventConfirmed})
+	cfg.Alerts.Webhooks[0].Format = config.FormatSlack
+
+	if err := d.Dispatch(context.Background(), alert.EventConfirmed, sampleVerdict()); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if rec.count() != 1 {
+		t.Fatalf("expected 1 delivery, got %d", rec.count())
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.last().body, &body); err != nil {
+		t.Fatalf("the body is not JSON: %v\n%s", err, rec.last().body)
+	}
+	text, ok := body["text"].(string)
+	if !ok || text == "" {
+		t.Fatalf("Slack needs a non-empty `text`, got %v", body)
+	}
+	if _, leaked := body["schema_version"]; leaked {
+		t.Error("the envelope leaked into the Slack body")
+	}
+	// The votes are why the alert is worth reading.
+	if !strings.Contains(text, "maldet") {
+		t.Errorf("the message does not carry the votes:\n%s", text)
+	}
+	// The headers still identify the delivery, so a receiver that does care can be
+	// idempotent.
+	if rec.last().deliveryID == "" {
+		t.Error("the delivery id header is missing")
+	}
+}
+
+func TestADiscordWebhookReceivesADiscordShapedBody(t *testing.T) {
+	rec := &receiver{}
+	srv := httptest.NewServer(rec.handler())
+	defer srv.Close()
+
+	d, _, cfg := setupAlerts(t, srv.URL, "", []string{alert.EventConfirmed})
+	cfg.Alerts.Webhooks[0].Format = config.FormatDiscord
+
+	if err := d.Dispatch(context.Background(), alert.EventConfirmed, sampleVerdict()); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.last().body, &body); err != nil {
+		t.Fatalf("the body is not JSON: %v\n%s", err, rec.last().body)
+	}
+	content, ok := body["content"].(string)
+	if !ok || content == "" {
+		t.Fatalf("Discord needs a non-empty `content`, got %v", body)
+	}
+	if len([]rune(content)) > 2000 {
+		t.Errorf("the content is over Discord's 2000-character limit: %d", len([]rune(content)))
+	}
+}
+
+func TestARetryToSlackKeepsTheSlackShape(t *testing.T) {
+	// The retry path rebuilds the envelope from the persisted payload. If the
+	// formatter only handled the typed struct, every retry to Slack would arrive
+	// degraded — and a retry is exactly the path nobody watches.
+	rec := &receiver{status: http.StatusInternalServerError}
+	srv := httptest.NewServer(rec.handler())
+	defer srv.Close()
+
+	d, _, cfg := setupAlerts(t, srv.URL, "s", []string{alert.EventConfirmed})
+	cfg.Alerts.Webhooks[0].Format = config.FormatSlack
+	ctx := context.Background()
+
+	_ = d.Dispatch(ctx, alert.EventConfirmed, sampleVerdict())
+	first := rec.last().body
+
+	rec.mu.Lock()
+	rec.status = http.StatusOK
+	rec.mu.Unlock()
+
+	d.WithClock(func() time.Time { return time.Now().Add(time.Hour) })
+	if _, err := d.RetryPending(ctx); err != nil {
+		t.Fatalf("RetryPending: %v", err)
+	}
+	if rec.count() != 2 {
+		t.Fatalf("expected a second attempt, got %d delivery/ies", rec.count())
+	}
+
+	var firstBody, retryBody map[string]any
+	_ = json.Unmarshal(first, &firstBody)
+	if err := json.Unmarshal(rec.last().body, &retryBody); err != nil {
+		t.Fatalf("the retry body is not JSON: %v\n%s", err, rec.last().body)
+	}
+	if retryBody["text"] == nil || retryBody["text"] == "" {
+		t.Fatalf("the retry lost the Slack shape: %v", retryBody)
+	}
+	if firstBody["text"] != retryBody["text"] {
+		t.Errorf("the retry rendered differently:\nfirst: %v\nretry: %v", firstBody["text"], retryBody["text"])
+	}
+}
+
+func TestAnUnknownFormatFailsTheDeliveryInsteadOfSendingTheWrongShape(t *testing.T) {
+	rec := &receiver{}
+	srv := httptest.NewServer(rec.handler())
+	defer srv.Close()
+
+	d, st, cfg := setupAlerts(t, srv.URL, "s", []string{alert.EventConfirmed})
+	cfg.Alerts.Webhooks[0].Format = "teams"
+	ctx := context.Background()
+
+	if err := d.Dispatch(ctx, alert.EventConfirmed, sampleVerdict()); err == nil {
+		t.Error("an unknown format should make the dispatch report an error")
+	}
+	if rec.count() != 0 {
+		t.Errorf("nothing should have been posted, got %d delivery/ies", rec.count())
+	}
+	// And it has to be on record: a delivery that never left must not look like a
+	// delivery that succeeded.
+	deliveries, err := st.ListDeliveries(ctx, "webhook", "test", 10)
+	if err != nil {
+		t.Fatalf("ListDeliveries: %v", err)
+	}
+	if len(deliveries) != 1 || deliveries[0].Status == store.DeliveryDelivered {
+		t.Errorf("the failed delivery was not recorded as such: %+v", deliveries)
 	}
 }
 

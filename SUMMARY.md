@@ -207,21 +207,40 @@ positives.
 
 16 tests cover this, none of them touching the network.
 
-### 4b. Slack and Discord integration
+### ~~4b. Slack and Discord integration~~ — implemented
 
 US4 says the webhooks serve to "integrate with Slack/Discord/n8n or your own systems".
-That holds for **n8n, Zapier and your own endpoints**, which accept any JSON — but
-**not** for Slack and Discord.
+That held for **n8n, Zapier and your own endpoints**, which accept any JSON — but not
+for Slack and Discord, whose *incoming webhooks* reject an arbitrary payload: Slack
+wants `{"text": …}`, Discord `{"content": …}`. Our envelope was either rejected or
+arrived as an empty message, so "integrates with Slack" was a promise the generic
+webhook could not keep.
 
-Their *incoming webhooks* do not accept an arbitrary payload: Slack expects
-`{"text": …}` or blocks, Discord expects `{"content": …}` or `embeds`. Our envelope
-(`{schema_version, event, delivery_id, instance, data}`) is either rejected or becomes
-an empty message.
+A per-webhook `format` field closes it: `raw` (the default), `slack`, `discord`. Four
+decisions the implementation encodes:
 
-Closing this would require a per-webhook `format` field (`raw`/`slack`/`discord`) with
-a formatter per destination — and the HMAC signature would still only mean something
-for `raw`, since neither of them verifies a signature. **It is in no spec and no
-task**; it is new scope. Recorded here so it is not announced as done.
+- **An empty format keeps meaning `raw`.** Every webhook configured before the field
+  existed has none, and silently changing their body shape would break deliveries that
+  work today.
+- **The message carries the votes.** A chat alert that reads "threat confirmed" and
+  nothing else forces the user into the panel to learn anything — and the votes are the
+  whole point of a consensus verdict (Principle V). Abstentions travel with it too, so
+  a cycle where half the engines failed does not read as clean.
+- **Attacker-chosen text is escaped per destination.** The file path comes from the
+  intruder. `<!channel>.php` is a legitimate filename and a perfectly good way to make
+  our own alert ping an entire Slack workspace; Discord needs `@everyone` broken and
+  its markdown escaped.
+- **An unknown format fails the delivery** instead of falling back to `raw`. A delivery
+  that "worked" in the wrong shape is exactly the quiet wrongness this project treats
+  as a defect.
+
+The HMAC signature is computed over the body that is actually sent, so it always
+matches itself — but only `raw` has a receiver that reads it, and the configuration
+warns when a secret is set on a chat format.
+
+15 unit tests plus 4 integration tests through the real dispatch path, including the
+**retry** path: a retry rebuilds the envelope from the persisted payload, and a
+formatter that only handled the typed struct would degrade every retry to Slack.
 
 Telegram is declared post-MVP in the spec itself (`spec.md:292`).
 

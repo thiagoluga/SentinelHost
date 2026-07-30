@@ -160,7 +160,7 @@
       <div class="tile"><div class="lbl">Monitored files</div><div class="val num">18.234</div><div class="delta">baseline updated today at 03:00</div></div>
       <div class="tile"><div class="lbl">In quarantine</div><div class="val num">12</div><div class="delta bad">+3 in the last 24h</div></div>
       <div class="tile"><div class="lbl">Alerts awaiting a decision</div><div class="val num">7</div><div class="delta">2 likely · 5 suspicious</div></div>
-      <div class="tile"><div class="lbl">Engines ativos</div><div class="val num">4<span style="color:var(--muted);font-size:16px">/6</span></div><div class="delta up">signatures up to date</div></div>
+      <div class="tile"><div class="lbl">Active engines</div><div class="val num">4<span style="color:var(--muted);font-size:16px">/6</span></div><div class="delta up">signatures up to date</div></div>
     </div>
 
     <div class="card viz-root">
@@ -179,6 +179,7 @@
       <div class="card">
         <h2>Latest verdicts</h2><div class="sub">Recent automatic actions</div>
         <table>
+          <thead><tr><th scope="col">File</th><th scope="col">Verdict</th><th scope="col">When</th></tr></thead>
           <tr class="row"><td class="path">…/uploads/2026/07/cache.php</td><td><span class="badge b-crit">Confirmed</span></td><td class="num" style="color:var(--muted)">03:05</td></tr>
           <tr class="row"><td class="path">…/wp-includes/class-wp-hook.php</td><td><span class="badge b-crit">Confirmed</span></td><td class="num" style="color:var(--muted)">03:05</td></tr>
           <tr class="row"><td class="path">…/themes/astra/inc/tmp_x.php</td><td><span class="badge b-serious">Likely</span></td><td class="num" style="color:var(--muted)">03:04</td></tr>
@@ -188,11 +189,12 @@
       <div class="card">
         <h2>The engines’ health</h2><div class="sub">Last run per engine</div>
         <table>
+          <thead><tr><th scope="col">Engine</th><th scope="col">State</th><th scope="col">Last run</th></tr></thead>
           <tr class="row"><td>wp-checksums</td><td><span class="badge b-good">OK</span></td><td class="num" style="color:var(--muted)">41 s</td></tr>
           <tr class="row"><td>amwscan</td><td><span class="badge b-good">OK</span></td><td class="num" style="color:var(--muted)">4 min 36 s</td></tr>
           <tr class="row"><td>php-malware-finder</td><td><span class="badge b-good">OK</span></td><td class="num" style="color:var(--muted)">2 min 02 s</td></tr>
-          <tr class="row"><td>maldet</td><td><span class="badge b-warn">Parcial</span></td><td class="num" style="color:var(--muted)">9 unreadable files</td></tr>
-          <tr class="row"><td>wordfence-cli</td><td><span class="badge b-muted">Unavailable</span></td><td class="num" style="color:var(--muted)">Python ≥ 3.8 ausente</td></tr>
+          <tr class="row"><td>maldet</td><td><span class="badge b-warn">Partial</span></td><td class="num" style="color:var(--muted)">9 unreadable files</td></tr>
+          <tr class="row"><td>wordfence-cli</td><td><span class="badge b-muted">Unavailable</span></td><td class="num" style="color:var(--muted)">Python ≥ 3.8 missing</td></tr>
         </table>
       </div>
     </div>
@@ -203,7 +205,7 @@
     <header class="page">
       <div><h1>Findings</h1><p>Files flagged by the engines, awaiting your decision or already handled</p></div>
       <div class="spacer"></div>
-      <select style="width:170px"><option>All levels</option><option>Confirmed</option><option>Likely</option><option>Suspicious</option></select>
+      <select style="width:170px" aria-label="Filter by verdict level"><option>All levels</option><option>Confirmed</option><option>Likely</option><option>Suspicious</option></select>
     </header>
     <div class="card">
       <table>
@@ -256,7 +258,7 @@
     </header>
     <div class="card">
       <table>
-        <thead><tr><th>Original file</th><th>Quarantined at</th><th>Motivo</th><th>SHA-256</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Original file</th><th>Quarantined at</th><th>Reason</th><th>SHA-256</th><th>Actions</th></tr></thead>
         <tr class="row"><td class="path">…/uploads/2026/07/cache.php</td><td class="num">23/07 03:05</td><td><span class="badge b-crit">Webshell</span></td><td class="mono">e3b0c4…b855</td>
           <td><button class="btn sm" onclick="toast('The file was restored to its original location.')">Restore</button> <button class="btn sm danger" onclick="toast('The file was deleted permanently.')">Delete</button></td></tr>
         <tr class="row"><td class="path">…/wp-includes/class-wp-hook.php</td><td class="num">23/07 03:05</td><td><span class="badge b-crit">Tampered core</span></td><td class="mono">a1f39c…07d2</td>
@@ -279,32 +281,32 @@
     <div class="eng"><div class="eico">🧬</div>
       <div><h3>wp-checksums <span class="badge b-good" style="margin-left:6px">Active</span></h3>
         <div class="meta">Integrity through the official WordPress.org checksums · native · the maximum weight in the consensus</div></div>
-      <div class="weight"><span class="hint">Peso</span><input type="number" value="1.5" step="0.1" min="0" max="2"><label class="tgl"><input type="checkbox" checked><i></i></label></div>
+      <div class="weight"><label class="hint">Weight <input type="number" value="1.5" step="0.1" min="0" max="2"></label><label class="tgl"><input type="checkbox" checked aria-label="Engine enabled"><i></i></label></div>
     </div>
     <div class="eng"><div class="eico">🔎</div>
       <div><h3>php-malware-finder <span class="badge b-good" style="margin-left:6px">Active</span></h3>
         <div class="meta">YARA rules (NBS System) · v0.9.2 · signatures from 2026-07-20 · GPL — run through the CLI</div></div>
-      <div class="weight"><span class="hint">Peso</span><input type="number" value="0.8" step="0.1" min="0" max="2"><label class="tgl"><input type="checkbox" checked><i></i></label></div>
+      <div class="weight"><label class="hint">Weight <input type="number" value="0.8" step="0.1" min="0" max="2"></label><label class="tgl"><input type="checkbox" checked aria-label="Engine enabled"><i></i></label></div>
     </div>
     <div class="eng"><div class="eico">🐘</div>
       <div><h3>AMWScan <span class="badge b-good" style="margin-left:6px">Active</span></h3>
         <div class="meta">A pure-PHP scanner · v0.15.1 · it runs on any hosting with a PHP CLI ≥ 7.1</div></div>
-      <div class="weight"><span class="hint">Peso</span><input type="number" value="0.8" step="0.1" min="0" max="2"><label class="tgl"><input type="checkbox" checked><i></i></label></div>
+      <div class="weight"><label class="hint">Weight <input type="number" value="0.8" step="0.1" min="0" max="2"></label><label class="tgl"><input type="checkbox" checked aria-label="Engine enabled"><i></i></label></div>
     </div>
     <div class="eng"><div class="eico">🛡</div>
-      <div><h3>maldet (Linux Malware Detect) <span class="badge b-warn" style="margin-left:6px">Parcial</span></h3>
+      <div><h3>maldet (Linux Malware Detect) <span class="badge b-warn" style="margin-left:6px">Partial</span></h3>
         <div class="meta">Mature hex/MD5 signatures · v1.6.5 · running without root — the inotify monitor is unavailable</div></div>
-      <div class="weight"><span class="hint">Peso</span><input type="number" value="1.0" step="0.1" min="0" max="2"><label class="tgl"><input type="checkbox" checked><i></i></label></div>
+      <div class="weight"><label class="hint">Weight <input type="number" value="1.0" step="0.1" min="0" max="2"></label><label class="tgl"><input type="checkbox" checked aria-label="Engine enabled"><i></i></label></div>
     </div>
     <div class="eng"><div class="eico">🐍</div>
       <div><h3>Wordfence CLI <span class="badge b-muted" style="margin-left:6px">Unavailable</span></h3>
         <div class="meta">It needs Python ≥ 3.8 (found 3.6) · strong on WordPress · <a href="#">how to enable it</a></div></div>
-      <div class="weight"><span class="hint">Peso</span><input type="number" value="1.0" step="0.1" min="0" max="2" disabled><label class="tgl"><input type="checkbox" disabled><i></i></label></div>
+      <div class="weight"><label class="hint">Weight <input type="number" value="1.0" step="0.1" min="0" max="2" disabled><label class="tgl"><input type="checkbox" disabled><i></i></label></div>
     </div>
     <div class="eng"><div class="eico">🦠</div>
       <div><h3>ClamAV <span class="badge b-muted" style="margin-left:6px">Unavailable</span></h3>
         <div class="meta">The clamscan binary was not found in the environment · opportunistic when present</div></div>
-      <div class="weight"><span class="hint">Peso</span><input type="number" value="0.6" step="0.1" min="0" max="2" disabled><label class="tgl"><input type="checkbox" disabled><i></i></label></div>
+      <div class="weight"><label class="hint">Weight <input type="number" value="0.6" step="0.1" min="0" max="2" disabled><label class="tgl"><input type="checkbox" disabled><i></i></label></div>
     </div>
   </section>
 
@@ -318,26 +320,26 @@
     <div class="grid-2">
       <div class="card">
         <h2>Scan cycles</h2><div class="sub">Incremental scans read only what changed since the last cycle</div>
-        <label class="f">Incremental scan (modified files)</label>
-        <select><option>Every 30 minutes</option><option selected>Every 1 hour</option><option>Every 6 hours</option></select>
-        <label class="f">Full scan (every file)</label>
-        <select><option>Daily at 03:00</option><option selected>Weekly — Sunday 03:00</option><option>Quinzenalmente</option></select>
-        <label class="f">Execution mode</label>
-        <select><option selected>Daemon (continuous monitoring + inotify when available)</option><option>Cron only (hosting that kills long processes)</option></select>
+        <label class="f" for="f-incremental-scan-modified-files">Incremental scan (modified files)</label>
+        <select id="f-incremental-scan-modified-files"><option>Every 30 minutes</option><option selected>Every 1 hour</option><option>Every 6 hours</option></select>
+        <label class="f" for="f-full-scan-every-file">Full scan (every file)</label>
+        <select id="f-full-scan-every-file"><option>Daily at 03:00</option><option selected>Weekly — Sunday 03:00</option><option>Fortnightly</option></select>
+        <label class="f" for="f-execution-mode">Execution mode</label>
+        <select id="f-execution-mode"><option selected>Daemon (continuous monitoring + inotify when available)</option><option>Cron only (hosting that kills long processes)</option></select>
         <p class="hint">In cron mode, SentinelHost produces the line ready to paste into the cPanel cron.</p>
       </div>
       <div class="card">
         <h2>Resource limits</h2><div class="sub">It keeps the account from being suspended for CPU abuse on the hosting</div>
-        <label class="f">CPU priority (nice)</label>
-        <select><option selected>Minimum (nice 19 — recommended)</option><option>Low (nice 10)</option><option>Normal</option></select>
-        <label class="f">Pause between batches of files</label>
-        <select><option>Nenhuma</option><option selected>250 ms every 100 files</option><option>1 s every 100 files</option></select>
+        <label class="f" for="f-cpu-priority-nice">CPU priority (nice)</label>
+        <select id="f-cpu-priority-nice"><option selected>Minimum (nice 19 — recommended)</option><option>Low (nice 10)</option><option>Normal</option></select>
+        <label class="f" for="f-pause-between-batches-of-files">Pause between batches of files</label>
+        <select id="f-pause-between-batches-of-files"><option>None</option><option selected>250 ms every 100 files</option><option>1 s every 100 files</option></select>
         <div class="row2">
-          <div><label class="f">Max size per file</label><input type="number" value="10"><p class="hint">MB — above that, a hash check only</p></div>
-          <div><label class="f">Max time per engine</label><input type="number" value="20"><p class="hint">minutes — after that it becomes “partial”</p></div>
+          <div><label class="f" for="f-max-size-per-file">Max size per file</label><input id="f-max-size-per-file" type="number" value="10"><p class="hint">MB — above that, a hash check only</p></div>
+          <div><label class="f" for="f-max-time-per-engine">Max time per engine</label><input id="f-max-time-per-engine" type="number" value="20"><p class="hint">minutes — after that it becomes “partial”</p></div>
         </div>
-        <label class="f">Ignored directories</label>
-        <textarea rows="3" class="mono">wp-content/cache/
+        <label class="f" for="f-ignored-directories">Ignored directories</label>
+        <textarea id="f-ignored-directories" rows="3" class="mono">wp-content/cache/
 wp-content/backups/
 .git/</textarea>
       </div>
@@ -353,12 +355,12 @@ wp-content/backups/
     </header>
 
     <div class="card">
-      <div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0">E-mail alerts</h2><label class="tgl"><input type="checkbox" checked><i></i></label></div>
+      <div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0">E-mail alerts</h2><label class="tgl"><input type="checkbox" checked aria-label="Engine enabled"><i></i></label></div>
       <div class="sub" style="margin-top:4px">Sent through the hosting’s own SMTP or through an external server</div>
       <div class="row2">
         <div>
-          <label class="f">Recipients</label>
-          <input type="text" value="owner@example.test" placeholder="comma-separated">
+          <label class="f" for="f-recipients">Recipients</label>
+          <input id="f-recipients" type="text" value="owner@example.test" placeholder="comma-separated">
           <label class="f">Send an immediate alert for</label>
           <div class="chks">
             <label><input type="checkbox" checked> Confirmed (automatic quarantine)</label>
@@ -366,30 +368,30 @@ wp-content/backups/
             <label><input type="checkbox"> Suspicious</label>
             <label><input type="checkbox" checked> Engine failure</label>
           </div>
-          <label class="f">Periodic summary (the digest)</label>
-          <select><option>Disabled</option><option selected>Daily at 08:00</option><option>Weekly — Monday 08:00</option></select>
+          <label class="f" for="f-periodic-summary-the-digest">Periodic summary (the digest)</label>
+          <select id="f-periodic-summary-the-digest"><option>Disabled</option><option selected>Daily at 08:00</option><option>Weekly — Monday 08:00</option></select>
           <p class="hint">The digest consolidates suspicious findings and statistics even with no critical incidents.</p>
         </div>
         <div>
           <label class="f">SMTP server</label>
           <div class="row3">
-            <input type="text" value="smtp.hostgator.com.br" placeholder="host">
-            <input type="number" value="587" placeholder="port">
-            <select><option selected>STARTTLS</option><option>SSL/TLS</option><option>Nenhum</option></select>
+            <input type="text" value="smtp.yourhosting.example" placeholder="host" aria-label="SMTP host">
+            <input type="number" value="587" placeholder="port" aria-label="SMTP port">
+            <select aria-label="SMTP encryption"><option selected>STARTTLS</option><option>SSL/TLS</option><option>None</option></select>
           </div>
           <div class="row2">
-            <div><label class="f">Username</label><input type="text" value="alertas@meusite.com.br"></div>
-            <div><label class="f">Password</label><input type="password" value="••••••••••"></div>
+            <div><label class="f" for="f-username">Username</label><input id="f-username" type="text" value="alerts@yoursite.example"></div>
+            <div><label class="f" for="f-password">Password</label><input id="f-password" type="password" value="••••••••••"></div>
           </div>
-          <label class="f">Remetente (From)</label>
-          <input type="email" value="SentinelHost <alertas@meusite.com.br>">
+          <label class="f" for="f-remetente-from">Sender (From)</label>
+          <input id="f-remetente-from" type="email" value="SentinelHost <alerts@yoursite.example>">
           <div style="margin-top:12px"><button class="btn sm" onclick="toast('A test e-mail was sent to owner@example.test.')">Send a test e-mail</button></div>
         </div>
       </div>
     </div>
 
     <div class="card">
-      <div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0">Webhooks</h2><label class="tgl"><input type="checkbox" checked><i></i></label></div>
+      <div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0">Webhooks</h2><label class="tgl"><input type="checkbox" checked aria-label="Engine enabled"><i></i></label></div>
       <div class="sub" style="margin-top:4px">A signed JSON POST (HMAC-SHA256) on every event — integrate with Slack, Discord, n8n or your own systems</div>
       <table>
         <thead><tr><th>URL</th><th>Events</th><th>Last send</th><th></th></tr></thead>
@@ -404,20 +406,20 @@ wp-content/backups/
       </table>
       <hr class="sep">
       <div class="row3">
-        <div><label class="f" style="margin-top:0">Nova URL</label><input type="text" placeholder="https://…"></div>
+        <div><label class="f" style="margin-top:0">New URL</label><input type="text" placeholder="https://…" aria-label="New webhook URL"></div>
         <div><label class="f" style="margin-top:0">Events</label>
-          <select multiple size="3"><option selected>verdict.confirmed</option><option>verdict.likely</option><option>verdict.suspicious</option><option>quarantine.action</option><option>scan.completed</option><option>engine.failed</option></select></div>
-        <div><label class="f" style="margin-top:0">HMAC secret</label><input type="text" placeholder="generated automatically"><div style="margin-top:8px"><button class="btn sm" onclick="toast('The webhook was added.')">Add</button></div></div>
+          <select multiple size="3" aria-label="Events this webhook subscribes to"><option selected>verdict.confirmed</option><option>verdict.likely</option><option>verdict.suspicious</option><option>quarantine.action</option><option>scan.completed</option><option>engine.failed</option></select></div>
+        <div><label class="f" style="margin-top:0">HMAC secret</label><input type="text" placeholder="generated automatically" aria-label="HMAC secret"><div style="margin-top:8px"><button class="btn sm" onclick="toast('The webhook was added.')">Add</button></div></div>
       </div>
       <p class="hint" style="margin-top:10px">Header <span class="mono">X-Sentinel-Signature</span> on every delivery. Retries with exponential backoff (5 attempts).</p>
     </div>
 
     <div class="card">
-      <div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0">Telegram</h2><label class="tgl"><input type="checkbox"><i></i></label></div>
+      <div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0">Telegram</h2><label class="tgl"><input type="checkbox" aria-label="Engine enabled"><i></i></label></div>
       <div class="sub" style="margin-top:4px">Instant alerts through a bot — optional</div>
       <div class="row2">
-        <div><label class="f" style="margin-top:0">Bot token</label><input type="text" placeholder="123456:ABC-…"></div>
-        <div><label class="f" style="margin-top:0">Chat ID</label><input type="text" placeholder="-100123456789"></div>
+        <div><label class="f" style="margin-top:0">Bot token</label><input type="text" placeholder="123456:ABC-…" aria-label="Telegram bot token"></div>
+        <div><label class="f" style="margin-top:0">Chat ID</label><input type="text" placeholder="-100123456789" aria-label="Telegram chat ID"></div>
       </div>
     </div>
   </section>
@@ -432,19 +434,19 @@ wp-content/backups/
     <div class="grid-2">
       <div class="card">
         <h2>The verdict engine</h2><div class="sub">The score thresholds of the consensus across engines</div>
-        <div class="slider-row"><span class="sl-lbl">Confirmed ≥</span><input type="range" min="50" max="100" value="90" oninput="this.nextElementSibling.textContent=(this.value/100).toFixed(2)"><b class="num">0.90</b></div>
-        <div class="slider-row"><span class="sl-lbl">Likely ≥</span><input type="range" min="30" max="90" value="60" oninput="this.nextElementSibling.textContent=(this.value/100).toFixed(2)"><b class="num">0.60</b></div>
-        <div class="slider-row"><span class="sl-lbl">Suspicious ≥</span><input type="range" min="10" max="60" value="30" oninput="this.nextElementSibling.textContent=(this.value/100).toFixed(2)"><b class="num">0.30</b></div>
-        <label class="f">Action for “Confirmed”</label>
-        <select><option selected>Automatic quarantine + alert</option><option>Alert only (observation mode)</option></select>
+        <div class="slider-row"><span class="sl-lbl">Confirmed ≥</span><input type="range" aria-label="Confirmed threshold" min="50" max="100" value="90" oninput="this.nextElementSibling.textContent=(this.value/100).toFixed(2)"><b class="num">0.90</b></div>
+        <div class="slider-row"><span class="sl-lbl">Likely ≥</span><input type="range" aria-label="Likely threshold" min="30" max="90" value="60" oninput="this.nextElementSibling.textContent=(this.value/100).toFixed(2)"><b class="num">0.60</b></div>
+        <div class="slider-row"><span class="sl-lbl">Suspicious ≥</span><input type="range" aria-label="Suspicious threshold" min="10" max="60" value="30" oninput="this.nextElementSibling.textContent=(this.value/100).toFixed(2)"><b class="num">0.30</b></div>
+        <label class="f" for="f-action-for-confirmed">Action for “Confirmed”</label>
+        <select id="f-action-for-confirmed"><option selected>Automatic quarantine + alert</option><option>Alert only (observation mode)</option></select>
         <p class="hint">For the first 7 days we recommend observation mode, to calibrate the false positives on your site.</p>
       </div>
       <div class="card">
-        <h2>Quarantine e whitelist</h2><div class="sub">Safety and reversibility</div>
-        <label class="f">Retention in the quarantine before the purge</label>
-        <select><option>7 days</option><option selected>30 days</option><option>90 days</option><option>Never purge automatically</option></select>
-        <label class="f">Whitelist (never quarantine)</label>
-        <textarea rows="4" class="mono">wp-content/plugins/meu-plugin-proprio/
+        <h2>Quarantine and whitelist</h2><div class="sub">Safety and reversibility</div>
+        <label class="f" for="f-retention-in-the-quarantine-before-the-p">Retention in the quarantine before the purge</label>
+        <select id="f-retention-in-the-quarantine-before-the-p"><option>7 days</option><option selected>30 days</option><option>90 days</option><option>Never purge automatically</option></select>
+        <label class="f" for="f-whitelist-never-quarantine">Whitelist (never quarantine)</label>
+        <textarea id="f-whitelist-never-quarantine" rows="4" class="mono">wp-content/plugins/my-own-plugin/
 wp-config.php</textarea>
         <p class="hint">Files identical to the official WordPress.org checksums are never quarantined, regardless of the votes.</p>
         <hr class="sep">

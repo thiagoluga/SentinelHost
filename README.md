@@ -68,9 +68,16 @@ implemented.
 |---|---|
 | **E-mail (SMTP)** | Ready. An immediate alert per level plus a periodic summary, with a test send that shows the server's real error. |
 | **Generic webhook** | Ready. A signed JSON `POST` with HMAC-SHA256, 5 attempts with backoff, a delivery history. |
-| **n8n, Zapier, your own endpoint** | These work with the generic webhook. |
-| **Slack, Discord** | **Not yet.** Their *incoming webhooks* do not accept arbitrary JSON — Slack expects `{"text": …}`, Discord `{"content": …}`. A per-destination formatter is missing. Today an intermediary (n8n, Zapier) is needed. |
+| **n8n, Zapier, your own endpoint** | Ready, with the generic webhook (`format = "raw"`). |
+| **Slack** | Ready. Set `format = "slack"` on the webhook and the body is shaped for a Slack incoming webhook, with the votes in the message. |
+| **Discord** | Ready. `format = "discord"`, capped at Discord's 2000-character limit. |
 | **Telegram** | Post-MVP, declared in the spec. |
+
+Slack and Discord do not verify signatures, so the HMAC only means something for
+`format = "raw"` — the configuration warns if you set a secret on the others. File
+paths reaching a chat message are escaped: a file named `<!channel>.php` is a
+legitimate filename and would otherwise make your own alert ping the whole
+workspace.
 
 The webhooks' complete contract is in
 [`contracts/webhooks.md`](specs/001-orquestrador-mvp/contracts/webhooks.md).

@@ -299,9 +299,20 @@ func (c *Config) validateAlerts(r *ValidationResult) {
 				"http without TLS: the payload carrying your file paths travels in clear text")
 		}
 
-		if w.Enabled && w.Secret == "" {
+		if !validWebhookFormat(w.FormatOrDefault()) {
+			r.fatal(field+".format", "unknown format %q (use raw, slack or discord)", w.Format)
+		}
+
+		switch {
+		case w.Enabled && w.Secret == "" && w.FormatOrDefault() == FormatRaw:
 			r.warn(field+".secret",
 				"without a secret the destination cannot verify the delivery came from here")
+		case w.Enabled && w.Secret != "" && w.FormatOrDefault() != FormatRaw:
+			// Saying nothing here would let the user believe the signature protects
+			// a delivery that nobody checks.
+			r.warn(field+".secret",
+				"format %q does not verify signatures: the delivery is still signed, but only the raw format has a receiver that reads it",
+				w.FormatOrDefault())
 		}
 		if w.Enabled && len(w.Events) == 0 {
 			r.warn(field+".events", "no events subscribed: there will never be a delivery")
@@ -323,6 +334,15 @@ var KnownEvents = []string{
 	"quarantine.action",
 	"scan.completed",
 	"engine.failed",
+}
+
+func validWebhookFormat(f string) bool {
+	for _, k := range KnownWebhookFormats {
+		if k == f {
+			return true
+		}
+	}
+	return false
 }
 
 func validEvent(e string) bool {

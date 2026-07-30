@@ -174,6 +174,42 @@ type Webhook struct {
 	Secret string `toml:"secret"`
 	// Events subscribed to. No subscription, no delivery.
 	Events []string `toml:"events"`
+	// Format shapes the body for the destination: "raw" (the project's own
+	// envelope, the default), "slack" or "discord".
+	//
+	// It exists because Slack's and Discord's incoming webhooks do not accept an
+	// arbitrary payload: Slack wants {"text": ...} or blocks, Discord wants
+	// {"content": ...} or embeds. Posting our envelope to either one is rejected
+	// or arrives as an empty message — so "integrates with Slack" was a promise
+	// the generic webhook could not keep (US4).
+	Format string `toml:"format"`
+}
+
+// WebhookFormat values.
+const (
+	// FormatRaw sends the project's envelope. It is the only format whose HMAC
+	// signature means anything, because it is the only one a receiver of ours
+	// reads.
+	FormatRaw = "raw"
+	// FormatSlack shapes the body for a Slack incoming webhook.
+	FormatSlack = "slack"
+	// FormatDiscord shapes the body for a Discord webhook.
+	FormatDiscord = "discord"
+)
+
+// KnownWebhookFormats are the destinations a webhook body can be shaped for.
+var KnownWebhookFormats = []string{FormatRaw, FormatSlack, FormatDiscord}
+
+// FormatOrDefault resolves an empty format to "raw".
+//
+// Empty has to keep meaning "raw": every webhook configured before the field
+// existed has no format, and silently changing their body shape would break
+// deliveries that work today.
+func (w Webhook) FormatOrDefault() string {
+	if w.Format == "" {
+		return FormatRaw
+	}
+	return w.Format
 }
 
 // Web is the embedded panel.

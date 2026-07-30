@@ -9,7 +9,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -104,9 +103,12 @@ func Verify(secret string, timestamp int64, body []byte, signature string) bool 
 func (c *Client) Deliver(ctx context.Context, w config.Webhook, env Envelope) (Result, []byte, error) {
 	start := time.Now()
 
-	body, err := json.Marshal(env)
+	// The body's shape depends on the destination: Slack and Discord reject our
+	// envelope. Body() decides, and what it returns is both what gets POSTed and
+	// what gets signed.
+	body, err := Body(w.FormatOrDefault(), env)
 	if err != nil {
-		return Result{Err: err}, nil, fmt.Errorf("serializing the payload: %w", err)
+		return Result{Err: err}, nil, fmt.Errorf("shaping the payload: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.URL, bytes.NewReader(body))

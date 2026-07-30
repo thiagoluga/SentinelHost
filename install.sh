@@ -43,10 +43,35 @@ die()   { err "$1"; exit 1; }
 
 download() {
   # $1 = url, $2 = destination
+  #
+  # `-L` follows redirects, and a redirect can walk an https download down to
+  # plain http. That matters more here than almost anywhere else in the project:
+  # this is the step that fetches a binary the user is about to run. The checksum
+  # still catches a tampered file, but a downgrade to http hands an attacker the
+  # chance to swap the binary and SHA256SUMS together.
+  #
+  # So an https URL stays https through every redirect, and it FAILS rather than
+  # falling back — a fallback would make the protection decorative. An http URL is
+  # only reachable by someone who set SENTINELHOST_BASE_URL themselves (that is
+  # how the validation container serves a local release), and that is their call
+  # to make, not a silent downgrade of ours.
+  case "$1" in
+    https://*) https_only=1 ;;
+    *)         https_only=0 ;;
+  esac
+
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$1" -o "$2"
+    if [ "$https_only" = "1" ]; then
+      curl --proto '=https' --proto-redir '=https' -fsSL "$1" -o "$2"
+    else
+      curl -fsSL "$1" -o "$2"
+    fi
   elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$2" "$1"
+    if [ "$https_only" = "1" ]; then
+      wget -q --https-only -O "$2" "$1"
+    else
+      wget -qO "$2" "$1"
+    fi
   else
     die "I need curl or wget to download the binary"
   fi

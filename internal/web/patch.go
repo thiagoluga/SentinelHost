@@ -68,6 +68,7 @@ type webhookPatch struct {
 	URL     string   `json:"url"`
 	Secret  string   `json:"secret"`
 	Events  []string `json:"events"`
+	Format  string   `json:"format"`
 }
 
 // apply applies the patch to a copy of the configuration.
@@ -140,7 +141,7 @@ func (p configPatch) apply(c *config.Config) {
 			}
 			updated = append(updated, config.Webhook{
 				ID: wp.ID, Enabled: wp.Enabled, URL: wp.URL,
-				Secret: secret, Events: wp.Events,
+				Secret: secret, Events: wp.Events, Format: wp.Format,
 			})
 		}
 		c.Alerts.Webhooks = updated

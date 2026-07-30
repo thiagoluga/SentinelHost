@@ -87,7 +87,7 @@ A green suite on Windows is not evidence about anything permission-related.
   normalized schema. Fixtures come from real runs, versioned.
 - **Consensus corpus**: samples in `tests/testdata/corpus/`. **Synthetic, inert
   webshells only** — never live or executable malware. Each sample is documented
-  in `AMOSTRAS.md` with what it simulates and why it is harmless.
+  in `SAMPLES.md` with what it simulates and why it is harmless.
 - **Quarantine round-trip**: quarantine → restore → compare hash. Byte-for-byte
   identical, or it fails.
 

@@ -551,7 +551,16 @@ function hookCard(h, i) {
   line.appendChild(field('ID', 'h-id', h.id));
   line.appendChild(field('URL', 'h-url', h.url));
   line.appendChild(field('Secret (HMAC)', 'h-secret', h.secret, 'password'));
+  line.appendChild(formatField(h.format || 'raw'));
   card.appendChild(line);
+
+  // Slack and Discord reject an arbitrary payload, so the format is not cosmetic:
+  // it is what makes the delivery arrive at all. Neither verifies a signature,
+  // which is why the secret only means something for `raw`.
+  card.appendChild(el('p', { class: 'muted small' },
+    h.format === 'slack' || h.format === 'discord'
+      ? 'Slack and Discord do not verify signatures: the delivery is still signed, but only the raw format has a receiver that reads it.'
+      : 'The raw format sends this project’s envelope, signed with HMAC-SHA256.'));
 
   const evs = el('fieldset', { class: 'levels' });
   evs.appendChild(el('legend', {}, 'Signed events'));
@@ -595,9 +604,26 @@ function field(label, cls, value, type = 'text') {
   return l;
 }
 
+/** The body shape for the destination. Slack and Discord reject our envelope. */
+function formatField(value) {
+  const l = el('label', {}, 'Body format');
+  const s = el('select', { class: 'h-format' });
+  [
+    ['raw', 'raw (this project’s signed envelope)'],
+    ['slack', 'Slack incoming webhook'],
+    ['discord', 'Discord webhook'],
+  ].forEach(([v, text]) => {
+    const o = el('option', { value: v }, text);
+    if (v === value) o.selected = true;
+    s.appendChild(o);
+  });
+  l.appendChild(s);
+  return l;
+}
+
 $('#btn-add-hook').addEventListener('click', () => {
   $('#hooks-list').appendChild(hookCard(
-    { id: '', url: '', secret: '', events: ['verdict.confirmed'], enabled: true },
+    { id: '', url: '', secret: '', events: ['verdict.confirmed'], enabled: true, format: 'raw' },
     $$('.hook').length));
 });
 
@@ -652,6 +678,7 @@ $('#btn-save-hooks').addEventListener('click', () => {
     secret: $('.h-secret', card).value,
     enabled: $('.h-enabled', card).checked,
     events: $$('.h-ev', card).filter((cb) => cb.checked).map((cb) => cb.value),
+    format: $('.h-format', card).value,
   }));
   save({ webhooks: hooks }, 'The webhooks were saved.');
 });
