@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sentinelhost.dev/schemas/1.0/scan-report.schema.json",
   "title": "ScanReport",
-  "description": "Resultado de UMA execucao de UM engine num ciclo.",
+  "description": "The result of ONE execution of ONE engine in a cycle.",
   "type": "object",
   "required": ["schema_version", "scan_id", "engine", "status"],
   "properties": {
@@ -15,7 +15,7 @@
     "finished_at": { "type": "string", "format": "date-time" },
     "scope": {
       "type": "object",
-      "description": "Quem decide a lista de arquivos e o ORQUESTRADOR; o adaptador nunca escolhe escopo.",
+      "description": "The ORCHESTRATOR decides the file list; the adapter never chooses the scope.",
       "properties": {
         "root": { "type": "string" },
         "mode": { "type": "string", "enum": ["incremental", "full", "targeted"] },
@@ -31,11 +31,11 @@
     "status": {
       "type": "string",
       "enum": ["completed", "partial", "failed", "timeout", "killed"],
-      "description": "Somente 'completed' pode contar como voto no consenso. Qualquer outro status e abstencao — nunca 'engine nao achou nada'."
+      "description": "Only 'completed' may count as a vote in the consensus. Any other status is an abstention — never 'the engine found nothing'."
     },
     "error": {
       "type": ["string", "null"],
-      "description": "Obrigatorio quando status != completed. Um status de falha sem motivo transforma um problema diagnosticavel em misterio."
+      "description": "Mandatory when status != completed. A failure status with no reason turns a diagnosable problem into a mystery."
     },
     "resource_usage": {
       "type": "object",
@@ -51,11 +51,11 @@
     "clean_files": {
       "type": "array",
       "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-      "description": "Hashes que este engine afirma POSITIVAMENTE serem legitimos. So o wp-checksums preenche. Base da protecao anti-falso-positivo."
+      "description": "Hashes this engine POSITIVELY asserts are legitimate. Only wp-checksums fills this in. The basis of the anti-false-positive protection."
     },
     "raw_ref": {
       "type": "string",
-      "description": "Ponteiro para a saida bruta arquivada, para auditoria e reprocessamento por Parse()."
+      "description": "A pointer to the archived raw output, for auditing and for reprocessing through Parse()."
     }
   },
   "allOf": [

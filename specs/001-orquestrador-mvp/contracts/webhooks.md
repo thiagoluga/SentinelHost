@@ -1,13 +1,13 @@
-# Contrato de webhooks
+# Webhooks contract
 
-Todo evento é entregue como **um** `POST` JSON ao endpoint cadastrado.
-O SentinelHost nunca envia arquivos, apenas metadados e hashes (Princípio de
-privacidade da constituição).
+Every event is delivered as **one** JSON `POST` to the registered endpoint.
+SentinelHost never sends files, only metadata and hashes (the constitution's privacy
+principle).
 
-## Entrega
+## Delivery
 
 ```http
-POST /seu-endpoint HTTP/1.1
+POST /your-endpoint HTTP/1.1
 Content-Type: application/json
 User-Agent: SentinelHost/0.1.0
 X-Sentinel-Event: verdict.confirmed
@@ -16,39 +16,39 @@ X-Sentinel-Timestamp: 1785815082
 X-Sentinel-Signature: sha256=9f8a7b6c...
 ```
 
-### Assinatura
+### The signature
 
-`X-Sentinel-Signature` é `sha256=` + HMAC-SHA256 hexadecimal, calculado sobre
-`<timestamp> + "." + <corpo bruto>`, com o segredo do webhook como chave.
+`X-Sentinel-Signature` is `sha256=` + a hexadecimal HMAC-SHA256, computed over
+`<timestamp> + "." + <raw body>`, with the webhook's secret as the key.
 
-O timestamp entra na assinatura para que uma entrega capturada não possa ser
-reenviada indefinidamente. **Rejeite entregas com timestamp com mais de 5
-minutos** e **compare a assinatura em tempo constante**.
+The timestamp enters the signature so a captured delivery cannot be replayed
+indefinitely. **Reject deliveries whose timestamp is more than 5 minutes old** and
+**compare the signature in constant time**.
 
-Verificação (PHP):
+Verification (PHP):
 
 ```php
-$payload = file_get_contents('php://input');
-$ts      = $_SERVER['HTTP_X_SENTINEL_TIMESTAMP'];
-$esperado = 'sha256=' . hash_hmac('sha256', $ts . '.' . $payload, $segredo);
-if (!hash_equals($esperado, $_SERVER['HTTP_X_SENTINEL_SIGNATURE'])) {
+$payload  = file_get_contents('php://input');
+$ts       = $_SERVER['HTTP_X_SENTINEL_TIMESTAMP'];
+$expected = 'sha256=' . hash_hmac('sha256', $ts . '.' . $payload, $secret);
+if (!hash_equals($expected, $_SERVER['HTTP_X_SENTINEL_SIGNATURE'])) {
     http_response_code(401);
     exit;
 }
 ```
 
-### Retentativas
+### Retries
 
-Qualquer resposta fora de `2xx`, timeout (10 s) ou erro de conexão dispara
-retentativa com backoff exponencial: **5 tentativas** em 1 s, 4 s, 16 s, 64 s,
-256 s (com jitter). `X-Sentinel-Delivery` é **estável entre as tentativas** —
-use-o para idempotência do seu lado.
+Any response outside `2xx`, a timeout (10 s) or a connection error triggers a retry
+with exponential backoff: **5 attempts** at 1 s, 4 s, 16 s, 64 s, 256 s (with jitter).
+`X-Sentinel-Delivery` is **stable across the attempts** — use it for idempotency on your
+side.
 
-Depois da quinta falha a entrega é marcada como `failed` e fica no histórico do
-painel com o código de erro real. Uma entrega que falha **nunca** bloqueia o
-ciclo de scan nem a quarentena.
+After the fifth failure the delivery is marked as `failed` and stays in the panel's
+history with the real error code. A delivery that fails **never** blocks the scan cycle
+nor the quarantine.
 
-## Envelope
+## The envelope
 
 ```json
 {
@@ -56,25 +56,25 @@ ciclo de scan nem a quarentena.
   "event": "verdict.confirmed",
   "delivery_id": "d_20260723_000441",
   "occurred_at": "2026-07-23T03:05:02-03:00",
-  "instance": { "id": "i_a1b2c3", "hostname": "srv12.hospedagem.com", "root": "/home/user/public_html" },
+  "instance": { "id": "i_a1b2c3", "hostname": "srv12.hosting.com", "root": "/home/user/public_html" },
   "data": { }
 }
 ```
 
-`data` carrega o objeto normalizado correspondente ao evento.
+`data` carries the normalized object matching the event.
 
-## Eventos
+## Events
 
-| Evento | Quando | `data` |
+| Event | When | `data` |
 |---|---|---|
-| `verdict.confirmed` | Veredito atinge `confirmed` | `Verdict` |
-| `verdict.likely` | Veredito atinge `likely` | `Verdict` |
-| `verdict.suspicious` | Veredito atinge `suspicious` | `Verdict` |
-| `quarantine.action` | Arquivo quarentenado, restaurado ou purgado | `QuarantineEvent` |
-| `scan.completed` | Ciclo termina (mesmo sem achados) | `ScanSummary` |
-| `engine.failed` | Engine falha, estoura timeout ou é morto | `ScanReport` |
+| `verdict.confirmed` | A verdict reaches `confirmed` | `Verdict` |
+| `verdict.likely` | A verdict reaches `likely` | `Verdict` |
+| `verdict.suspicious` | A verdict reaches `suspicious` | `Verdict` |
+| `quarantine.action` | A file was quarantined, restored or purged | `QuarantineEvent` |
+| `scan.completed` | A cycle finishes (even with no findings) | `ScanSummary` |
+| `engine.failed` | An engine fails, hits its timeout or is killed | `ScanReport` |
 
-Cada webhook declara a quais eventos assina. Sem inscrição, sem entrega.
+Each webhook declares which events it subscribes to. No subscription, no delivery.
 
 ### `quarantine.action`
 
@@ -91,9 +91,9 @@ Cada webhook declara a quais eventos assina. Sem inscrição, sem entrega.
 }
 ```
 
-`action` ∈ `quarantined`, `restored`, `purged`, `failed`. `reversible` é
-sempre `true` enquanto o item existe no cofre — a purga definitiva só acontece
-por ação manual ou após a retenção configurada.
+`action` ∈ `quarantined`, `restored`, `purged`, `failed`. `reversible` is always `true`
+while the item exists in the vault — a permanent purge only happens by manual action or
+after the configured retention.
 
 ### `scan.completed`
 
@@ -106,24 +106,24 @@ por ação manual ou após a retenção configurada.
   "files_considered": 18234,
   "files_scanned": 412,
   "engines_ran": ["wp-checksums", "amwscan", "php-malware-finder"],
-  "engines_abstained": [{ "engine": "maldet", "reason": "binario nao encontrado no PATH" }],
+  "engines_abstained": [{ "engine": "maldet", "reason": "the binary was not found on PATH" }],
   "verdicts": { "confirmed": 1, "likely": 0, "suspicious": 3, "clean": 408 },
   "actions": { "quarantined": 1, "recommended": 0, "failed": 0 }
 }
 ```
 
-`engines_abstained` sempre acompanha o resumo: um ciclo em que metade dos
-engines falhou não pode parecer um ciclo limpo (Princípio VI).
+`engines_abstained` always travels with the summary: a cycle in which half the engines
+failed must not look like a clean cycle (Principle VI).
 
 ### `engine.failed`
 
-`data` é o `ScanReport` completo, com `status` (`failed`/`timeout`/`killed`) e
-`error` preenchidos. Existe porque a degradação silenciosa de cobertura é o
-modo de falha mais perigoso de um orquestrador.
+`data` is the complete `ScanReport`, with `status` (`failed`/`timeout`/`killed`) and
+`error` filled in. It exists because silent coverage degradation is an orchestrator's
+most dangerous failure mode.
 
-## Teste de entrega
+## Test delivery
 
-O painel e a CLI (`sentinelhost alert test --webhook <id>`) disparam um evento
-`verdict.confirmed` com `data` de exemplo e `delivery_id` prefixado por
-`d_test_`. O resultado real (status HTTP, corpo, erro de conexão) é exibido na
-hora — sem "enviado com sucesso" otimista.
+The panel and the CLI (`sentinelhost alert --test-webhook <id>`) fire a
+`verdict.confirmed` event with sample `data` and a `delivery_id` prefixed with
+`d_test_`. The real result (the HTTP status, the body, a connection error) is shown
+right away — with no optimistic "sent successfully".

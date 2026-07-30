@@ -1,150 +1,149 @@
 # Quickstart
 
-Do zero ao primeiro scan numa conta de hospedagem compartilhada, sem root.
+From zero to the first scan on a shared hosting account, without root.
 
-## Requisitos
+## Requirements
 
-- Uma conta Linux (cPanel ou similar) com acesso a **cron** — SSH ajuda, mas
-  não é obrigatório.
-- Nada mais. O SentinelHost é um binário estático único; ele não precisa de
-  glibc compatível, systemd, root nem runtime instalado.
+- A Linux account (cPanel or similar) with access to **cron** — SSH helps, but is not
+  mandatory.
+- Nothing else. SentinelHost is a single static binary; it needs no compatible glibc,
+  no systemd, no root and no installed runtime.
 
-Os *engines* que ele orquestra têm requisitos próprios (PHP CLI para o AMWScan,
-binário `yara` para o php-malware-finder). Nenhum deles é obrigatório: o
-`wp-checksums` é nativo e funciona só com rede, e cada engine ausente é
-reportado com o motivo em vez de sumir em silêncio.
+The *engines* it orchestrates have requirements of their own (a PHP CLI for AMWScan,
+the `yara` binary for php-malware-finder). None of them is mandatory: `wp-checksums` is
+native and works with the network alone, and every missing engine is reported with the
+reason instead of vanishing silently.
 
-## 1. Instalar
+## 1. Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/thiagoluga/SentinelHost/main/install.sh | sh
 ```
 
-O instalador detecta a arquitetura, baixa o binário, **confere o SHA-256
-publicado** e verifica que ele executa antes de declarar sucesso. Se o checksum
-não confere, ele não instala — e se o `SHA256SUMS` não estiver disponível, ele
-para: instalar um binário não conferido não é opção numa ferramenta de
-segurança.
+The installer detects the architecture, downloads the binary, **checks the published
+SHA-256** and verifies that it runs before declaring success. If the checksum does not
+match, it does not install — and if `SHA256SUMS` is not available, it stops: installing
+an unchecked binary is not an option in a security tool.
 
-Ele não precisa de root nem de gerenciador de pacotes, e roda em `sh` (dash ou
-busybox servem — não exige bash).
+It needs no root and no package manager, and it runs on `sh` (dash or busybox will do —
+it does not require bash).
 
-Para instalar em outro lugar:
+To install somewhere else:
 
 ```bash
 curl -fsSL .../install.sh | SENTINELHOST_PREFIX=~/.local/bin sh
 ```
 
-### Preferindo fazer à mão
+### If you would rather do it by hand
 
 ```bash
 mkdir -p ~/bin && cd ~/bin
 BASE=https://github.com/thiagoluga/SentinelHost/releases/latest/download
-curl -fsSLO "$BASE/sentinelhost-linux-amd64"    # ou -arm64
+curl -fsSLO "$BASE/sentinelhost-linux-amd64"    # or -arm64
 curl -fsSLO "$BASE/SHA256SUMS"
-sha256sum -c SHA256SUMS --ignore-missing        # confira ANTES de executar
+sha256sum -c SHA256SUMS --ignore-missing        # check BEFORE running it
 mv sentinelhost-linux-amd64 sentinelhost && chmod +x sentinelhost
 ```
 
-Se `~/bin` não estiver no `PATH`:
+If `~/bin` is not on your `PATH`:
 
 ```bash
 echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 ```
 
-## 2. Configurar
+## 2. Configure
 
 ```bash
 sentinelhost config init --root ~/public_html
 ```
 
-Isso cria `~/.sentinelhost/config.toml` com padrões deliberadamente
-conservadores:
+That creates `~/.sentinelhost/config.toml` with deliberately conservative defaults:
 
-| Padrão | Por quê |
+| Default | Why |
 |---|---|
-| Modo observação **ligado** | A ferramenta relata, mas não move nada. |
-| Período de graça de **7 dias** | Tempo para você calibrar pesos e whitelist antes de qualquer ação automática. |
-| `nice 19`, pausa entre lotes, timeout por engine | Para o scanner nunca causar a suspensão da sua conta por abuso de recursos. |
-| Purga automática **desligada** | Apagar arquivo seu é sempre decisão sua. |
-| Painel em `127.0.0.1` | Acesso por túnel SSH, não exposto à internet. |
+| Observation mode **on** | The tool reports, but moves nothing. |
+| A **7-day** grace period | Time for you to calibrate weights and the whitelist before any automatic action. |
+| `nice 19`, a pause between batches, a per-engine timeout | So the scanner never gets your account suspended for resource abuse. |
+| Automatic purge **off** | Deleting a file of yours is always your decision. |
+| The panel on `127.0.0.1` | Access through an SSH tunnel, not exposed to the internet. |
 
-## 3. Ver o que está disponível
+## 3. See what is available
 
 ```bash
 sentinelhost doctor
 ```
 
-Mostra o ambiente, as raízes, o diretório de dados e — o mais útil — **por que**
-cada engine está ou não disponível. "Indisponível" sem motivo transformaria um
-problema resolvível (instalar o PHP CLI) em mistério.
+It shows the environment, the roots, the data directory and — most usefully — **why**
+each engine is or is not available. "Unavailable" with no reason would turn a solvable
+problem (install the PHP CLI) into a mystery.
 
-Para instalar os engines que rodam no seu espaço de usuário:
+To install the engines that run in your user space:
 
 ```bash
 sentinelhost engines --install amwscan
-sentinelhost engines --install php-malware-finder   # exige o binário `yara`
+sentinelhost engines --install php-malware-finder   # requires the `yara` binary
 ```
 
-## 4. Primeiro scan
+## 4. The first scan
 
 ```bash
 sentinelhost scan
 ```
 
-O relatório mostra, nesta ordem: quais engines rodaram (e quais se abstiveram),
-os vereditos com **os votos que os produziram**, e o resumo por nível.
+The report shows, in this order: which engines ran (and which abstained), the verdicts
+with **the votes that produced them**, and the summary per level.
 
-Códigos de saída — use no cron para distinguir "achou malware" de "quebrou":
+Exit codes — use them in the cron to tell "found malware" from "broke":
 
-| Código | Significa |
+| Code | Means |
 |---|---|
-| `0` | Nada a relatar |
-| `1` | O ciclo encontrou achados. **Não é erro.** |
-| `2` | Erro de execução |
-| `3` | Outra instância já está rodando |
+| `0` | Nothing to report |
+| `1` | The cycle found findings. **Not an error.** |
+| `2` | An execution error |
+| `3` | Another instance is already running |
 
-## 5. Deixar rodando
+## 5. Leave it running
 
-### Sem SSH (cron do cPanel)
+### Without SSH (the cPanel cron)
 
 ```bash
 sentinelhost cron-line
 ```
 
-Copie as linhas geradas para o gerenciador de cron. O lock de instância única
-impede que dois ciclos se atropelem: o segundo sai com código 3 sem fazer nada.
+Copy the generated lines into the cron manager. The single-instance lock keeps two
+cycles from running over each other: the second exits with code 3 without doing
+anything.
 
-### Com SSH
+### With SSH
 
 ```bash
 sentinelhost daemon
 ```
 
-O daemon é conforto, não requisito — tudo que ele faz também funciona só com o
-cron.
+The daemon is a comfort, not a requirement — everything it does also works with the
+cron alone.
 
-## 6. Painel
+## 6. The panel
 
 ```bash
 sentinelhost serve
 ```
 
-O painel escuta em `127.0.0.1:8787`. Para acessar da sua máquina, **não exponha
-a porta** — abra um túnel:
+The panel listens on `127.0.0.1:8787`. To reach it from your machine, **do not expose
+the port** — open a tunnel:
 
 ```bash
-ssh -L 8787:127.0.0.1:8787 usuario@servidor
+ssh -L 8787:127.0.0.1:8787 user@server
 ```
 
-Depois abra `http://127.0.0.1:8787`. No primeiro acesso o painel pede que você
-defina a senha — ela é a única coisa entre a internet e um botão que move
-arquivos do seu site.
+Then open `http://127.0.0.1:8787`. On first access the panel asks you to set the
+password — it is the only thing between the internet and a button that moves your
+site's files.
 
-## 7. Ligar a ação automática
+## 7. Turning the automatic action on
 
-Depois de alguns dias vendo o que a ferramenta acha, e tendo colocado na
-whitelist o que for falso positivo:
+After a few days watching what the tool finds, and having whitelisted whatever turned
+out to be a false positive:
 
 ```toml
 # ~/.sentinelhost/config.toml
@@ -152,52 +151,50 @@ whitelist o que for falso positivo:
 observation_mode = false
 ```
 
-A partir daí, e depois de o período de graça expirar, vereditos `confirmed`
-passam a ser quarentenados automaticamente. Níveis abaixo disso continuam
-sempre aguardando sua decisão.
+From then on, and once the grace period has expired, `confirmed` verdicts start being
+quarantined automatically. Levels below that always keep waiting for your decision.
 
-## Restaurar algo
+## Restoring something
 
-Nada é apagado. Todo item do cofre volta byte a byte:
+Nothing is deleted. Every item in the vault comes back byte for byte:
 
 ```bash
 sentinelhost quarantine list
 sentinelhost quarantine restore q_20260723150405_a1b2c3d4
 ```
 
-Para conferir que o cofre inteiro ainda está íntegro — antes da hora em que
-você precisar dele:
+To check that the whole vault is still intact — before the moment you need it:
 
 ```bash
 sentinelhost quarantine verify
 ```
 
-## Alertas
+## Alerts
 
 ```bash
 sentinelhost alert --test-email
-sentinelhost alert --test-webhook meu-hook
+sentinelhost alert --test-webhook my-hook
 ```
 
-O resultado mostrado é o **erro real** do servidor. Descobrir que a sua
-hospedagem bloqueia a porta 587 é o propósito inteiro desses comandos.
+The result shown is the server's **real error**. Finding out that your hosting blocks
+port 587 is the entire purpose of these commands.
 
-## Onde ficam as coisas
+## Where things live
 
 ```text
 ~/.sentinelhost/
-├── config.toml        configuração (fonte da verdade, compartilhada com o painel)
-├── sentinelhost.db    vereditos, quarentena, entregas, log estruturado
-├── baseline.json      hashes para os ciclos incrementais
-├── quarantine/        o cofre — arquivos neutralizados, todos restauráveis
-├── raw/               saída bruta dos engines, para auditoria
-└── engines/           engines instalados no seu espaço de usuário
+├── config.toml        the configuration (the source of truth, shared with the panel)
+├── sentinelhost.db    verdicts, quarantine, deliveries, the structured log
+├── baseline.json      hashes for the incremental cycles
+├── quarantine/        the vault — neutralized files, all of them restorable
+├── raw/               the engines' raw output, for auditing
+└── engines/           engines installed in your user space
 ```
 
-## Desinstalar
+## Uninstalling
 
 ```bash
-sentinelhost quarantine list        # restaure o que quiser antes
+sentinelhost quarantine list        # restore whatever you want first
 rm ~/bin/sentinelhost
-rm -rf ~/.sentinelhost              # apaga o cofre junto; confira antes
+rm -rf ~/.sentinelhost              # this deletes the vault too; check first
 ```

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sentinelhost.dev/schemas/1.0/verdict.schema.json",
   "title": "Verdict",
-  "description": "Decisao consolidada sobre UM arquivo. Produzido pelo motor de veredito, nunca por adaptadores.",
+  "description": "The consolidated decision about ONE file. Produced by the verdict engine, never by adapters.",
   "type": "object",
   "required": ["schema_version", "verdict_id", "file_sha256", "level", "score", "votes"],
   "properties": {
@@ -14,12 +14,12 @@
     "level": {
       "type": "string",
       "enum": ["confirmed", "likely", "suspicious", "clean"],
-      "description": "confirmed: score >= 0.9, quarentena automatica + alerta. likely: 0.6-0.9, aguarda decisao. suspicious: 0.3-0.6, so relatorio. clean: < 0.3 ou whitelist."
+      "description": "confirmed: score >= 0.9, automatic quarantine + alert. likely: 0.6-0.9, waits for a decision. suspicious: 0.3-0.6, report only. clean: < 0.3 or whitelisted."
     },
     "score": { "type": "number", "minimum": 0, "maximum": 1 },
     "votes": {
       "type": "array",
-      "description": "O que torna o consenso auditavel. O usuario sempre consegue responder 'por que este arquivo foi quarentenado?'.",
+      "description": "What makes the consensus auditable. The user can always answer 'why was this file quarantined?'.",
       "items": {
         "type": "object",
         "required": ["engine", "weight", "effective_weight"],
@@ -31,7 +31,7 @@
           "effective_weight": {
             "type": "number",
             "minimum": 0,
-            "description": "weight x multiplicador da confianca. E o numero que realmente entrou na soma."
+            "description": "weight x the confidence multiplier. It is the number that actually entered the sum."
           },
           "rule": { "type": "string" },
           "category": { "type": "string" }
@@ -41,12 +41,12 @@
     "abstentions": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Engines que nao puderam opinar. Registradas para transparencia; NAO entram no calculo do score."
+      "description": "Engines that could not weigh in. Recorded for transparency; they do NOT enter the score's calculation."
     },
     "clean_reason": {
       "type": "string",
       "enum": ["official_checksum_match"],
-      "description": "Explica um level=clean que contraria os votos. Arquivo identico ao checksum oficial do WordPress nunca e quarentenado, independente de votos."
+      "description": "Explains a level=clean that contradicts the votes. A file identical to the official WordPress checksum is never quarantined, regardless of votes."
     },
     "action_taken": {
       "type": "string",
@@ -71,7 +71,7 @@
       },
       "then": {
         "required": ["quarantine_ref"],
-        "description": "Sem quarantine_ref o arquivo nao e restauravel — violaria o Principio I."
+        "description": "Without quarantine_ref the file is not restorable — it would violate Principle I."
       }
     },
     {
