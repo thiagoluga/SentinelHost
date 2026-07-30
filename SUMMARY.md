@@ -403,14 +403,24 @@ go test ./... -short
 ### The suite's state
 
 ```text
-ok  internal/adapter      internal/baseline    internal/config
-ok  internal/exec         internal/lock        internal/pathmatch
-ok  internal/quarantine   internal/schema      internal/store
-ok  internal/verdict      internal/housekeeping
-ok  cmd/sentinelhost      tests/contract       tests/integration
+ok  internal/adapter            internal/adapter/maldet    internal/adapter/wpchecksums
+ok  internal/alert/webhook      internal/baseline          internal/config
+ok  internal/exec               internal/housekeeping      internal/lock
+ok  internal/pathmatch          internal/quarantine        internal/schema
+ok  internal/store              internal/verdict           cmd/sentinelhost
+ok  tests/contract              tests/integration
 ```
 
-All green. `go vet ./...` clean. CI (lint + test + build amd64/arm64) green.
+All green. `go vet ./...` clean, `gofmt` clean. CI (lint + test + build amd64/arm64 +
+SonarCloud quality gate) green on `main`.
+
+**Five tests in `internal/adapter/maldet` `t.Skip` on Windows** and were run on Linux
+separately. They stand up a real POSIX stub process and drive it through the real
+`exec.Runner`, because `exec.Runner` is a concrete type and what those cases test is
+exactly the process boundary a fake would paper over — maldet refusing an account at
+exit 0, and the scope reaching it as a file list rather than as the root. A green run on
+Windows says nothing about them, which is why they say so out loud instead of passing
+vacuously.
 
 ### Validate the real engines before trusting a scan
 
@@ -449,6 +459,10 @@ that matters most in this project, and the reason the real samples are versioned
 
 #### What the validation proves today
 
+Last run: **0 failures**, on a Debian container with a real WordPress 6.5.2, a real
+plugin from the official directory, a real AMWScan 0.15.1, a real yara 4.2.3 and a real
+maldet 1.6.6 — all as an unprivileged account.
+
 ```text
 ✓ the orchestrator saw what AMWScan saw on its own (3 vs 3)
 ✓ wp-checksums ran over a real WordPress
@@ -459,7 +473,23 @@ that matters most in this project, and the reason the real samples are versioned
 ✓ the vault is intact (the hashes check out)
 ✓ the byte-for-byte restore worked on an unprivileged account
 ✓ the orchestrator's memory peak: 51 MB (promised limit: 128 MB)
+
+✓ with scan_user_access=0, Probe refuses maldet instead of reporting it healthy
+✓ the reason names scan_user_access: one line for the admin to change
+✓ with scan_user_access=1, maldet serves this unprivileged account
+✓ '--report <id> dump' really printed the report
+✓ confirmed: no 'malware detect scan report' line exists (D-025)
+✓ --file-list really restricts the walk: TOTAL FILES = 3, exactly the list
+✓ the orchestrator saw at least what maldet saw on its own
+✓ maldet's own quarantine is empty: the adapter's flag really disabled it
 ```
+
+The last two lines are the ones worth reading twice. `TOTAL FILES` coming back equal to
+the list length is the only way to catch `-f` being *accepted and ignored*, which is
+precisely how `--filter-paths` fooled the AMWScan adapter. And the empty quarantine is
+checked on a host whose `conf.maldet` says `quarantine_hits="1"`, so it is evidence that
+our own flag did the work — not evidence that nobody had configured maldet to move
+files.
 
 The consensus's escalation is exercised with real engines: a file with only the
 checksum's vote stops at `likely`; another with the checksum **and** a heuristic reaches
