@@ -127,6 +127,21 @@ type Summary struct {
 	ObservationReason string
 }
 
+// AnyEngineVoted answers whether a single engine actually contributed to this cycle.
+//
+// It is the cycle-level counterpart of ScanStatus.CountsAsVote(). When it is false the
+// cycle looked at nothing, and "no findings" carries no information at all — so the
+// status, the exit code and the report all have to say so rather than let the absence
+// of verdicts read as good news.
+func (s *Summary) AnyEngineVoted() bool {
+	for _, e := range s.Engines {
+		if e.Available && e.Status.CountsAsVote() {
+			return true
+		}
+	}
+	return false
+}
+
 // Run runs a complete cycle.
 func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 	started := r.now()
@@ -221,6 +236,29 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 
 	status := schema.StatusCompleted
 	if sum.SkippedCounts["truncated"] > 0 {
+		status = schema.StatusPartial
+	}
+
+	// A cycle in which NO engine voted did not scan anything, and must never be recorded
+	// as `completed`.
+	//
+	// `ScanStatus.CountsAsVote()` already enforces this one level down: an engine that
+	// could not run abstains rather than reporting zero findings. The cycle had no
+	// equivalent, so four abstentions out of four still produced
+	// `status: completed`, `verdicts: {}` and exit code 0 — which to the panel, to a
+	// webhook consumer, or to anything checking `status == "completed" && no verdicts`
+	// is indistinguishable from "scanned everything, site is clean".
+	//
+	// That is this project's defining failure mode reaching the machine-readable
+	// interface, where nobody is reading a sentence about reduced coverage. The
+	// human-readable output did say so; JSON, exit codes and the store did not.
+	//
+	// Some abstentions still count as `completed`: a cycle with one working engine
+	// really did scan, and its result is incomplete rather than absent. Marking every
+	// such cycle partial would make `partial` the permanent normal state on any host
+	// without yara and maldet installed — which is most of them — and a status that is
+	// always on carries no information.
+	if !sum.AnyEngineVoted() {
 		status = schema.StatusPartial
 	}
 	r.finish(ctx, &sum, status)
