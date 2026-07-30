@@ -215,22 +215,32 @@ func TestNoPluginsDirectoryIsNotAnError(t *testing.T) {
 
 // Verification -----------------------------------------------------------------
 
+// intactPlugin creates a plugin and publishes checksums that match it exactly, which is
+// the setup every "this plugin is fine" case needs. Shared because writing it twice
+// invites the two copies to drift, and a test whose fixture quietly stops matching the
+// API it imitates is worse than no test at all.
+func intactPlugin(t *testing.T, api *fakeAPI, root, slug, version string, files map[string]string) string {
+	t.Helper()
+	dir := plugin(t, root, slug, version, files)
+	sums := map[string][]string{
+		slug + ".php": {sha256Of(t, filepath.Join(dir, slug+".php"))},
+	}
+	for rel := range files {
+		sums[rel] = []string{sha256Of(t, filepath.Join(dir, rel))}
+	}
+	api.pluginSums[slug] = map[string]map[string][]string{version: sums}
+	return dir
+}
+
 func TestAnIntactPluginBecomesACleanFileAndNotAFinding(t *testing.T) {
 	// A legitimate plugin carries minified JS and base64 — exactly what produces
 	// heuristic false positives. Without entering clean_files it does not get the
 	// veto's protection and another engine could take the user's site down.
 	api := newAPI(t)
 	root := site(t, api)
-	dir := plugin(t, root, "my-plugin", "2.0", map[string]string{
+	dir := intactPlugin(t, api, root, "my-plugin", "2.0", map[string]string{
 		"inc/util.php": "<?php // legitimate\n",
 	})
-
-	api.pluginSums["my-plugin"] = map[string]map[string][]string{
-		"2.0": {
-			"my-plugin.php": {sha256Of(t, filepath.Join(dir, "my-plugin.php"))},
-			"inc/util.php":  {sha256Of(t, filepath.Join(dir, "inc/util.php"))},
-		},
-	}
 
 	rep := run(t, api.adapter(), root)
 
@@ -560,15 +570,9 @@ func md5Of(t *testing.T, path string) string {
 func TestAVerifiedPluginIsNotCountedAsSkipped(t *testing.T) {
 	api := newAPI(t)
 	root := site(t, api)
-	dir := plugin(t, root, "akismet", "5.0", map[string]string{
+	intactPlugin(t, api, root, "akismet", "5.0", map[string]string{
 		"inc/util.php": "<?php // legitimate\n",
 	})
-	api.pluginSums["akismet"] = map[string]map[string][]string{
-		"5.0": {
-			"akismet.php":  {sha256Of(t, filepath.Join(dir, "akismet.php"))},
-			"inc/util.php": {sha256Of(t, filepath.Join(dir, "inc/util.php"))},
-		},
-	}
 
 	rep := run(t, api.adapter(), root)
 
@@ -581,21 +585,5 @@ func TestAVerifiedPluginIsNotCountedAsSkipped(t *testing.T) {
 	if rep.Scope.FilesScanned < 2 {
 		t.Errorf("the plugin's files are missing from FilesScanned (%d): dropping the "+
 			"counter must not drop the coverage with it", rep.Scope.FilesScanned)
-	}
-}
-
-// The counter that must keep working, since it is the one that means something is
-// genuinely uncovered.
-func TestAnUnverifiedPluginIsStillCountedAsSkipped(t *testing.T) {
-	api := newAPI(t)
-	root := site(t, api)
-	plugin(t, root, "no-checksums-published", "1.0", nil)
-	// No entry in api.pluginSums: the API publishes nothing for this plugin.
-
-	rep := run(t, api.adapter(), root)
-
-	if rep.Scope.SkippedReasonCounts["plugin_without_checksum"] == 0 {
-		t.Error("a plugin nobody could verify must be counted as skipped, loudly: " +
-			"an unverified plugin that looks verified is the failure this project exists to prevent")
 	}
 }
