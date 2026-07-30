@@ -65,7 +65,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, req *http.Request) {
 
 func (s *Server) handleLogin(w http.ResponseWriter, req *http.Request) {
 	ip := clientIP(req)
-	if !s.limiter.allow(ip, s.now()) {
+	if !s.limiter.allow(req.Context(), ip, s.now()) {
 		writeErr(w, http.StatusTooManyRequests,
 			"too many login attempts; wait a minute")
 		return
@@ -97,7 +97,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	s.limiter.reset(ip)
+	s.limiter.reset(req.Context(), ip)
 	s.startSession(w, req)
 }
 

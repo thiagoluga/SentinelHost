@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -170,4 +172,77 @@ func (s *Store) ListEngineStates(ctx context.Context) ([]EngineState, error) {
 		out = append(out, st)
 	}
 	return out, rows.Err()
+}
+
+// Login attempt counting ------------------------------------------------------
+//
+// The brute-force counter lives here, in SQLite, rather than in a map in process
+// memory.
+//
+// Under `serve` a single process holds every request, so a map would work — and it did.
+// It stops working the moment the panel is served any other way: CGI, FastCGI, one
+// process per request. There the map is fresh and empty on every attempt, so the
+// lock-out silently does not exist while every page behaves exactly as before. Nothing
+// in the logs would say the protection had been switched off.
+//
+// Keeping the count where the sessions already are costs one small query per login and
+// removes that whole class of surprise.
+
+const loginAttemptPrefix = "login_attempts:"
+
+// RecentLoginAttempts returns the attempt timestamps for an IP inside the window,
+// discarding anything older.
+func (s *Store) RecentLoginAttempts(ctx context.Context, ip string, since time.Time) ([]time.Time, error) {
+	raw, err := s.GetSetting(ctx, loginAttemptPrefix+ip)
+	if err != nil || raw == "" {
+		return nil, err
+	}
+	var out []time.Time
+	for _, field := range strings.Split(raw, ",") {
+		n, convErr := strconv.ParseInt(field, 10, 64)
+		if convErr != nil {
+			// A corrupt entry is dropped rather than failing the login path. Losing a
+			// count is bad; refusing every login because one row is malformed is worse.
+			continue
+		}
+		if t := time.Unix(n, 0); t.After(since) {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
+// RecordLoginAttempt stores the window's attempts for an IP.
+//
+// An empty list deletes the key instead of writing one. Without that, every IP that ever
+// tried once would leave a row behind forever, and the settings table would grow with
+// the internet rather than with the account.
+func (s *Store) RecordLoginAttempt(ctx context.Context, ip string, attempts []time.Time) error {
+	if len(attempts) == 0 {
+		return s.DeleteSetting(ctx, loginAttemptPrefix+ip)
+	}
+	parts := make([]string, 0, len(attempts))
+	for _, t := range attempts {
+		parts = append(parts, strconv.FormatInt(t.Unix(), 10))
+	}
+	return s.SetSetting(ctx, loginAttemptPrefix+ip, strings.Join(parts, ","))
+}
+
+// ClearLoginAttempts forgets an IP, called after a successful login.
+func (s *Store) ClearLoginAttempts(ctx context.Context, ip string) error {
+	return s.DeleteSetting(ctx, loginAttemptPrefix+ip)
+}
+
+// PruneLoginAttempts removes counters whose last write is older than the cutoff.
+//
+// The delete-when-empty rule above covers an IP that comes back; this covers the one
+// that never does.
+func (s *Store) PruneLoginAttempts(ctx context.Context, olderThan time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM settings WHERE key LIKE ? AND updated_at < ?`,
+		loginAttemptPrefix+"%", olderThan.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return 0, fmt.Errorf("pruning login attempts: %w", err)
+	}
+	return res.RowsAffected()
 }

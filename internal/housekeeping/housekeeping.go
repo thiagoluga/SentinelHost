@@ -46,13 +46,19 @@ type Result struct {
 	PurgedQuarantine  int
 	PrunedEvents      int64
 	PrunedRawDirs     int
-	RecoveredScans    int
+	// PrunedLoginAttempts are brute-force counters left by IPs that tried once and
+	// never came back. The counter deletes itself when an IP returns and its window has
+	// expired; this covers the ones that do not, so the table grows with the account
+	// rather than with the internet.
+	PrunedLoginAttempts int64
+	RecoveredScans      int
 }
 
 // Empty answers whether there was nothing to do.
 func (r Result) Empty() bool {
 	return r.RetriedDeliveries == 0 && !r.DigestSent && r.PurgedQuarantine == 0 &&
-		r.PrunedEvents == 0 && r.PrunedRawDirs == 0 && r.RecoveredScans == 0
+		r.PrunedEvents == 0 && r.PrunedRawDirs == 0 && r.RecoveredScans == 0 &&
+		r.PrunedLoginAttempts == 0
 }
 
 // Deps are the pieces the maintenance uses. Vault and Alerts may be nil.
@@ -113,6 +119,7 @@ func Run(ctx context.Context, d Deps) (Result, error) {
 
 	res.PrunedEvents = pruneLog(ctx, d, &failures)
 	res.PrunedRawDirs = pruneRawOutput(ctx, d, &failures)
+	res.PrunedLoginAttempts = pruneLoginAttempts(ctx, d, &failures)
 
 	if _, err := d.Store.PurgeExpiredSessions(ctx); err != nil {
 		failures = append(failures, fmt.Errorf("expired sessions: %w", err))
@@ -236,4 +243,17 @@ func inside(root, target string) bool {
 
 func log(ctx context.Context, d Deps, level, cat, msg string) {
 	_ = d.Store.Log(ctx, store.Event{TS: d.now(), Level: level, Category: cat, Message: msg})
+}
+
+// pruneLoginAttempts drops stale brute-force counters.
+//
+// One hour, not the log retention: the limiter's window is a minute, so anything older
+// than an hour cannot influence a decision and is only taking up space.
+func pruneLoginAttempts(ctx context.Context, d Deps, failures *[]error) int64 {
+	n, err := d.Store.PruneLoginAttempts(ctx, time.Now().Add(-time.Hour))
+	if err != nil {
+		*failures = append(*failures, fmt.Errorf("pruning login attempts: %w", err))
+		return 0
+	}
+	return n
 }
