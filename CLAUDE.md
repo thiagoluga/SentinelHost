@@ -86,6 +86,31 @@ WordPress, real plugins, and compares what the **orchestrator** sees against
 what each **engine sees on its own**. Different numbers fail the run. It is not
 optional.
 
+## The development cycle — non-negotiable
+
+**Every change ships as: branch → commit → push → PR → merge.** One branch per
+feature, never mixed. **Never commit or push to `main` directly** — not for a
+one-line fix, not for a docs typo, not when CI is already green and merging
+feels like a formality.
+
+```bash
+git checkout -b <type>/<slug>   # feat/, fix/, docs/, chore/ …
+git branch --show-current       # confirm it took: creating a branch is not being on it
+# … work, commit …
+git push -u origin <branch>
+gh pr create
+gh pr merge                     # only after the checks pass
+```
+
+Confirm the branch again immediately before `git commit` and before `git push`.
+If the answer is `main`, stop and move the work.
+
+This is not tidiness. On this repository the PR is where CI and the SonarCloud
+quality gate actually block a bad change; a commit that lands on `main` without
+one has been reviewed by nobody and gated by nothing. It has already happened
+here: a branch was created and never checked out, so ~19 commits accumulated on
+`main` and one was pushed before anyone noticed.
+
 ## Development
 
 ```bash

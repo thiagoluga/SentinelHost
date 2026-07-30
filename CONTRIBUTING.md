@@ -116,6 +116,23 @@ make release       # linux/amd64 + linux/arm64 + SHA256SUMS
 6. GPL engines are invoked as subprocesses only. No linking.
 7. Register it in `cmd/sentinelhost/common.go` and add fixtures.
 
+## Branches and pull requests
+
+**Every change ships as: branch → commit → push → PR → merge.** One branch per
+feature; nothing goes onto `main` directly, including documentation and chores.
+
+```bash
+git checkout -b feat/my-thing
+git branch --show-current       # confirm it took — creating a branch is not being on it
+git push -u origin feat/my-thing
+gh pr create
+```
+
+Check the branch again right before you commit and right before you push. This
+matters more than it looks: the PR is where CI and the SonarCloud quality gate
+run, so a commit that reaches `main` without one has been gated by nothing. The
+usual way it goes wrong is a branch created and never checked out.
+
 ## Commits
 
 [Conventional Commits](https://www.conventionalcommits.org/), in English. Small
