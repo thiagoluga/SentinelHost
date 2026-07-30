@@ -287,7 +287,8 @@ func TestSanitizeSnippetTruncatesAndSanitizes(t *testing.T) {
 func TestSanitizeSnippetDoesNotBreakARune(t *testing.T) {
 	// Truncating mid-multibyte-character would produce invalid garbage in the
 	// report's JSON.
-	s := strings.Repeat("ç", schema.MaxMatchedContentBytes)
+	// "ß" is two bytes in UTF-8, so the truncation lands mid-character.
+	s := strings.Repeat("ß", schema.MaxMatchedContentBytes)
 	got := schema.SanitizeSnippet(s)
 	if !isValidUTF8(got) {
 		t.Errorf("result is not valid UTF-8: %q", got)

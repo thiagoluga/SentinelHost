@@ -76,7 +76,7 @@ func TestTheRoundTripGivesTheFileBackByteForByte(t *testing.T) {
 		"<?php echo 'small';",
 		strings.Repeat("A", 1<<20),                      // 1 MiB
 		"line1\nline2\r\nbinary:\x00\x01\x02\xff\xfe\n", // binary and CRLF
-		"",                               // empty file
+		"",                                // empty file
 		"accents and emoji: café 🎯 naïve", // multibyte UTF-8
 	}
 
