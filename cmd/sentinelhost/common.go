@@ -9,6 +9,7 @@ import (
 
 	"github.com/thiagoluga/SentinelHost/internal/adapter"
 	"github.com/thiagoluga/SentinelHost/internal/adapter/amwscan"
+	"github.com/thiagoluga/SentinelHost/internal/adapter/maldet"
 	"github.com/thiagoluga/SentinelHost/internal/adapter/pmf"
 	"github.com/thiagoluga/SentinelHost/internal/adapter/wpchecksums"
 	"github.com/thiagoluga/SentinelHost/internal/config"
@@ -44,6 +45,7 @@ func newRegistry() *adapter.Registry {
 	r.MustRegister(wpchecksums.New())
 	r.MustRegister(amwscan.New())
 	r.MustRegister(pmf.New())
+	r.MustRegister(maldet.New())
 	return r
 }
 

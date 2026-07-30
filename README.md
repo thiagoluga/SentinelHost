@@ -56,11 +56,34 @@ implemented.
 | Engine | Type | Requirements | Consensus weight |
 |---|---|---|---|
 | `wp-checksums` (native) | Integrity through the official WordPress.org API | Network only | 1.5 |
-| `maldet` | Signatures + hex | Linux, works partially without root | 1.0 |
+| `maldet` | Signatures + hex | The `maldet` binary (a system package; it cannot be installed without root) | 1.0 |
 | `amwscan` | Pure-PHP scanner (phar) | PHP CLI ≥ 7.1 | 0.8 |
 | `php-malware-finder` | YARA rules | the `yara` binary on PATH | 0.8 |
 
-`wordfence-cli` and `clamav` are left for after the MVP.
+All four are implemented. `wordfence-cli` and `clamav` are left for after the MVP.
+
+maldet is the one SentinelHost cannot install for you: it ships as a system package
+that wants root. When it is absent the engine abstains with a reason you can act on,
+and the consensus proceeds with the others. Its own quarantine and cleaner are
+disabled on every invocation — they are not reversible from our vault (`DECISIONS.md`
+D-025).
+
+### If maldet is installed and still abstains
+
+Two host settings gate it, and **both are off in a default maldet install** — so on
+most shared hosting maldet is present and unusable until someone changes them. Neither
+is something you can do from your own account, so `sentinelhost engines` prints the
+line to forward to your hosting support:
+
+| What you will see | What the admin has to do |
+|---|---|
+| `scan_user_access` is 0 | set `scan_user_access="1"` in `/usr/local/maldetect/conf.maldet` |
+| its per-user paths do not exist yet | run `maldet --mkpubpaths` as root, or wait for maldet's own `cron.pub` |
+
+The reason they are reported separately is that maldet answers **both** with its
+version banner and exit code 0. Read as success, that makes the engine look healthy
+while it is refusing to scan anything — the one failure mode this project treats as
+worse than having no scanner at all.
 
 ## Notifications — what exists today
 

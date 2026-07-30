@@ -236,6 +236,86 @@ for flag in --no-warnings --max-strings-per-rule --scan-list; do
   fi
 done
 
+echo
+# maldet is installed by root, system-wide, and the adapter deliberately never tries
+# to install it (Principle III). So here we check the invocation, not the install.
+if command -v maldet >/dev/null 2>&1; then
+  ok "maldet present: $(maldet --version 2>&1 | head -1)"
+  help_maldet=$(maldet --help 2>&1)
+
+  # Both configurations, because the adapter has to be right in each.
+  #
+  # maldet ships scan_user_access="0". Under that default it refuses every
+  # unprivileged account — banner, refusal, exit 0 — from `--version` and `--help`
+  # too. Probe used to read a version out of that banner and report the engine
+  # HEALTHY on a host where it could never produce a finding, which is the mbstring
+  # mistake repeated. So the refusal is asserted first, deliberately, and only then
+  # is the gate opened to exercise the real scan path.
+  if [ -w /usr/local/maldetect/conf.maldet ]; then
+    sed -i 's/^scan_user_access=.*/scan_user_access="0"/' /usr/local/maldetect/conf.maldet
+    probe_gated=$(sentinelhost engines --config "$CFG" 2>&1 | grep -i maldet || true)
+    # Column 4 is AVAILABLE. Column 2 is ENABLED, and matching that instead is how the
+    # first version of this check failed a correct adapter: `maldet yes 1.00 no <reason>`
+    # is exactly the right answer, and it was being read as a defect.
+    if [ "$(awk '/^[[:space:]]*maldet[[:space:]]/{print $4; exit}' <<<"$probe_gated")" = "yes" ]; then
+      fail "Probe reports maldet AVAILABLE on a host where it cannot scan for this user"
+      info "  $probe_gated"
+      info "'the binary runs' is not 'the engine works' — see DECISIONS.md D-011"
+    else
+      ok "with scan_user_access=0, Probe refuses maldet instead of reporting it healthy"
+    fi
+    if sentinelhost engines --config "$CFG" 2>&1 | grep -qi 'scan_user_access'; then
+      ok "the reason names scan_user_access: one line for the admin to change"
+    else
+      fail "the reason does not name scan_user_access, so it reads as a bug in our parser"
+    fi
+
+    sed -i 's/^scan_user_access=.*/scan_user_access="1"/' /usr/local/maldetect/conf.maldet
+    help_maldet=$(maldet --help 2>&1)
+  fi
+
+  if grep -qiE 'public scanning (is currently disabled|support not enabled)' <<<"$help_maldet"; then
+    MALDET_GATED=1
+    warn "maldet still refuses this account, so its real scan path cannot be exercised here"
+  else
+    MALDET_GATED=0
+    ok "with scan_user_access=1, maldet serves this unprivileged account"
+  fi
+fi
+
+if command -v maldet >/dev/null 2>&1 && [ "${MALDET_GATED:-1}" = "0" ]; then
+  for flag in --config-option --report --scan-all; do
+    if grep -q -- "$flag" <<<"$help_maldet"; then
+      ok "maldet accepts $flag"
+    else
+      fail "maldet does NOT document $flag — the adapter assembles an invalid line"
+    fi
+  done
+
+  # `dump` is what actually prints a report to stdout, and it is NOT in --help:
+  # only maldet's own internals/functions reveals it. Without it `--report <id>`
+  # hands the session file to $EDITOR and the adapter reads nothing. Because it is
+  # undocumented, the only honest check is to run it and see whether text comes out —
+  # which is what the baseline below does.
+  if grep -q 'dump' <<<"$help_maldet"; then
+    ok "maldet now documents 'dump' in --help"
+  else
+    info "confirmed: 'dump' stays undocumented (DECISIONS.md D-025); it is exercised for real below"
+  fi
+
+  # The comma-separated form of --config-option. Passing the flag three times is what
+  # the adapter used to do, and a dropped quarantine_hits=0 means maldet moves the
+  # user's files into its own non-reversible quarantine — a Principle I violation
+  # committed by us. So this asserts the syntax maldet documents.
+  if grep -qE 'config-option.*VAR1=VALUE,VAR2=VALUE' <<<"$help_maldet"; then
+    ok "confirmed: --config-option takes ONE comma-separated value"
+  else
+    warn "--config-option's documented syntax changed; re-check the adapter's argument list"
+  fi
+elif ! command -v maldet >/dev/null 2>&1; then
+  warn "maldet is not installed in this image — its adapter can only be checked for absence"
+fi
+
 # ---------------------------------------------------------------------------
 section "Running the engines directly (the baseline)"
 
@@ -253,6 +333,91 @@ fi
 if [ -f "$YARA_RULES" ]; then
   n_yara=$(yara --no-warnings -r "$YARA_RULES" "$SITE" 2>/dev/null | wc -l)
   info "yara directly over the root: $n_yara matched-rule line(s)"
+fi
+
+if command -v maldet >/dev/null 2>&1 && [ "${MALDET_GATED:-1}" = "0" ]; then
+  # The same line the adapter assembles, run by hand, over a NAMED SCOPE.
+  #
+  # `-f <list>` and not `-a "$SITE"`, for two reasons. It is the flag the adapter
+  # actually uses now, so this is the command line under test; and maldet costs ~0.5s
+  # per file, so `-a` over this 3,000-file site takes ~25 minutes — measured, not
+  # guessed. This image's own header says a validation nobody has the patience to run
+  # validates nothing, and a 25-minute wait before the first maldet result is how that
+  # happens.
+  #
+  # The scope is small and DELIBERATE: the planted marker file, which the image taught
+  # maldet a signature for, plus a couple of clean files. So "maldet finds N on its own"
+  # below is N over these paths, not over the whole site — the comparison further down
+  # is written to respect that difference rather than paper over it.
+  maldet_list=/tmp/maldet-targets.txt
+  : > "$maldet_list"
+  for f in \
+      "$SITE/wp-content/uploads/2026/07/x.php" \
+      "$SITE/wp-content/plugins/legitimate.php" \
+      "$SITE/wp-content/plugins/clean-corpus.php"; do
+    [ -f "$f" ] && printf '%s\n' "$f" >> "$maldet_list"
+  done
+  n_maldet_targets=$(grep -c . "$maldet_list")
+  info "maldet baseline scope: $n_maldet_targets file(s) through --file-list"
+
+  maldet_scan=$(maldet \
+      --config-option quarantine_hits=0,quarantine_clean=0,quarantine_suspend_user=0 \
+      -f "$maldet_list" 2>&1)
+  scan_id=$(grep -oE '[0-9]{6}-[0-9]{4}\.[0-9]+' <<<"$maldet_scan" | head -1)
+
+  if [ -n "$scan_id" ]; then
+    ok "maldet ran and printed a scan id ($scan_id)"
+    report=$(maldet --report "$scan_id" dump 2>&1)
+    if [ -n "$report" ] && grep -q 'TOTAL HITS:' <<<"$report"; then
+      ok "'--report <id> dump' really printed the report ($(wc -l <<<"$report") lines)"
+      n_maldet=$(grep -E '^\{' <<<"$report" | wc -l)
+      info "maldet over the named scope: $n_maldet hit(s)"
+
+      # THE check that settles ScopeAware, and the one this whole file exists for.
+      #
+      # A flag the engine accepts and ignores is how `--filter-paths` fooled the
+      # AMWScan adapter (D-018): the command line looks right, the engine walks the
+      # whole root anyway, and nothing anywhere says so. maldet's own TOTAL FILES is
+      # what makes it checkable — if `-f` were being ignored, this would read 3,000-odd
+      # instead of a handful, and the adapter would be burning ~25 minutes of a shared
+      # host's CPU every cycle while claiming to scan only what changed.
+      reported_files=$(awk '/^TOTAL FILES:/{print $3; exit}' <<<"$report")
+      if [ "${reported_files:-0}" = "$n_maldet_targets" ]; then
+        ok "--file-list really restricts the walk: TOTAL FILES = $reported_files, exactly the list"
+      else
+        fail "--file-list was accepted and IGNORED: asked for $n_maldet_targets file(s), maldet scanned ${reported_files:-?}"
+        info "ScopeAware=true is then a lie, and every cycle pays a full-root walk (D-018 again)"
+      fi
+
+      # The planted marker is the only file here maldet has a signature for. Zero hits
+      # would mean the custom signature never loaded, and every maldet check downstream
+      # would be passing over a scan that found nothing by construction.
+      if [ "$n_maldet" -eq 0 ]; then
+        fail "maldet found nothing even on the file it has a signature for"
+        info "the image's custom signature did not load; nothing below really exercises maldet"
+      fi
+      cp /usr/local/maldetect/sess/session."$scan_id" /tmp/direct-maldet.txt 2>/dev/null \
+        && ok "a real report is available at /tmp/direct-maldet.txt (use it as a new fixture)"
+
+      # The format check the adapter applies, asserted against reality rather than
+      # against what the docs suggested. It used to look for a line maldet never prints.
+      for marker in 'SCAN ID:' 'TOTAL HITS:' 'TOTAL FILES:' 'FILE HIT LIST:'; do
+        grep -q "$marker" <<<"$report" \
+          && ok "the report contains '$marker'" \
+          || warn "the report has NO '$marker' — the adapter's format check needs revisiting"
+      done
+      if grep -qi 'malware detect scan report' <<<"$report"; then
+        warn "'malware detect scan report' now appears; the old format check would work again"
+      else
+        ok "confirmed: no 'malware detect scan report' line exists (D-025)"
+      fi
+    else
+      fail "'--report <id> dump' printed nothing usable — the adapter would abstain every cycle"
+      info "$(head -3 <<<"$report")"
+    fi
+  else
+    warn "maldet printed no scan id; there is nothing to fetch (the adapter abstains, correctly)"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -303,6 +468,53 @@ else
   ok "the orchestrator saw what yara saw on its own ($orch_pmf finding(s))"
 fi
 
+if command -v maldet >/dev/null 2>&1 && [ "${MALDET_GATED:-1}" = "0" ]; then
+  orch_maldet=$(grep -oE '✓ maldet +[0-9]+ finding' <<<"$scan_output" | grep -oE '[0-9]+' | head -1)
+  orch_maldet=${orch_maldet:-0}
+  # Any status marker counts as "the orchestrator mentioned it". The first version of
+  # this listed only ✓ ⊘ ✗ and so failed on `!`, the marker for a timeout abstention —
+  # reporting a correctly-abstaining adapter as an unregistered one.
+  if grep -qE '(✓|⊘|✗|!) +maldet' <<<"$scan_output"; then
+    # The two counts are NOT expected to be equal, and saying so is the point: the
+    # baseline above scanned a named handful of files while the cycle scanned the whole
+    # site, so the orchestrator can legitimately see MORE. What would be a defect is
+    # seeing fewer than what maldet found on its own over a subset of the same tree.
+    if [ "${n_maldet:-0}" -gt 0 ] && [ "$orch_maldet" -eq 0 ]; then
+      fail "maldet found ${n_maldet} hit(s) over a subset of this very site and the orchestrator saw 0"
+      info "the signature of an accepted-and-ignored flag: the engine walked something else"
+    elif [ "${n_maldet:-0}" -gt 0 ] && [ "$orch_maldet" -lt "${n_maldet:-0}" ]; then
+      fail "the orchestrator saw $orch_maldet finding(s) where maldet alone found ${n_maldet} in a SUBSET"
+      info "a wider scope cannot yield fewer hits; findings are being lost between Scan and Parse"
+    elif [ "${n_maldet:-0}" -eq 0 ]; then
+      warn "maldet matched nothing even on its own: its signatures do not cover the inert corpus"
+      info "that is NOT an adapter bug, but maldet's detection is not really exercised here"
+    else
+      ok "the orchestrator saw at least what maldet saw on its own ($orch_maldet over the site vs ${n_maldet} over $n_maldet_targets file(s))"
+    fi
+  else
+    fail "maldet is installed and the orchestrator did not even mention it"
+    info "the adapter was probably never registered, or Probe() rejected a working engine"
+  fi
+
+  # THE check that justifies installing maldet here at all.
+  #
+  # This image leaves the host default quarantine_hits="1" ON, so maldet WILL move
+  # every hit into /usr/local/maldetect/quarantine unless the adapter's own
+  # --config-option turns it off. A file moved there is outside SentinelHost's
+  # reversible vault: `sentinelhost quarantine restore` cannot bring it back, and
+  # Principle I ("never destroys, always reversible") is broken by us, on a user's
+  # site, silently. Counting the vault is the only way to prove the flag took effect.
+  q_count=$(find /usr/local/maldetect/quarantine -type f 2>/dev/null | wc -l)
+  if [ "$q_count" -eq 0 ]; then
+    ok "maldet's own quarantine is empty: the adapter's flag really disabled it"
+  else
+    fail "maldet moved $q_count file(s) into ITS quarantine, outside the reversible vault"
+    info "Principle I violated by the orchestrator itself; --config-option did not take effect"
+    find /usr/local/maldetect/quarantine -type f 2>/dev/null | head -5 | sed 's/^/      /'
+  fi
+fi
+
+echo
 # The project's highest-weight engine. If it does not run, the path that leads to
 # `confirmed` — and therefore to an automatic quarantine — is never exercised.
 if [ "${WP_REAL:-0}" = "1" ]; then

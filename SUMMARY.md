@@ -149,14 +149,61 @@ not have. What is left to verify there:
 - that the process is not killed by the account's process limit;
 - that the generated cron line works in the cPanel manager.
 
-### 2. The `maldet` adapter
+### ~~2. The `maldet` adapter~~ — implemented
 
-Not implemented — **no task from T001 to T040 asks for it**. `plan.md` describes it as
-"optional, when the environment allows". Its weight (1.0) and the raw-output fixture
-with its `PROVENANCE.md` are already versioned for when the adapter arrives; the engine
-ships **disabled by default**, because enabling an engine with no adapter would make it
-show up as an abstention in every cycle — a permanent alarm about something the user
-has no way to resolve.
+No task from T001 to T040 asked for it, and `plan.md` described it as "optional, when
+the environment allows" — but it was the last MVP engine, and the one that gives the
+consensus a second weight-1.0 vote. It is now in
+`internal/adapter/maldet/`, registered in the binary and **enabled by default**.
+
+Three things the implementation had to get right:
+
+- **maldet's own quarantine is disabled on every invocation**, not left to the host's
+  `conf.maldet`. It is not reversible from our vault, not recorded in our store and
+  cannot be undone from the panel; a host with `quarantine_hits=1` would have maldet
+  moving the user's files somewhere we cannot restore from (`DECISIONS.md` D-025).
+  And if the report still says `TOTAL CLEANED > 0`, the adapter abstains loudly rather
+  than returning findings from a cycle where files were already altered.
+- **The signature type decides the confidence.** `{HEX}` and `{MD5}` are exact matches;
+  `{YARA}` and `{CAV}` are patterns. Collapsing them would give a heuristic the weight
+  of proof, and at weight 1.0 that is the difference between `suspicious` and one vote
+  from `confirmed`.
+- **`TOTAL HITS` is checked against the list.** A divergence means a truncated report,
+  and accepting one would record an engine that found five things as having found one.
+
+**Seven defects that only installing the real engine found** — and the versioned
+fixture was itself invented, written from the same assumptions as the code:
+
+| Defect | How it would have shown up |
+|---|---|
+| `maldet --report <id>` prints nothing; it opens `$EDITOR`. The undocumented `dump` argument is what dumps to stdout | abstention on every cycle, or a cycle hung until its timeout if the host had `vi` |
+| The report has no `malware detect scan report` line, which the format check required | every genuine report rejected as off-format |
+| `--config-option` takes one comma-separated value, not three repeated flags | `quarantine_hits=0` silently dropped — **maldet moving the user's files into its own non-reversible quarantine** |
+| The hit-line regex was `[A-Za-z]+`, so `{MD5}` never matched | a third of the hits dropped |
+| `scan_user_access="0"` is the **default** and makes maldet refuse every non-root account — banner, refusal, **exit 0**, from `--version` too | `Probe()` read a version off a refusal and reported the engine **healthy** where it could never scan a file |
+| A finished scan never prints `SCAN ID:`; it prints `to view run: maldet --report <id>` | no id found after every *successful* scan → abstention every cycle, forever |
+| `Info()` declared `ScopeAware: false`, its comment asserting maldet has no flag to narrow the walk. `-f/--file-list` is documented, and measured: `-a` over 401 files 204s, `-f` with 2 files 7s | **~25 minutes of CPU every cycle** on a 3,000-file site, re-reading files nothing touched — the burn that gets a shared-hosting account suspended (D-018 again) |
+
+Defects 5 and 6 are the ones no reading of the documentation would have caught, and both
+end in this project's defining failure mode: an engine reported healthy that scanned
+nothing. Defect 7 is the one a green suite would never have caught: nothing was wrong
+with the code, only with a comment stating an unchecked fact about the engine. It
+surfaced because maldet **exceeded the 5-minute engine timeout** on a real WordPress and
+abstained — a correct abstention, but one that would have repeated every cycle forever. There is also a second access gate behind the first — with access enabled
+maldet still refuses until root has run `maldet --mkpubpaths` — and since the remedies
+differ, the adapter names them separately instead of saying "maldet would not run".
+
+**The practical consequence**: on most shared hosting maldet is installed and unusable,
+because nobody flipped either switch. What the adapter owes the user there is an
+abstention plus the exact line to forward to support.
+
+The fixtures are real captured 1.6.6 output now, and the hit-list shape comes from
+maldet's own parsing code rather than from inference. This is D-022 for the fifth time:
+every test written from my own reading of the documentation passed.
+
+20 tests, none touching the network or needing maldet installed. Five of them stand up a
+real POSIX stub process, because exec.Runner is a concrete type and the point of those
+cases is precisely the boundary a fake would paper over.
 
 ### 3. php-malware-finder's real coverage
 
