@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-theme="dark">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SentinelHost — Painel</title>
+<title>SentinelHost — Panel</title>
 <style>
   :root[data-theme="dark"]{
     color-scheme: dark;
@@ -136,63 +136,63 @@
       <div class="logo-mark">S</div>
       <div><b>SentinelHost</b><small>v0.1.0 — beta</small></div>
     </div>
-    <button class="nav-btn active" data-tab="dash"><span class="ico">▦</span> Visão geral</button>
-    <button class="nav-btn" data-tab="findings"><span class="ico">⚠</span> Achados <span class="pill">7</span></button>
-    <button class="nav-btn" data-tab="quarantine"><span class="ico">🗄</span> Quarentena</button>
+    <button class="nav-btn active" data-tab="dash"><span class="ico">▦</span> Overview</button>
+    <button class="nav-btn" data-tab="findings"><span class="ico">⚠</span> Findings <span class="pill">7</span></button>
+    <button class="nav-btn" data-tab="quarantine"><span class="ico">🗄</span> Quarantine</button>
     <button class="nav-btn" data-tab="engines"><span class="ico">⚙</span> Engines</button>
-    <button class="nav-btn" data-tab="schedule"><span class="ico">🕐</span> Agendamento</button>
-    <button class="nav-btn" data-tab="alerts"><span class="ico">✉</span> Alertas</button>
-    <button class="nav-btn" data-tab="settings"><span class="ico">☰</span> Configurações</button>
-    <div class="side-foot"><span class="dot">●</span> Daemon ativo — último ciclo 03:04<br>/home/user/public_html</div>
+    <button class="nav-btn" data-tab="schedule"><span class="ico">🕐</span> Schedule</button>
+    <button class="nav-btn" data-tab="alerts"><span class="ico">✉</span> Alerts</button>
+    <button class="nav-btn" data-tab="settings"><span class="ico">☰</span> Settings</button>
+    <div class="side-foot"><span class="dot">●</span> Daemon running — last cycle 03:04<br>/home/user/public_html</div>
   </aside>
 
   <main>
 
-  <!-- ============ VISÃO GERAL ============ -->
+  <!-- ============ OVERVIEW ============ -->
   <section class="tab active" id="tab-dash">
     <header class="page">
-      <div><h1>Visão geral</h1><p>Resumo dos últimos 14 dias de monitoramento</p></div>
+      <div><h1>Overview</h1><p>A summary of the last 14 days of monitoring</p></div>
       <div class="spacer"></div>
-      <button class="btn" onclick="toast('Scan completo agendado para iniciar em instantes.')">Escanear agora</button>
+      <button class="btn" onclick="toast('A full scan is scheduled to start in a moment.')">Scan now</button>
     </header>
 
     <div class="grid-4">
-      <div class="tile"><div class="lbl">Arquivos monitorados</div><div class="val num">18.234</div><div class="delta">baseline atualizado hoje 03:00</div></div>
-      <div class="tile"><div class="lbl">Em quarentena</div><div class="val num">12</div><div class="delta bad">+3 nas últimas 24h</div></div>
-      <div class="tile"><div class="lbl">Alertas aguardando decisão</div><div class="val num">7</div><div class="delta">2 prováveis · 5 suspeitos</div></div>
-      <div class="tile"><div class="lbl">Engines ativos</div><div class="val num">4<span style="color:var(--muted);font-size:16px">/6</span></div><div class="delta up">assinaturas em dia</div></div>
+      <div class="tile"><div class="lbl">Monitored files</div><div class="val num">18.234</div><div class="delta">baseline updated today at 03:00</div></div>
+      <div class="tile"><div class="lbl">In quarantine</div><div class="val num">12</div><div class="delta bad">+3 in the last 24h</div></div>
+      <div class="tile"><div class="lbl">Alerts awaiting a decision</div><div class="val num">7</div><div class="delta">2 likely · 5 suspicious</div></div>
+      <div class="tile"><div class="lbl">Engines ativos</div><div class="val num">4<span style="color:var(--muted);font-size:16px">/6</span></div><div class="delta up">signatures up to date</div></div>
     </div>
 
     <div class="card viz-root">
       <div class="chart-head">
-        <div><h2>Achados por dia</h2><div class="sub" style="margin:0">Por nível de veredito — passe o mouse para detalhes</div></div>
+        <div><h2>Findings per day</h2><div class="sub" style="margin:0">By verdict level — hover for details</div></div>
         <div class="legend">
-          <span><i style="background:var(--st-crit)"></i> Confirmado</span>
-          <span><i style="background:var(--st-serious)"></i> Provável</span>
-          <span><i style="background:var(--st-warn)"></i> Suspeito</span>
+          <span><i style="background:var(--st-crit)"></i> Confirmed</span>
+          <span><i style="background:var(--st-serious)"></i> Likely</span>
+          <span><i style="background:var(--st-warn)"></i> Suspicious</span>
         </div>
       </div>
-      <svg id="chart" width="100%" height="190" role="img" aria-label="Gráfico de barras empilhadas de achados por dia nos últimos 14 dias"></svg>
+      <svg id="chart" width="100%" height="190" role="img" aria-label="A stacked bar chart of findings per day over the last 14 days"></svg>
     </div>
 
     <div class="grid-2">
       <div class="card">
-        <h2>Últimos vereditos</h2><div class="sub">Ações automáticas recentes</div>
+        <h2>Latest verdicts</h2><div class="sub">Recent automatic actions</div>
         <table>
-          <tr class="row"><td class="path">…/uploads/2026/07/cache.php</td><td><span class="badge b-crit">Confirmado</span></td><td class="num" style="color:var(--muted)">03:05</td></tr>
-          <tr class="row"><td class="path">…/wp-includes/class-wp-hook.php</td><td><span class="badge b-crit">Confirmado</span></td><td class="num" style="color:var(--muted)">03:05</td></tr>
-          <tr class="row"><td class="path">…/themes/astra/inc/tmp_x.php</td><td><span class="badge b-serious">Provável</span></td><td class="num" style="color:var(--muted)">03:04</td></tr>
-          <tr class="row"><td class="path">…/public_html/wp-load-x.php</td><td><span class="badge b-warn">Suspeito</span></td><td class="num" style="color:var(--muted)">03:04</td></tr>
+          <tr class="row"><td class="path">…/uploads/2026/07/cache.php</td><td><span class="badge b-crit">Confirmed</span></td><td class="num" style="color:var(--muted)">03:05</td></tr>
+          <tr class="row"><td class="path">…/wp-includes/class-wp-hook.php</td><td><span class="badge b-crit">Confirmed</span></td><td class="num" style="color:var(--muted)">03:05</td></tr>
+          <tr class="row"><td class="path">…/themes/astra/inc/tmp_x.php</td><td><span class="badge b-serious">Likely</span></td><td class="num" style="color:var(--muted)">03:04</td></tr>
+          <tr class="row"><td class="path">…/public_html/wp-load-x.php</td><td><span class="badge b-warn">Suspicious</span></td><td class="num" style="color:var(--muted)">03:04</td></tr>
         </table>
       </div>
       <div class="card">
-        <h2>Saúde dos engines</h2><div class="sub">Última execução por engine</div>
+        <h2>The engines’ health</h2><div class="sub">Last run per engine</div>
         <table>
           <tr class="row"><td>wp-checksums</td><td><span class="badge b-good">OK</span></td><td class="num" style="color:var(--muted)">41 s</td></tr>
           <tr class="row"><td>amwscan</td><td><span class="badge b-good">OK</span></td><td class="num" style="color:var(--muted)">4 min 36 s</td></tr>
           <tr class="row"><td>php-malware-finder</td><td><span class="badge b-good">OK</span></td><td class="num" style="color:var(--muted)">2 min 02 s</td></tr>
-          <tr class="row"><td>maldet</td><td><span class="badge b-warn">Parcial</span></td><td class="num" style="color:var(--muted)">9 arquivos ilegíveis</td></tr>
-          <tr class="row"><td>wordfence-cli</td><td><span class="badge b-muted">Indisponível</span></td><td class="num" style="color:var(--muted)">Python ≥ 3.8 ausente</td></tr>
+          <tr class="row"><td>maldet</td><td><span class="badge b-warn">Parcial</span></td><td class="num" style="color:var(--muted)">9 unreadable files</td></tr>
+          <tr class="row"><td>wordfence-cli</td><td><span class="badge b-muted">Unavailable</span></td><td class="num" style="color:var(--muted)">Python ≥ 3.8 ausente</td></tr>
         </table>
       </div>
     </div>
@@ -201,109 +201,109 @@
   <!-- ============ ACHADOS ============ -->
   <section class="tab" id="tab-findings">
     <header class="page">
-      <div><h1>Achados</h1><p>Arquivos apontados pelos engines aguardando sua decisão ou já tratados</p></div>
+      <div><h1>Findings</h1><p>Files flagged by the engines, awaiting your decision or already handled</p></div>
       <div class="spacer"></div>
-      <select style="width:170px"><option>Todos os níveis</option><option>Confirmado</option><option>Provável</option><option>Suspeito</option></select>
+      <select style="width:170px"><option>All levels</option><option>Confirmed</option><option>Likely</option><option>Suspicious</option></select>
     </header>
     <div class="card">
       <table>
-        <thead><tr><th>Arquivo</th><th>Veredito</th><th>Score</th><th>Votos dos engines</th><th>Ações</th></tr></thead>
+        <thead><tr><th>File</th><th>Verdict</th><th>Score</th><th>The engines’ votes</th><th>Actions</th></tr></thead>
         <tr class="row">
           <td class="path" title="/home/user/public_html/wp-content/uploads/2026/07/cache.php">…/uploads/2026/07/cache.php</td>
-          <td><span class="badge b-crit">Confirmado</span></td><td class="num">0,93</td>
+          <td><span class="badge b-crit">Confirmed</span></td><td class="num">0,93</td>
           <td><div class="votes"><span class="vote">maldet</span><span class="vote">pmf</span><span class="vote">wp-checksums</span></div></td>
-          <td><span class="badge b-muted">Em quarentena</span></td>
+          <td><span class="badge b-muted">In quarantine</span></td>
         </tr>
         <tr class="row">
           <td class="path">…/themes/astra/inc/tmp_x.php</td>
-          <td><span class="badge b-serious">Provável</span></td><td class="num">0,74</td>
+          <td><span class="badge b-serious">Likely</span></td><td class="num">0,74</td>
           <td><div class="votes"><span class="vote">pmf</span><span class="vote">amwscan</span></div></td>
-          <td><button class="btn sm" onclick="toast('Arquivo movido para a quarentena.')">Quarentenar</button>
-              <button class="btn sm" onclick="toast('Arquivo adicionado à whitelist.')">Ignorar</button></td>
+          <td><button class="btn sm" onclick="toast('The file was moved into the quarantine.')">Quarantine</button>
+              <button class="btn sm" onclick="toast('The file was added to the whitelist.')">Ignore</button></td>
         </tr>
         <tr class="row">
           <td class="path">…/public_html/wp-load-x.php</td>
-          <td><span class="badge b-serious">Provável</span></td><td class="num">0,68</td>
+          <td><span class="badge b-serious">Likely</span></td><td class="num">0,68</td>
           <td><div class="votes"><span class="vote">amwscan</span><span class="vote">maldet</span></div></td>
-          <td><button class="btn sm" onclick="toast('Arquivo movido para a quarentena.')">Quarentenar</button>
-              <button class="btn sm" onclick="toast('Arquivo adicionado à whitelist.')">Ignorar</button></td>
+          <td><button class="btn sm" onclick="toast('The file was moved into the quarantine.')">Quarantine</button>
+              <button class="btn sm" onclick="toast('The file was added to the whitelist.')">Ignore</button></td>
         </tr>
         <tr class="row">
           <td class="path">…/uploads/gravity_forms/export.php</td>
-          <td><span class="badge b-warn">Suspeito</span></td><td class="num">0,41</td>
+          <td><span class="badge b-warn">Suspicious</span></td><td class="num">0,41</td>
           <td><div class="votes"><span class="vote">amwscan</span></div></td>
-          <td><button class="btn sm" onclick="toast('Arquivo movido para a quarentena.')">Quarentenar</button>
-              <button class="btn sm" onclick="toast('Arquivo adicionado à whitelist.')">Ignorar</button></td>
+          <td><button class="btn sm" onclick="toast('The file was moved into the quarantine.')">Quarantine</button>
+              <button class="btn sm" onclick="toast('The file was added to the whitelist.')">Ignore</button></td>
         </tr>
         <tr class="row">
           <td class="path">…/cgi-bin/.well-known/x.php</td>
-          <td><span class="badge b-warn">Suspeito</span></td><td class="num">0,38</td>
+          <td><span class="badge b-warn">Suspicious</span></td><td class="num">0,38</td>
           <td><div class="votes"><span class="vote">pmf</span></div></td>
-          <td><button class="btn sm" onclick="toast('Arquivo movido para a quarentena.')">Quarentenar</button>
-              <button class="btn sm" onclick="toast('Arquivo adicionado à whitelist.')">Ignorar</button></td>
+          <td><button class="btn sm" onclick="toast('The file was moved into the quarantine.')">Quarantine</button>
+              <button class="btn sm" onclick="toast('The file was added to the whitelist.')">Ignore</button></td>
         </tr>
       </table>
-      <p class="hint" style="margin-top:10px">Clique numa linha para ver o trecho de código detectado, hashes e histórico do arquivo. Votos: <span class="mono">pmf</span> = php-malware-finder.</p>
+      <p class="hint" style="margin-top:10px">Click a row to see the detected snippet, the hashes and the file history. Votes: <span class="mono">pmf</span> = php-malware-finder.</p>
     </div>
   </section>
 
   <!-- ============ QUARENTENA ============ -->
   <section class="tab" id="tab-quarantine">
     <header class="page">
-      <div><h1>Quarentena</h1><p>Arquivos neutralizados (movidos e bloqueados) — restauráveis a qualquer momento</p></div>
+      <div><h1>Quarantine</h1><p>Neutralized files (moved and blocked) — restorable at any time</p></div>
       <div class="spacer"></div>
-      <button class="btn danger" onclick="toast('Itens com mais de 30 dias purgados.')">Purgar antigos</button>
+      <button class="btn danger" onclick="toast('Items older than 30 days were purged.')">Purge old ones</button>
     </header>
     <div class="card">
       <table>
-        <thead><tr><th>Arquivo original</th><th>Quarentenado em</th><th>Motivo</th><th>SHA-256</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Original file</th><th>Quarantined at</th><th>Motivo</th><th>SHA-256</th><th>Actions</th></tr></thead>
         <tr class="row"><td class="path">…/uploads/2026/07/cache.php</td><td class="num">23/07 03:05</td><td><span class="badge b-crit">Webshell</span></td><td class="mono">e3b0c4…b855</td>
-          <td><button class="btn sm" onclick="toast('Arquivo restaurado ao local original.')">Restaurar</button> <button class="btn sm danger" onclick="toast('Arquivo apagado definitivamente.')">Apagar</button></td></tr>
-        <tr class="row"><td class="path">…/wp-includes/class-wp-hook.php</td><td class="num">23/07 03:05</td><td><span class="badge b-crit">Core adulterado</span></td><td class="mono">a1f39c…07d2</td>
-          <td><button class="btn sm" onclick="toast('Arquivo restaurado ao local original.')">Restaurar</button> <button class="btn sm danger" onclick="toast('Arquivo apagado definitivamente.')">Apagar</button></td></tr>
-        <tr class="row"><td class="path">…/uploads/sm3rt.php</td><td class="num">21/07 14:12</td><td><span class="badge b-crit">Injeção de spam</span></td><td class="mono">77bd01…9cc4</td>
-          <td><button class="btn sm" onclick="toast('Arquivo restaurado ao local original.')">Restaurar</button> <button class="btn sm danger" onclick="toast('Arquivo apagado definitivamente.')">Apagar</button></td></tr>
+          <td><button class="btn sm" onclick="toast('The file was restored to its original location.')">Restore</button> <button class="btn sm danger" onclick="toast('The file was deleted permanently.')">Delete</button></td></tr>
+        <tr class="row"><td class="path">…/wp-includes/class-wp-hook.php</td><td class="num">23/07 03:05</td><td><span class="badge b-crit">Tampered core</span></td><td class="mono">a1f39c…07d2</td>
+          <td><button class="btn sm" onclick="toast('The file was restored to its original location.')">Restore</button> <button class="btn sm danger" onclick="toast('The file was deleted permanently.')">Delete</button></td></tr>
+        <tr class="row"><td class="path">…/uploads/sm3rt.php</td><td class="num">21/07 14:12</td><td><span class="badge b-crit">Spam injection</span></td><td class="mono">77bd01…9cc4</td>
+          <td><button class="btn sm" onclick="toast('The file was restored to its original location.')">Restore</button> <button class="btn sm danger" onclick="toast('The file was deleted permanently.')">Delete</button></td></tr>
       </table>
-      <p class="hint" style="margin-top:10px">Ao quarentenar um arquivo do core do WordPress, o SentinelHost oferece restaurar a versão oficial limpa baixada do WordPress.org.</p>
+      <p class="hint" style="margin-top:10px">When quarantining a WordPress core file, SentinelHost offers to restore the clean official version downloaded from WordPress.org.</p>
     </div>
   </section>
 
   <!-- ============ ENGINES ============ -->
   <section class="tab" id="tab-engines">
     <header class="page">
-      <div><h1>Engines</h1><p>Motores de detecção open source orquestrados pelo SentinelHost</p></div>
+      <div><h1>Engines</h1><p>The open source detection engines SentinelHost orchestrates</p></div>
       <div class="spacer"></div>
-      <button class="btn" onclick="toast('Assinaturas de todos os engines atualizadas.')">Atualizar assinaturas</button>
+      <button class="btn" onclick="toast('The signatures of every engine were updated.')">Update the signatures</button>
     </header>
 
     <div class="eng"><div class="eico">🧬</div>
-      <div><h3>wp-checksums <span class="badge b-good" style="margin-left:6px">Ativo</span></h3>
-        <div class="meta">Integridade via checksums oficiais do WordPress.org · nativo · peso máximo no consenso</div></div>
+      <div><h3>wp-checksums <span class="badge b-good" style="margin-left:6px">Active</span></h3>
+        <div class="meta">Integrity through the official WordPress.org checksums · native · the maximum weight in the consensus</div></div>
       <div class="weight"><span class="hint">Peso</span><input type="number" value="1.5" step="0.1" min="0" max="2"><label class="tgl"><input type="checkbox" checked><i></i></label></div>
     </div>
     <div class="eng"><div class="eico">🔎</div>
-      <div><h3>php-malware-finder <span class="badge b-good" style="margin-left:6px">Ativo</span></h3>
-        <div class="meta">Regras YARA (NBS System) · v0.9.2 · assinaturas de 20/07/2026 · GPL — executado via CLI</div></div>
+      <div><h3>php-malware-finder <span class="badge b-good" style="margin-left:6px">Active</span></h3>
+        <div class="meta">YARA rules (NBS System) · v0.9.2 · signatures from 2026-07-20 · GPL — run through the CLI</div></div>
       <div class="weight"><span class="hint">Peso</span><input type="number" value="0.8" step="0.1" min="0" max="2"><label class="tgl"><input type="checkbox" checked><i></i></label></div>
     </div>
     <div class="eng"><div class="eico">🐘</div>
-      <div><h3>AMWScan <span class="badge b-good" style="margin-left:6px">Ativo</span></h3>
-        <div class="meta">Scanner PHP puro · v0.10.4 · roda em qualquer hospedagem com PHP CLI ≥ 7.1</div></div>
+      <div><h3>AMWScan <span class="badge b-good" style="margin-left:6px">Active</span></h3>
+        <div class="meta">A pure-PHP scanner · v0.15.1 · it runs on any hosting with a PHP CLI ≥ 7.1</div></div>
       <div class="weight"><span class="hint">Peso</span><input type="number" value="0.8" step="0.1" min="0" max="2"><label class="tgl"><input type="checkbox" checked><i></i></label></div>
     </div>
     <div class="eng"><div class="eico">🛡</div>
       <div><h3>maldet (Linux Malware Detect) <span class="badge b-warn" style="margin-left:6px">Parcial</span></h3>
-        <div class="meta">Assinaturas hex/MD5 maduras · v1.6.5 · rodando sem root — monitor inotify indisponível</div></div>
+        <div class="meta">Mature hex/MD5 signatures · v1.6.5 · running without root — the inotify monitor is unavailable</div></div>
       <div class="weight"><span class="hint">Peso</span><input type="number" value="1.0" step="0.1" min="0" max="2"><label class="tgl"><input type="checkbox" checked><i></i></label></div>
     </div>
     <div class="eng"><div class="eico">🐍</div>
-      <div><h3>Wordfence CLI <span class="badge b-muted" style="margin-left:6px">Indisponível</span></h3>
-        <div class="meta">Requer Python ≥ 3.8 (encontrado 3.6) · forte em WordPress · <a href="#">como habilitar</a></div></div>
+      <div><h3>Wordfence CLI <span class="badge b-muted" style="margin-left:6px">Unavailable</span></h3>
+        <div class="meta">It needs Python ≥ 3.8 (found 3.6) · strong on WordPress · <a href="#">how to enable it</a></div></div>
       <div class="weight"><span class="hint">Peso</span><input type="number" value="1.0" step="0.1" min="0" max="2" disabled><label class="tgl"><input type="checkbox" disabled><i></i></label></div>
     </div>
     <div class="eng"><div class="eico">🦠</div>
-      <div><h3>ClamAV <span class="badge b-muted" style="margin-left:6px">Indisponível</span></h3>
-        <div class="meta">Binário clamscan não encontrado no ambiente · oportunista quando presente</div></div>
+      <div><h3>ClamAV <span class="badge b-muted" style="margin-left:6px">Unavailable</span></h3>
+        <div class="meta">The clamscan binary was not found in the environment · opportunistic when present</div></div>
       <div class="weight"><span class="hint">Peso</span><input type="number" value="0.6" step="0.1" min="0" max="2" disabled><label class="tgl"><input type="checkbox" disabled><i></i></label></div>
     </div>
   </section>
@@ -311,32 +311,32 @@
   <!-- ============ AGENDAMENTO ============ -->
   <section class="tab" id="tab-schedule">
     <header class="page">
-      <div><h1>Agendamento e recursos</h1><p>Quando escanear e quanto do servidor usar — pensado para hospedagem compartilhada</p></div>
+      <div><h1>Schedule and resources</h1><p>When to scan and how much of the server to use — designed for shared hosting</p></div>
       <div class="spacer"></div>
-      <button class="btn primary" onclick="toast('Agendamento salvo.')">Salvar</button>
+      <button class="btn primary" onclick="toast('The schedule was saved.')">Save</button>
     </header>
     <div class="grid-2">
       <div class="card">
-        <h2>Ciclos de scan</h2><div class="sub">Scans incrementais leem só o que mudou desde o último ciclo</div>
-        <label class="f">Scan incremental (arquivos modificados)</label>
-        <select><option>A cada 30 minutos</option><option selected>A cada 1 hora</option><option>A cada 6 horas</option></select>
-        <label class="f">Scan completo (todos os arquivos)</label>
-        <select><option>Diariamente às 03:00</option><option selected>Semanalmente — domingo 03:00</option><option>Quinzenalmente</option></select>
-        <label class="f">Modo de execução</label>
-        <select><option selected>Daemon (monitoramento contínuo + inotify quando disponível)</option><option>Somente cron (hospedagens que matam processos longos)</option></select>
-        <p class="hint">No modo cron, o SentinelHost gera a linha pronta para colar no cron do cPanel.</p>
+        <h2>Scan cycles</h2><div class="sub">Incremental scans read only what changed since the last cycle</div>
+        <label class="f">Incremental scan (modified files)</label>
+        <select><option>Every 30 minutes</option><option selected>Every 1 hour</option><option>Every 6 hours</option></select>
+        <label class="f">Full scan (every file)</label>
+        <select><option>Daily at 03:00</option><option selected>Weekly — Sunday 03:00</option><option>Quinzenalmente</option></select>
+        <label class="f">Execution mode</label>
+        <select><option selected>Daemon (continuous monitoring + inotify when available)</option><option>Cron only (hosting that kills long processes)</option></select>
+        <p class="hint">In cron mode, SentinelHost produces the line ready to paste into the cPanel cron.</p>
       </div>
       <div class="card">
-        <h2>Limites de recursos</h2><div class="sub">Evita suspensão da conta por abuso de CPU na hospedagem</div>
-        <label class="f">Prioridade de CPU (nice)</label>
-        <select><option selected>Mínima (nice 19 — recomendado)</option><option>Baixa (nice 10)</option><option>Normal</option></select>
-        <label class="f">Pausa entre lotes de arquivos</label>
-        <select><option>Nenhuma</option><option selected>250 ms a cada 100 arquivos</option><option>1 s a cada 100 arquivos</option></select>
+        <h2>Resource limits</h2><div class="sub">It keeps the account from being suspended for CPU abuse on the hosting</div>
+        <label class="f">CPU priority (nice)</label>
+        <select><option selected>Minimum (nice 19 — recommended)</option><option>Low (nice 10)</option><option>Normal</option></select>
+        <label class="f">Pause between batches of files</label>
+        <select><option>Nenhuma</option><option selected>250 ms every 100 files</option><option>1 s every 100 files</option></select>
         <div class="row2">
-          <div><label class="f">Tamanho máx. por arquivo</label><input type="number" value="10"><p class="hint">MB — acima disso, só verificação de hash</p></div>
-          <div><label class="f">Tempo máx. por engine</label><input type="number" value="20"><p class="hint">minutos — depois vira “parcial”</p></div>
+          <div><label class="f">Max size per file</label><input type="number" value="10"><p class="hint">MB — above that, a hash check only</p></div>
+          <div><label class="f">Max time per engine</label><input type="number" value="20"><p class="hint">minutes — after that it becomes “partial”</p></div>
         </div>
-        <label class="f">Diretórios ignorados</label>
+        <label class="f">Ignored directories</label>
         <textarea rows="3" class="mono">wp-content/cache/
 wp-content/backups/
 .git/</textarea>
@@ -347,111 +347,111 @@ wp-content/backups/
   <!-- ============ ALERTAS ============ -->
   <section class="tab" id="tab-alerts">
     <header class="page">
-      <div><h1>Alertas</h1><p>Como e quando o SentinelHost avisa você</p></div>
+      <div><h1>Alerts</h1><p>How and when SentinelHost tells you</p></div>
       <div class="spacer"></div>
-      <button class="btn primary" onclick="toast('Configurações de alerta salvas.')">Salvar</button>
+      <button class="btn primary" onclick="toast('The alert settings were saved.')">Save</button>
     </header>
 
     <div class="card">
-      <div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0">Alertas por e-mail</h2><label class="tgl"><input type="checkbox" checked><i></i></label></div>
-      <div class="sub" style="margin-top:4px">Enviados pelo SMTP da própria hospedagem ou por um servidor externo</div>
+      <div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0">E-mail alerts</h2><label class="tgl"><input type="checkbox" checked><i></i></label></div>
+      <div class="sub" style="margin-top:4px">Sent through the hosting’s own SMTP or through an external server</div>
       <div class="row2">
         <div>
-          <label class="f">Destinatários</label>
-          <input type="text" value="thiagolugarini@hotmail.com" placeholder="separados por vírgula">
-          <label class="f">Enviar alerta imediato para</label>
+          <label class="f">Recipients</label>
+          <input type="text" value="owner@example.test" placeholder="comma-separated">
+          <label class="f">Send an immediate alert for</label>
           <div class="chks">
-            <label><input type="checkbox" checked> Confirmado (quarentena automática)</label>
-            <label><input type="checkbox" checked> Provável</label>
-            <label><input type="checkbox"> Suspeito</label>
-            <label><input type="checkbox" checked> Falha de engine</label>
+            <label><input type="checkbox" checked> Confirmed (automatic quarantine)</label>
+            <label><input type="checkbox" checked> Likely</label>
+            <label><input type="checkbox"> Suspicious</label>
+            <label><input type="checkbox" checked> Engine failure</label>
           </div>
-          <label class="f">Resumo periódico (digest)</label>
-          <select><option>Desativado</option><option selected>Diário às 08:00</option><option>Semanal — segunda 08:00</option></select>
-          <p class="hint">O digest consolida achados suspeitos e estatísticas mesmo sem incidentes críticos.</p>
+          <label class="f">Periodic summary (the digest)</label>
+          <select><option>Disabled</option><option selected>Daily at 08:00</option><option>Weekly — Monday 08:00</option></select>
+          <p class="hint">The digest consolidates suspicious findings and statistics even with no critical incidents.</p>
         </div>
         <div>
-          <label class="f">Servidor SMTP</label>
+          <label class="f">SMTP server</label>
           <div class="row3">
             <input type="text" value="smtp.hostgator.com.br" placeholder="host">
-            <input type="number" value="587" placeholder="porta">
+            <input type="number" value="587" placeholder="port">
             <select><option selected>STARTTLS</option><option>SSL/TLS</option><option>Nenhum</option></select>
           </div>
           <div class="row2">
-            <div><label class="f">Usuário</label><input type="text" value="alertas@meusite.com.br"></div>
-            <div><label class="f">Senha</label><input type="password" value="••••••••••"></div>
+            <div><label class="f">Username</label><input type="text" value="alertas@meusite.com.br"></div>
+            <div><label class="f">Password</label><input type="password" value="••••••••••"></div>
           </div>
           <label class="f">Remetente (From)</label>
           <input type="email" value="SentinelHost <alertas@meusite.com.br>">
-          <div style="margin-top:12px"><button class="btn sm" onclick="toast('E-mail de teste enviado para thiagolugarini@hotmail.com.')">Enviar e-mail de teste</button></div>
+          <div style="margin-top:12px"><button class="btn sm" onclick="toast('A test e-mail was sent to owner@example.test.')">Send a test e-mail</button></div>
         </div>
       </div>
     </div>
 
     <div class="card">
       <div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0">Webhooks</h2><label class="tgl"><input type="checkbox" checked><i></i></label></div>
-      <div class="sub" style="margin-top:4px">POST JSON assinado (HMAC-SHA256) a cada evento — integre com Slack, Discord, n8n, sistemas próprios</div>
+      <div class="sub" style="margin-top:4px">A signed JSON POST (HMAC-SHA256) on every event — integrate with Slack, Discord, n8n or your own systems</div>
       <table>
-        <thead><tr><th>URL</th><th>Eventos</th><th>Último envio</th><th></th></tr></thead>
+        <thead><tr><th>URL</th><th>Events</th><th>Last send</th><th></th></tr></thead>
         <tr class="row"><td class="mono" style="max-width:300px;overflow:hidden;text-overflow:ellipsis">https://hooks.slack.com/services/T0…/B0…</td>
           <td><div class="votes"><span class="vote">verdict.confirmed</span><span class="vote">verdict.likely</span></div></td>
           <td><span class="badge b-good">200 · 03:05</span></td>
-          <td><button class="btn sm" onclick="toast('Evento de teste enviado — resposta 200 OK.')">Testar</button> <button class="btn sm danger">Remover</button></td></tr>
-        <tr class="row"><td class="mono" style="max-width:300px;overflow:hidden;text-overflow:ellipsis">https://n8n.meusite.com.br/webhook/sentinel</td>
+          <td><button class="btn sm" onclick="toast('The test event was sent — a 200 OK response.')">Test</button> <button class="btn sm danger">Remove</button></td></tr>
+        <tr class="row"><td class="mono" style="max-width:300px;overflow:hidden;text-overflow:ellipsis">https://n8n.mysite.com/webhook/sentinel</td>
           <td><div class="votes"><span class="vote">*</span></div></td>
           <td><span class="badge b-warn">timeout · 02:00 · retry 2/5</span></td>
-          <td><button class="btn sm" onclick="toast('Evento de teste enviado — aguardando resposta…')">Testar</button> <button class="btn sm danger">Remover</button></td></tr>
+          <td><button class="btn sm" onclick="toast('The test event was sent — waiting for a response…')">Test</button> <button class="btn sm danger">Remove</button></td></tr>
       </table>
       <hr class="sep">
       <div class="row3">
         <div><label class="f" style="margin-top:0">Nova URL</label><input type="text" placeholder="https://…"></div>
-        <div><label class="f" style="margin-top:0">Eventos</label>
+        <div><label class="f" style="margin-top:0">Events</label>
           <select multiple size="3"><option selected>verdict.confirmed</option><option>verdict.likely</option><option>verdict.suspicious</option><option>quarantine.action</option><option>scan.completed</option><option>engine.failed</option></select></div>
-        <div><label class="f" style="margin-top:0">Segredo HMAC</label><input type="text" placeholder="gerado automaticamente"><div style="margin-top:8px"><button class="btn sm" onclick="toast('Webhook adicionado.')">Adicionar</button></div></div>
+        <div><label class="f" style="margin-top:0">HMAC secret</label><input type="text" placeholder="generated automatically"><div style="margin-top:8px"><button class="btn sm" onclick="toast('The webhook was added.')">Add</button></div></div>
       </div>
-      <p class="hint" style="margin-top:10px">Cabeçalho <span class="mono">X-Sentinel-Signature</span> em cada entrega. Retentativas com backoff exponencial (5 tentativas).</p>
+      <p class="hint" style="margin-top:10px">Header <span class="mono">X-Sentinel-Signature</span> on every delivery. Retries with exponential backoff (5 attempts).</p>
     </div>
 
     <div class="card">
       <div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0">Telegram</h2><label class="tgl"><input type="checkbox"><i></i></label></div>
-      <div class="sub" style="margin-top:4px">Alertas instantâneos via bot — opcional</div>
+      <div class="sub" style="margin-top:4px">Instant alerts through a bot — optional</div>
       <div class="row2">
-        <div><label class="f" style="margin-top:0">Token do bot</label><input type="text" placeholder="123456:ABC-…"></div>
+        <div><label class="f" style="margin-top:0">Bot token</label><input type="text" placeholder="123456:ABC-…"></div>
         <div><label class="f" style="margin-top:0">Chat ID</label><input type="text" placeholder="-100123456789"></div>
       </div>
     </div>
   </section>
 
-  <!-- ============ CONFIGURAÇÕES ============ -->
+  <!-- ============ SETTINGS ============ -->
   <section class="tab" id="tab-settings">
     <header class="page">
-      <div><h1>Configurações</h1><p>Vereditos, quarentena e whitelist</p></div>
+      <div><h1>Settings</h1><p>Verdicts, quarantine and whitelist</p></div>
       <div class="spacer"></div>
-      <button class="btn primary" onclick="toast('Configurações salvas.')">Salvar</button>
+      <button class="btn primary" onclick="toast('The settings were saved.')">Save</button>
     </header>
     <div class="grid-2">
       <div class="card">
-        <h2>Motor de veredito</h2><div class="sub">Limiares de score do consenso entre engines</div>
-        <div class="slider-row"><span class="sl-lbl">Confirmado ≥</span><input type="range" min="50" max="100" value="90" oninput="this.nextElementSibling.textContent=(this.value/100).toFixed(2)"><b class="num">0.90</b></div>
-        <div class="slider-row"><span class="sl-lbl">Provável ≥</span><input type="range" min="30" max="90" value="60" oninput="this.nextElementSibling.textContent=(this.value/100).toFixed(2)"><b class="num">0.60</b></div>
-        <div class="slider-row"><span class="sl-lbl">Suspeito ≥</span><input type="range" min="10" max="60" value="30" oninput="this.nextElementSibling.textContent=(this.value/100).toFixed(2)"><b class="num">0.30</b></div>
-        <label class="f">Ação para “Confirmado”</label>
-        <select><option selected>Quarentena automática + alerta</option><option>Somente alertar (modo observação)</option></select>
-        <p class="hint">Nos primeiros 7 dias, recomendamos o modo observação para calibrar falsos positivos no seu site.</p>
+        <h2>The verdict engine</h2><div class="sub">The score thresholds of the consensus across engines</div>
+        <div class="slider-row"><span class="sl-lbl">Confirmed ≥</span><input type="range" min="50" max="100" value="90" oninput="this.nextElementSibling.textContent=(this.value/100).toFixed(2)"><b class="num">0.90</b></div>
+        <div class="slider-row"><span class="sl-lbl">Likely ≥</span><input type="range" min="30" max="90" value="60" oninput="this.nextElementSibling.textContent=(this.value/100).toFixed(2)"><b class="num">0.60</b></div>
+        <div class="slider-row"><span class="sl-lbl">Suspicious ≥</span><input type="range" min="10" max="60" value="30" oninput="this.nextElementSibling.textContent=(this.value/100).toFixed(2)"><b class="num">0.30</b></div>
+        <label class="f">Action for “Confirmed”</label>
+        <select><option selected>Automatic quarantine + alert</option><option>Alert only (observation mode)</option></select>
+        <p class="hint">For the first 7 days we recommend observation mode, to calibrate the false positives on your site.</p>
       </div>
       <div class="card">
-        <h2>Quarentena e whitelist</h2><div class="sub">Segurança e reversibilidade</div>
-        <label class="f">Retenção na quarentena antes da purga</label>
-        <select><option>7 dias</option><option selected>30 dias</option><option>90 dias</option><option>Nunca purgar automaticamente</option></select>
-        <label class="f">Whitelist (nunca quarentenar)</label>
+        <h2>Quarantine e whitelist</h2><div class="sub">Safety and reversibility</div>
+        <label class="f">Retention in the quarantine before the purge</label>
+        <select><option>7 days</option><option selected>30 days</option><option>90 days</option><option>Never purge automatically</option></select>
+        <label class="f">Whitelist (never quarantine)</label>
         <textarea rows="4" class="mono">wp-content/plugins/meu-plugin-proprio/
 wp-config.php</textarea>
-        <p class="hint">Arquivos idênticos aos checksums oficiais do WordPress.org nunca são quarentenados, independentemente dos votos.</p>
+        <p class="hint">Files identical to the official WordPress.org checksums are never quarantined, regardless of the votes.</p>
         <hr class="sep">
-        <label class="f" style="margin-top:0">Acesso ao painel</label>
+        <label class="f" style="margin-top:0">Panel access</label>
         <div class="chks">
-          <label><input type="checkbox" checked> Exigir senha</label>
-          <label><input type="checkbox" checked> Somente localhost / túnel SSH</label>
+          <label><input type="checkbox" checked> Require a password</label>
+          <label><input type="checkbox" checked> localhost only / SSH tunnel</label>
         </div>
       </div>
     </div>
@@ -464,7 +464,7 @@ wp-config.php</textarea>
 <div class="toast" id="toast"></div>
 
 <script>
-// ---------- navegação ----------
+// ---------- navigation ----------
 document.querySelectorAll('.nav-btn').forEach(b=>{
   b.addEventListener('click',()=>{
     document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));
@@ -482,16 +482,16 @@ function toast(msg){
   clearTimeout(toastT); toastT=setTimeout(()=>t.style.display='none',3200);
 }
 
-// ---------- gráfico: barras empilhadas (14 dias, 3 níveis) ----------
+// ---------- chart: stacked bars (14 days, 3 levels) ----------
 const days=['10/07','11/07','12/07','13/07','14/07','15/07','16/07','17/07','18/07','19/07','20/07','21/07','22/07','23/07'];
 const data={ confirmado:[0,0,1,0,0,2,0,0,1,0,0,3,1,3],
              provavel:  [1,0,1,2,0,1,1,0,2,1,0,2,1,2],
              suspeito:  [2,1,3,1,2,2,1,3,2,1,2,4,3,5] };
 const cs=getComputedStyle(document.documentElement);
 const series=[
-  {k:'confirmado',lbl:'Confirmado',c:cs.getPropertyValue('--st-crit').trim()},
-  {k:'provavel',  lbl:'Provável',  c:cs.getPropertyValue('--st-serious').trim()},
-  {k:'suspeito',  lbl:'Suspeito',  c:cs.getPropertyValue('--st-warn').trim()}
+  {k:'confirmado',lbl:'Confirmed',c:cs.getPropertyValue('--st-crit').trim()},
+  {k:'provavel',  lbl:'Likely',  c:cs.getPropertyValue('--st-serious').trim()},
+  {k:'suspeito',  lbl:'Suspicious',  c:cs.getPropertyValue('--st-warn').trim()}
 ];
 function drawChart(){
   const svg=document.getElementById('chart');
@@ -516,9 +516,9 @@ function drawChart(){
       const v=data[s.k][i]; if(!v) return;
       const segH=(v/yMax)*plotH;
       y-=segH;
-      const gap=drawn>0?2:0;                                  // 2px de vão entre segmentos empilhados
+      const gap=drawn>0?2:0;                                  // 2px of gap between stacked segments
       const isTop=series.slice(si+1).every(s2=>!data[s2.k][i]);
-      const r=isTop?Math.min(4,segH-gap):0;                   // topo arredondado só no fim da pilha
+      const r=isTop?Math.min(4,segH-gap):0;                   // round the top only at the end of the stack
       const bot=y+segH;
       segs+=`<path d="M${x} ${bot} L${x} ${y+gap+r} Q${x} ${y+gap} ${x+r} ${y+gap} L${x+barW-r} ${y+gap} Q${x+barW} ${y+gap} ${x+barW} ${y+gap+r} L${x+barW} ${bot} Z" fill="${s.c}"/>`;
       drawn++;

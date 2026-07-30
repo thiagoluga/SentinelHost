@@ -88,7 +88,7 @@ sentinelhost serve
 
 - [`docs/schema-and-adapters.md`](docs/schema-and-adapters.md) — the normalized
   schema and the adapter contract (the heart of the project)
-- [`docs/painel-mockup.html`](docs/painel-mockup.html) — the web panel's visual
+- [`docs/panel-mockup.html`](docs/panel-mockup.html) — the web panel's visual
   reference
 - [`DECISIONS.md`](DECISIONS.md) — decisions taken where the spec was ambiguous
 

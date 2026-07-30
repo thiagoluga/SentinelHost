@@ -70,7 +70,7 @@ quarantine round trip (SC-001, SC-003).
 
 - [ ] T033 [US5] `internal/web`: a JSON API (status, findings, verdicts, quarantine, engines, config, alert-test) over the store/config; listening on 127.0.0.1 by default
 - [ ] T034 [US5] Authentication: a password on first access, argon2id, a cookie session, login rate limiting
-- [ ] T035 [US5] Port docs/painel-mockup.html into internal/web/assets with fetch() against the real API — the 7 areas: the overview (with a chart), findings, quarantine, engines, the schedule, alerts (e-mail/webhook/test), settings (thresholds, retention, whitelist)
+- [ ] T035 [US5] Port docs/panel-mockup.html into internal/web/assets with fetch() against the real API — the 7 areas: the overview (with a chart), findings, quarantine, engines, the schedule, alerts (e-mail/webhook/test), settings (thresholds, retention, whitelist)
 - [ ] T036 [US5] Bidirectional config (FR-014): saving in the panel writes the TOML and applies from the next cycle; a manual change in the TOML shows up in the panel
 - [ ] T037 [P] [US5] The panel's e2e test (chromedp): sign in, decide a pending finding, configure e-mail, trigger a webhook test (SC-004)
 
@@ -86,4 +86,4 @@ quarantine round trip (SC-001, SC-003).
 - US1 (T011–T017) blocks US2 (it needs verdicts) and US3 (it needs the engines)
 - US4 depends on T007 (the store) and on the events from US1/US2; US5 depends on
   everything it displays
-- T035 depends on the approved mockup (docs/painel-mockup.html) and on T033/T034
+- T035 depends on the approved mockup (docs/panel-mockup.html) and on T033/T034

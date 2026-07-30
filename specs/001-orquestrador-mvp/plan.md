@@ -11,7 +11,7 @@ malware-detection engines as subprocesses under resource limits, (2) normalizes 
 output into a versioned schema, (3) consolidates findings into a weighted consensus
 verdict, (4) reversibly quarantines confirmed verdicts, (5) alerts through SMTP e-mail
 and signed webhooks and (6) serves an embedded web panel (visual reference:
-docs/painel-mockup.html). All of it operable without root on a shared hosting account.
+docs/panel-mockup.html). All of it operable without root on a shared hosting account.
 
 ## Technical Context
 
@@ -101,7 +101,7 @@ internal/
 ├── store/               # SQLite (modernc), migrations
 ├── config/              # TOML load/save/validate (the panel's source of truth)
 └── web/                 # the panel: JSON handlers + go:embed of the assets
-    └── assets/          # HTML/CSS/JS (an evolution of docs/painel-mockup.html)
+    └── assets/          # HTML/CSS/JS (an evolution of docs/panel-mockup.html)
 tests/
 ├── contract/            # per adapter, with testdata/ of raw output
 ├── integration/         # the synthetic corpus, the quarantine round trip, the cycle's e2e

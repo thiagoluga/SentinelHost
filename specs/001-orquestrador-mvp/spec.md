@@ -143,7 +143,7 @@ configuration files.
 
 **Why this priority**: Everything in the panel is operable through the CLI + the config
 file (P1–P2); the panel is the usability layer that widens the tool's audience. Visual
-reference: `docs/painel-mockup.html`.
+reference: `docs/panel-mockup.html`.
 
 **Independent Test**: Start `sentinelhost serve`, authenticate, walk through the six
 areas of the mockup and check that every control reads and writes the real configuration
