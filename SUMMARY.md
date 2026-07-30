@@ -129,6 +129,35 @@ Measured on a real WordPress 6.5.2 (3008 files), before and after:
 | `wp-checksums` | 7m02s | 6.2s |
 | `php-malware-finder` | 11s | 8.7s |
 
+#### And what maldet costs, measured
+
+With all four engines on the same 3,015-file site, a **full** cycle:
+
+| Engine | Time |
+|---|---|
+| `amwscan` | 2.3s |
+| `php-malware-finder` | 8.7s |
+| `wp-checksums` | 14.2s |
+| **`maldet`** | **18m46s** |
+
+maldet is ~0.5s per file — a bash loop spawning `od` and `perl` per file — so it *is*
+the cycle. Direct measurements: `-a` over 2,999 files took **28m36s**, and **37m42s**
+under `nice 19`.
+
+Two things keep that acceptable rather than disqualifying, and both are honest about the
+cost rather than hiding it:
+
+- The adapter is **ScopeAware**, so an incremental cycle scans only what changed:
+  ~100s for 200 files instead of the full half hour. Incremental is the normal mode; a
+  full scan is a deliberate `--full`.
+- It runs under the executor's `nice`/`ionice`, so the burn is deprioritized rather than
+  competing with the site.
+
+A user who runs `--full` on a large site with maldet enabled should expect tens of
+minutes. That is maldet's cost, not the orchestrator's, and it is the reason the
+`ScopeAware` bug in the first version of the adapter mattered so much: it made **every**
+cycle pay it.
+
 The orchestrator was executing each engine **once per batch**. With batches of 200 and
 3008 files that is ~16 invocations, and engines that cannot restrict their walk read
 the whole root in each one. It was not only waste: `wp-checksums` reported **16

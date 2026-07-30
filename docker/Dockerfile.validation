@@ -41,7 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # (Principle III). Here the image plays the part of a host whose administrator
 # installed it, and the validation still runs as the unprivileged account. Without
 # this, the only thing ever exercised was the adapter's absence path, and every
-# assumption inside its Scan() stayed unverified. Four of them were wrong — see
+# assumption inside its Scan() stayed unverified. Six of them were wrong — see
 # DECISIONS.md D-025.
 RUN curl -fsSL --proto '=https' --proto-redir '=https' \
       https://www.rfxn.com/downloads/maldetect-current.tar.gz -o /tmp/maldet.tar.gz \
@@ -96,41 +96,13 @@ COPY install.sh /opt/install.sh
 
 RUN chmod +x /usr/local/bin/sentinelhost /usr/local/bin/validate-engines
 
-# A custom maldet signature for the synthetic corpus marker.
-#
-# Without it maldet loads 51k real signatures, scans the corpus and finds zero — the
-# samples are inert by construction, and Principle VI forbids putting real executable
-# malware in this repository to change that. Zero hits means the whole half of the
-# adapter that matters is never reached: no hit-line parsing, no `{HEX}` type mapping,
-# and above all no proof that `--config-option quarantine_hits=0` actually stops maldet
-# from moving the user's files somewhere our vault cannot restore from.
-#
-# So the engine is taught to recognize our own inert marker. maldet's real detection is
-# not what is under test here — its behaviour when it DOES hit something is.
-# An MD5 signature and not a HEX one, because MD5 is the path maldet resolves itself:
-#
-#	val_hash=`grep -m1 $hash $sig_user_md5_file $sig_md5_file`
-#
-# HEX matching goes through a perl fifo and, in this image, through a ClamAV that is
-# not installed — a custom hex string is loaded, counted in "1 USER", and never
-# matched. Loaded-but-never-matched is this project's own worst failure mode wearing
-# maldet's clothes, so the signature uses the mechanism that demonstrably fires.
-#
-# The format comes from the shipped sigs/md5v2.dat: `<md5>:<size>:{MD5}<name>`.
-#
-# MD5 here is not a security choice and there is nothing to strengthen: it is the wire
-# format of maldet's `{MD5}` signature database, and the value is compared by maldet's
-# own `grep -m1 $hash`. Nothing is authenticated with it, and the file it identifies is
-# a synthetic marker committed to this repository. A stronger digest would simply never
-# match. Hence NOSONAR rather than a change.
-RUN sample=/corpus/synthetic/09-known-marker.php \
-    && printf '%s:%s:{MD5}php.corpus.marker.v1\n' \
-         "$(md5sum "$sample" | cut -d' ' -f1)" \
-         "$(stat -c%s "$sample")" \
-    `# NOSONAR - maldet's signature format mandates MD5; not used for security` \
-       > /usr/local/maldetect/sigs/custom.md5.dat \
-    && chmod 0644 /usr/local/maldetect/sigs/custom.md5.dat \
-    && cat /usr/local/maldetect/sigs/custom.md5.dat
+# Teach maldet one signature for this repository's own inert marker file, so that its
+# hit path is reachable at all — without it maldet scans the corpus and finds zero, and
+# half the adapter is never exercised. The full reasoning belongs with the code that does
+# it: see docker/teach-maldet-the-corpus-marker.sh.
+COPY docker/teach-maldet-the-corpus-marker.sh /usr/local/bin/teach-maldet-marker
+RUN chmod +x /usr/local/bin/teach-maldet-marker \
+    && /usr/local/bin/teach-maldet-marker
 
 USER hosting
 WORKDIR /home/hosting

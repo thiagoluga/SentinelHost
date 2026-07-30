@@ -227,22 +227,7 @@ var stringLineRe = regexp.MustCompile(`^0x([0-9a-fA-F]+):\$?([^:]*):\s?(.*)$`)
 // string lines belonging to it. Treating each line in isolation would produce
 // findings with no file.
 func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
-	rep := schema.ScanReport{
-		SchemaVersion: schema.Version,
-		ScanID:        raw.ScanID,
-		Engine:        Slug,
-		EngineVersion: raw.EngineVersion,
-		StartedAt:     raw.StartedAt,
-		FinishedAt:    raw.FinishedAt,
-		Status:        schema.StatusCompleted,
-		Scope: schema.Scope{
-			Root: raw.Root, Mode: raw.Mode,
-			FilesConsidered: raw.PathsRequested,
-			FilesScanned:    raw.PathsRequested,
-		},
-		Findings: []schema.Finding{},
-		RawRef:   raw.RawRef,
-	}
+	rep := adapter.NewScanReport(Slug, raw)
 
 	// Empty output from a process that COMPLETED means "no rule matched" — the
 	// normal, happy path. Empty output from a process that failed has already

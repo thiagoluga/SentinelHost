@@ -450,22 +450,7 @@ var (
 
 // Parse converts maldet's report into the normalized schema.
 func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
-	rep := schema.ScanReport{
-		SchemaVersion: schema.Version,
-		ScanID:        raw.ScanID,
-		Engine:        Slug,
-		EngineVersion: raw.EngineVersion,
-		StartedAt:     raw.StartedAt,
-		FinishedAt:    raw.FinishedAt,
-		Status:        schema.StatusCompleted,
-		Scope: schema.Scope{
-			Root: raw.Root, Mode: raw.Mode,
-			FilesConsidered: raw.PathsRequested,
-			FilesScanned:    raw.PathsRequested,
-		},
-		Findings: []schema.Finding{},
-		RawRef:   raw.RawRef,
-	}
+	rep := adapter.NewScanReport(Slug, raw)
 
 	text := strings.TrimSpace(string(raw.Stdout))
 	if text == "" {
