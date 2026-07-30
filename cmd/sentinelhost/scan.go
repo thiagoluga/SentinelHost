@@ -106,6 +106,19 @@ OPTIONS
 	if findings > 0 {
 		return exitFindings
 	}
+	// Exit 0 means "the cycle ran and found nothing". A cycle where no engine voted did
+	// not run in any sense that matters, and exiting 0 tells every cron job and
+	// monitoring check watching this command that the site is fine.
+	//
+	// exitError rather than a new code: this IS a failure — the tool was asked to scan
+	// and did not — and inventing a fourth code would leave every existing integration
+	// treating the new value as success by default.
+	if !sum.AnyEngineVoted() {
+		fmt.Fprintln(os.Stderr,
+			"error: no engine could run, so nothing was scanned. Exiting non-zero so this "+
+				"is not mistaken for a clean result.")
+		return exitError
+	}
 	return exitOK
 }
 
@@ -165,7 +178,16 @@ func printReport(w *os.File, sum cycle.Summary, maint *housekeeping.Result) {
 			fmt.Fprintf(w, "  ✗ %-20s %s\n", slug, sum.Abstentions[slug])
 		}
 	}
-	if len(sum.Abstentions) > 0 {
+	// "Reduced coverage" and "no coverage" are not the same sentence.
+	//
+	// The message used to be identical whether one engine abstained or all of them did.
+	// A cycle where nothing voted did not scan the site, and the empty verdict list below
+	// it means nothing whatsoever — so it says that, in the place where someone reading
+	// the output would otherwise be relieved.
+	if !sum.AnyEngineVoted() {
+		fmt.Fprintf(w, "\n  NOTHING WAS SCANNED: all %d engine(s) abstained.\n", len(sum.Abstentions))
+		fmt.Fprintf(w, "  An empty result below says nothing about this site. Fix a reason above first.\n")
+	} else if len(sum.Abstentions) > 0 {
 		fmt.Fprintf(w, "\n  %d engine(s) abstained: this cycle's coverage is reduced.\n", len(sum.Abstentions))
 	}
 

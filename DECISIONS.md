@@ -876,3 +876,50 @@ technique without documenting what it costs would be the wrong kind of helpful.
 **Not solved by this**: the web panel listens on `127.0.0.1` and needs an SSH tunnel, so
 it stays out of reach until the provider enables shell access. Everything the CLI does
 works through this.
+
+## D-031 — a cycle where no engine voted is `partial`, and exits non-zero
+
+**Context**: found by reading the `--json` output of a cycle in which all four engines
+abstained. The human-readable report said the right thing. Nothing else did:
+
+```json
+{ "status": "completed", "engines_ran": null, "verdicts": {}, "files_scanned": 1 }
+```
+
+Exit code 0. Status `completed`. No verdicts.
+
+**The defect**: to the panel, to a webhook consumer, or to any monitoring check asking
+`status == "completed" && no verdicts`, that is indistinguishable from *"scanned
+everything, the site is clean"*. It is this project's defining failure mode reaching the
+machine-readable interface — the one place where nobody is reading a sentence about
+reduced coverage.
+
+`ScanStatus.CountsAsVote()` already enforces the rule one level down: an engine that
+could not run abstains rather than reporting zero findings. The cycle had no equivalent.
+
+**Decision**: `Summary.AnyEngineVoted()` is the cycle-level counterpart. When it is
+false:
+
+- the cycle's status is `partial`, never `completed`;
+- `scan` exits **2**, not 0;
+- the report says `NOTHING WAS SCANNED: all N engine(s) abstained` followed by *"An empty
+  result below says nothing about this site"*, rather than the same "coverage is reduced"
+  sentence it printed whether one engine abstained or all of them did.
+
+Three details are deliberate:
+
+- **Some abstentions still count as `completed`.** A cycle with one working engine really
+  did scan, and its result is incomplete rather than absent. Marking every such cycle
+  partial would make `partial` the permanent normal state of any host without yara and
+  maldet — which is most of them — and a status that is always on carries no information.
+- **`exitError` (2) rather than a new code.** This *is* a failure: the tool was asked to
+  scan and did not. A fourth exit code would leave every existing integration treating
+  the new value as success by default.
+- **Availability alone is not participation.** The check reads `Available &&
+  Status.CountsAsVote()`, so an engine that started and then failed, timed out or was
+  killed does not rescue the cycle. That is the case that matters most, and testing only
+  `Available` would have reintroduced the bug for it.
+
+**How it was found**: by looking at the JSON at all. The text output had been correct
+this whole session and I had read it a dozen times; the machine interface next to it was
+saying the opposite thing, and nothing checked that the two agreed.
