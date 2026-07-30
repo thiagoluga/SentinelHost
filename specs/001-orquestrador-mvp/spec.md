@@ -1,4 +1,4 @@
-# Feature Specification: Orquestrador multi-engine com veredito por consenso (MVP)
+# Feature Specification: A multi-engine orchestrator with a consensus verdict (MVP)
 
 **Feature Branch**: `001-orquestrador-mvp`
 
@@ -6,290 +6,277 @@
 
 **Status**: Draft
 
-**Input**: User description: "Ferramenta open source para hospedagens compartilhadas
-que orquestra scanners de malware existentes, escaneia continuamente, quarentena
-ameaças confirmadas, alerta sobre suspeitas, com painel web para ver e configurar
-tudo (engines, agendamento, webhooks, alertas por e-mail)."
+**Input**: User description: "An open source tool for shared hosting that orchestrates
+existing malware scanners, scans continuously, quarantines confirmed threats, alerts
+about suspicions, with a web panel to see and configure everything (engines, the
+schedule, webhooks, e-mail alerts)."
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - Scan multi-engine com veredito por consenso (Priority: P1)
+### User Story 1 - A multi-engine scan with a consensus verdict (Priority: P1)
 
-Como dono de um site em hospedagem compartilhada, quero que a ferramenta rode os
-scanners disponíveis no meu ambiente sobre meus arquivos e me diga, para cada
-arquivo apontado, se a ameaça é confirmada, provável ou apenas suspeita —
-combinando os resultados de todos os engines em vez de eu ter que interpretar
-cada um separadamente.
+As the owner of a site on shared hosting, I want the tool to run the scanners available
+in my environment over my files and tell me, for each flagged file, whether the threat
+is confirmed, likely or merely suspicious — combining the results of all the engines
+instead of my having to interpret each one separately.
 
-**Why this priority**: É o núcleo do produto. Sem o scan orquestrado e o
-veredito consolidado, nada mais (quarentena, alertas, painel) tem o que mostrar.
+**Why this priority**: It is the product's core. Without the orchestrated scan and the
+consolidated verdict, nothing else (quarantine, alerts, the panel) has anything to show.
 
-**Independent Test**: Rodar `sentinelhost scan` num diretório de teste contendo
-um WordPress limpo + amostras sintéticas de webshell. Verificar que o relatório
-final lista as amostras com nível `confirmed`/`likely` e não aponta os arquivos
-limpos do core.
+**Independent Test**: Run `sentinelhost scan` on a test directory holding a clean
+WordPress + synthetic webshell samples. Check that the final report lists the samples at
+`confirmed`/`likely` and does not flag the clean core files.
 
 **Acceptance Scenarios**:
 
-1. **Given** um diretório com 2+ engines disponíveis (ex.: amwscan e
-   php-malware-finder), **When** o scan executa, **Then** cada engine roda como
-   subprocess, suas saídas são normalizadas e cada arquivo apontado recebe um
-   único veredito consolidado com score e lista de votos.
-2. **Given** um arquivo apontado por 2 engines com confiança de assinatura,
-   **When** o motor de veredito calcula o score, **Then** o nível é `confirmed`
-   (score ≥ 0.9).
-3. **Given** um arquivo apontado por apenas 1 engine heurístico, **When** o
-   veredito é calculado, **Then** o nível é `suspicious` e nenhuma ação
-   automática ocorre.
-4. **Given** um engine que falha ou estoura timeout, **When** o ciclo termina,
-   **Then** o engine consta como abstenção, o ciclo completa com os demais e a
-   falha aparece no relatório.
-5. **Given** um arquivo do core do WordPress idêntico ao checksum oficial,
-   **When** qualquer engine o aponta, **Then** o veredito é `clean` (proteção
-   contra falso positivo) com o motivo registrado.
+1. **Given** a directory with 2+ available engines (e.g. amwscan and
+   php-malware-finder), **When** the scan runs, **Then** each engine runs as a
+   subprocess, its output is normalized and each flagged file receives a single
+   consolidated verdict with a score and a list of votes.
+2. **Given** a file flagged by 2 engines with signature confidence, **When** the verdict
+   engine computes the score, **Then** the level is `confirmed` (score ≥ 0.9).
+3. **Given** a file flagged by only 1 heuristic engine, **When** the verdict is
+   computed, **Then** the level is `suspicious` and no automatic action happens.
+4. **Given** an engine that fails or hits its timeout, **When** the cycle finishes,
+   **Then** the engine shows up as an abstention, the cycle completes with the others and
+   the failure appears in the report.
+5. **Given** a WordPress core file identical to the official checksum, **When** any
+   engine flags it, **Then** the verdict is `clean` (false-positive protection) with the
+   reason recorded.
 
 ---
 
-### User Story 2 - Quarentena reversível automática (Priority: P1)
+### User Story 2 - An automatic, reversible quarantine (Priority: P1)
 
-Como dono do site, quero que ameaças confirmadas sejam neutralizadas
-automaticamente — sem apagar nada — e quero poder restaurar qualquer arquivo
-quarentenado com um clique, porque tenho medo de a ferramenta quebrar meu site.
+As the site's owner, I want confirmed threats to be neutralized automatically — without
+deleting anything — and I want to be able to restore any quarantined file with one
+click, because I am afraid of the tool breaking my site.
 
-**Why this priority**: É a ação de proteção que justifica rodar a ferramenta
-continuamente; a reversibilidade é o que torna a automação aceitável.
+**Why this priority**: It is the protective action that justifies running the tool
+continuously; the reversibility is what makes the automation acceptable.
 
-**Independent Test**: Forçar um veredito `confirmed` num arquivo de teste;
-verificar que ele foi movido para a quarentena (permissão 000, extensão
-neutralizada), que o site continua funcional e que `restore` o devolve
-byte a byte ao local original.
+**Independent Test**: Force a `confirmed` verdict on a test file; check that it was moved
+into the quarantine (restricted permissions, a neutralized extension), that the site is
+still functional and that `restore` gives it back byte for byte at its original location.
 
 **Acceptance Scenarios**:
 
-1. **Given** um veredito `confirmed` com ação automática habilitada, **When** a
-   quarentena executa, **Then** o arquivo é movido para o cofre com metadados
-   (caminho original, hashes, permissões, dono, timestamps) e um alerta é gerado.
-2. **Given** um arquivo em quarentena, **When** o usuário clica em restaurar,
-   **Then** o arquivo volta ao caminho original com o mesmo conteúdo e
-   permissões, e o evento é registrado.
-3. **Given** o modo observação ativo, **When** um veredito `confirmed` ocorre,
-   **Then** nenhum arquivo é movido e o alerta indica "ação recomendada".
-4. **Given** itens em quarentena além do período de retenção, **When** a rotina
-   de purga roda, **Then** apenas itens expirados são removidos definitivamente
-   e o total purgado é registrado.
-5. **Given** um arquivo na whitelist do usuário, **When** engines o apontam,
-   **Then** ele nunca é quarentenado, mas permanece visível no relatório.
+1. **Given** a `confirmed` verdict with the automatic action enabled, **When** the
+   quarantine runs, **Then** the file is moved into the vault with its metadata (the
+   original path, hashes, permissions, owner, timestamps) and an alert is generated.
+2. **Given** a quarantined file, **When** the user clicks restore, **Then** the file
+   returns to its original path with the same content and permissions, and the event is
+   recorded.
+3. **Given** observation mode is on, **When** a `confirmed` verdict happens, **Then** no
+   file is moved and the alert says "action recommended".
+4. **Given** items in quarantine beyond the retention period, **When** the purge routine
+   runs, **Then** only expired items are removed permanently and the purged total is
+   recorded.
+5. **Given** a file on the user's whitelist, **When** engines flag it, **Then** it is
+   never quarantined, but it stays visible in the report.
 
 ---
 
-### User Story 3 - Monitoramento contínuo adaptado à hospedagem (Priority: P2)
+### User Story 3 - Continuous monitoring adapted to the hosting (Priority: P2)
 
-Como usuário de hospedagem barata, quero que a ferramenta fique vigiando meus
-arquivos sem estourar os limites de CPU da minha conta — escaneando só o que
-mudou, no horário e ritmo que eu configurar, e funcionando mesmo se a hospedagem
-matar processos longos.
+As a user of cheap hosting, I want the tool to keep watching my files without blowing my
+account's CPU limits — scanning only what changed, at the time and pace I configure, and
+working even if the hosting kills long processes.
 
-**Why this priority**: Transforma o scanner pontual em proteção contínua; é o
-diferencial frente aos scanners existentes, mas depende do P1 existir.
+**Why this priority**: It turns a one-off scanner into continuous protection; it is the
+differentiator against the existing scanners, but it depends on P1 existing.
 
-**Independent Test**: Configurar ciclo incremental de 1h num diretório com
-baseline; modificar 3 arquivos; verificar que o próximo ciclo escaneia apenas
-os 3 modificados e completa dentro dos limites de recursos configurados.
+**Independent Test**: Configure a 1h incremental cycle on a directory with a baseline;
+modify 3 files; check that the next cycle scans only the 3 modified ones and completes
+within the configured resource limits.
 
 **Acceptance Scenarios**:
 
-1. **Given** um baseline de hashes existente, **When** o ciclo incremental roda,
-   **Then** apenas arquivos novos/modificados desde o último ciclo são
-   escaneados pelos engines.
-2. **Given** o modo daemon, **When** o processo é morto pela hospedagem,
-   **Then** o próximo disparo (cron de watchdog) retoma do último estado sem
-   corromper baseline nem quarentena.
-3. **Given** limites configurados (nice, pausa entre lotes, tamanho máximo),
-   **When** qualquer engine executa, **Then** os limites são aplicados ao
-   subprocess.
-4. **Given** o modo somente-cron, **When** o usuário conclui a configuração,
-   **Then** a ferramenta exibe a linha de cron pronta para colar no cPanel.
+1. **Given** an existing hash baseline, **When** the incremental cycle runs, **Then**
+   only files that are new or modified since the last cycle are scanned by the engines.
+2. **Given** daemon mode, **When** the process is killed by the hosting, **Then** the
+   next trigger (a watchdog cron) resumes from the last state without corrupting the
+   baseline or the quarantine.
+3. **Given** configured limits (nice, a pause between batches, a maximum size), **When**
+   any engine runs, **Then** the limits are applied to the subprocess.
+4. **Given** cron-only mode, **When** the user finishes the configuration, **Then** the
+   tool displays the cron line ready to paste into cPanel.
 
 ---
 
-### User Story 4 - Alertas por e-mail e webhooks (Priority: P2)
+### User Story 4 - E-mail and webhook alerts (Priority: P2)
 
-Como dono do site, quero ser avisado por e-mail quando algo for confirmado ou
-provável, receber um resumo periódico, e poder plugar webhooks para integrar
-com Slack/Discord/n8n ou sistemas próprios.
+As the site's owner, I want to be told by e-mail when something is confirmed or likely,
+to receive a periodic summary, and to be able to plug in webhooks to integrate with
+Slack/Discord/n8n or my own systems.
 
-**Why this priority**: Sem notificação, a proteção contínua é invisível; o
-usuário só descobre o ataque quando o Google marca o site como perigoso.
+**Why this priority**: Without notification, continuous protection is invisible; the user
+only finds out about the attack when Google flags the site as dangerous.
 
-**Independent Test**: Configurar SMTP de teste + um webhook de teste; forçar um
-veredito `confirmed`; verificar recebimento do e-mail com os campos corretos e
-do POST JSON assinado no endpoint.
+**Independent Test**: Configure a test SMTP + a test webhook; force a `confirmed`
+verdict; check that the e-mail arrives with the correct fields and that the signed JSON
+POST reaches the endpoint.
 
 **Acceptance Scenarios**:
 
-1. **Given** SMTP configurado e níveis selecionados, **When** um veredito de
-   nível selecionado ocorre, **Then** um e-mail é enviado aos destinatários com
-   arquivo, nível, score, votos e link para o painel.
-2. **Given** digest diário habilitado, **When** o horário chega, **Then** um
-   único e-mail consolida achados, ações e estatísticas do período (enviado
-   mesmo sem incidentes críticos, se houver suspeitas acumuladas).
-3. **Given** um webhook cadastrado com segredo, **When** um evento inscrito
-   ocorre, **Then** um POST JSON é entregue com cabeçalho de assinatura
-   HMAC-SHA256 e, em falha, retentado com backoff exponencial (5 tentativas).
-4. **Given** o botão "enviar teste" (e-mail ou webhook), **When** acionado,
-   **Then** uma entrega de teste ocorre e o resultado (sucesso/erro real) é
-   exibido na hora.
+1. **Given** SMTP is configured and levels are selected, **When** a verdict at a selected
+   level happens, **Then** an e-mail is sent to the recipients with the file, the level,
+   the score, the votes and a link to the panel.
+2. **Given** the daily digest is enabled, **When** its time arrives, **Then** a single
+   e-mail consolidates the period's findings, actions and statistics (sent even with no
+   critical incidents, if there are suspicions piled up).
+3. **Given** a registered webhook with a secret, **When** a subscribed event happens,
+   **Then** a JSON POST is delivered with an HMAC-SHA256 signature header and, on
+   failure, retried with exponential backoff (5 attempts).
+4. **Given** the "send test" button (e-mail or webhook), **When** it is pressed, **Then**
+   a test delivery happens and the result (success/the real error) is displayed right
+   away.
 
 ---
 
-### User Story 5 - Painel web embutido (Priority: P3)
+### User Story 5 - The embedded web panel (Priority: P3)
 
-Como usuário leigo, quero um painel simples onde vejo o estado do meu site
-(visão geral, achados, quarentena) e configuro tudo (engines e pesos,
-agendamento, limites, alertas, webhooks, limiares de veredito, whitelist) sem
-editar arquivos de configuração.
+As a non-technical user, I want a simple panel where I see my site's state (the overview,
+findings, the quarantine) and configure everything (engines and weights, the schedule,
+limits, alerts, webhooks, verdict thresholds, the whitelist) without editing
+configuration files.
 
-**Why this priority**: Tudo do painel é operável por CLI + arquivo de config
-(P1–P2); o painel é a camada de usabilidade que amplia o público da ferramenta.
-Referência visual: `docs/painel-mockup.html`.
+**Why this priority**: Everything in the panel is operable through the CLI + the config
+file (P1–P2); the panel is the usability layer that widens the tool's audience. Visual
+reference: `docs/painel-mockup.html`.
 
-**Independent Test**: Subir `sentinelhost serve`, autenticar, percorrer as seis
-áreas do mockup e verificar que cada controle lê e grava a configuração real e
-que ações (quarentenar, restaurar, testar alerta) executam de verdade.
+**Independent Test**: Start `sentinelhost serve`, authenticate, walk through the six
+areas of the mockup and check that every control reads and writes the real configuration
+and that the actions (quarantine, restore, test an alert) really execute.
 
 **Acceptance Scenarios**:
 
-1. **Given** o binário rodando, **When** o usuário acessa o painel, **Then**
-   autenticação é exigida (senha definida no primeiro acesso; escuta em
-   localhost por padrão).
-2. **Given** achados pendentes, **When** o usuário decide (quarentenar /
-   ignorar / whitelist), **Then** a ação executa e o estado atualiza sem
-   recarregar a página.
-3. **Given** qualquer alteração de configuração no painel, **When** salva,
-   **Then** ela é persistida no arquivo de configuração e aplicada no próximo
-   ciclo sem reiniciar manualmente.
+1. **Given** the binary is running, **When** the user opens the panel, **Then**
+   authentication is required (a password set on first access; listening on localhost by
+   default).
+2. **Given** pending findings, **When** the user decides (quarantine / ignore /
+   whitelist), **Then** the action executes and the state updates without reloading the
+   page.
+3. **Given** any configuration change in the panel, **When** it is saved, **Then** it is
+   persisted in the configuration file and applied from the next cycle without a manual
+   restart.
 
 ---
 
 ### Edge Cases
 
-- Hospedagem sem nenhum engine disponível além dos nativos: a ferramenta opera
-  só com `wp-checksums` + heurísticas de anomalia e deixa claro no painel que a
-  cobertura é reduzida.
-- Site que não é WordPress (Laravel, site estático, Joomla): `wp-checksums`
-  abstém-se sem penalizar o score dos demais.
-- Dois processos de scan simultâneos (cron + manual): lock de instância única;
-  o segundo processo sai com mensagem clara.
-- Arquivo apontado que muda de conteúdo entre o scan e a quarentena: re-hash
-  antes de agir; se divergir, reescaneia em vez de quarentenar às cegas.
-- Disco cheio ou sem permissão de escrita no cofre de quarentena: ação vira
-  alerta crítico "não foi possível neutralizar" em vez de falhar silenciosamente.
-- Milhões de inodes (sites com cache descontrolado): respeitar exclusões padrão
-  e limite de profundidade; nunca varrer fora do diretório raiz configurado.
-- SMTP da hospedagem bloqueando envio: erro real exibido no teste de e-mail;
-  webhook segue funcionando como canal alternativo.
-- Symlinks apontando para fora da raiz: nunca seguidos.
+- Hosting with no engine available beyond the native ones: the tool operates with
+  `wp-checksums` + anomaly heuristics alone and makes it clear in the panel that the
+  coverage is reduced.
+- A site that is not WordPress (Laravel, a static site, Joomla): `wp-checksums` abstains
+  without penalizing the others' score.
+- Two simultaneous scan processes (cron + manual): a single-instance lock; the second
+  process exits with a clear message.
+- A flagged file whose content changes between the scan and the quarantine: a re-hash
+  before acting; if it diverges, re-scan instead of quarantining blindly.
+- A full disk or no write permission in the quarantine vault: the action becomes a
+  critical "could not neutralize" alert instead of failing silently.
+- Millions of inodes (sites with runaway caches): honour the default exclusions and the
+  depth limit; never walk outside the configured root directory.
+- The hosting's SMTP blocking the send: the real error is displayed in the e-mail test;
+  the webhook keeps working as an alternative channel.
+- Symlinks pointing outside the root: never followed.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: O sistema MUST detectar quais engines estão disponíveis no
-  ambiente (probe) e exibir o motivo de indisponibilidade de cada um.
-- **FR-002**: O sistema MUST executar cada engine disponível como subprocess
-  isolado com limites de recursos e timeout, coletando a saída bruta.
-- **FR-003**: Cada adaptador MUST converter a saída bruta do seu engine para o
-  esquema normalizado versionado (docs/esquema-e-adaptadores.md), preservando a
-  saída bruta para auditoria.
-- **FR-004**: O motor de veredito MUST consolidar achados por hash de arquivo em
-  um único veredito com score ponderado, nível (`confirmed`/`likely`/
-  `suspicious`/`clean`) e lista de votos e abstenções.
-- **FR-005**: O sistema MUST verificar integridade de instalações WordPress
-  contra os checksums oficiais do WordPress.org (core e, quando disponível,
-  plugins), tratando divergência como voto de peso máximo e igualdade como
-  proteção contra falso positivo.
-- **FR-006**: O sistema MUST quarentenar automaticamente apenas vereditos
-  `confirmed` (quando o modo observação estiver desativado), de forma
-  reversível: mover para cofre, remover permissão de execução, neutralizar
-  extensão e registrar metadados completos para restauração.
-- **FR-007**: O usuário MUST poder restaurar, ignorar (uma vez) ou colocar na
-  whitelist (permanente) qualquer arquivo apontado, via painel e via CLI.
-- **FR-008**: O sistema MUST manter baseline de hashes para scans incrementais
-  e executar scan completo em agenda separada configurável.
-- **FR-009**: O sistema MUST operar em modo daemon e em modo somente-cron,
-  gerando a linha de cron pronta para o cPanel neste último.
-- **FR-010**: O sistema MUST enviar alertas por e-mail via SMTP configurável
-  (host, porta, TLS, credenciais, remetente, destinatários), com seleção de
-  níveis que disparam alerta imediato e digest periódico opcional.
-- **FR-011**: O sistema MUST entregar eventos a webhooks cadastrados como POST
-  JSON assinado (HMAC-SHA256 em cabeçalho), com filtro de eventos por webhook,
-  retentativas com backoff exponencial e histórico do último envio.
-- **FR-012**: O sistema MUST oferecer envio de teste para e-mail e para cada
-  webhook, reportando o resultado real.
-- **FR-013**: O sistema MUST servir um painel web embutido, autenticado, com as
-  áreas: visão geral, achados, quarentena, engines, agendamento, alertas e
-  configurações — conforme o mockup de referência.
-- **FR-014**: Toda configuração exposta no painel MUST ser igualmente editável
-  no arquivo de configuração e refletida nos dois sentidos.
-- **FR-015**: O sistema MUST registrar todas as ações (scans, vereditos,
-  quarentenas, restaurações, alertas, mudanças de config) em log estruturado
-  consultável no painel.
-- **FR-016**: O sistema MUST atualizar assinaturas/regras dos engines sob
-  demanda e em agenda, registrando a data por engine.
-- **FR-017**: Limiares de score dos níveis de veredito e pesos por engine MUST
-  ser configuráveis, com valores padrão seguros e modo observação recomendado
-  nos primeiros dias.
-- **FR-018**: O sistema MUST impedir instâncias concorrentes (lock) e MUST
-  re-hashear arquivos imediatamente antes de qualquer ação de quarentena.
+- **FR-001**: The system MUST detect which engines are available in the environment
+  (probe) and display the reason each one is unavailable.
+- **FR-002**: The system MUST run each available engine as an isolated subprocess with
+  resource limits and a timeout, collecting the raw output.
+- **FR-003**: Each adapter MUST convert its engine's raw output into the versioned
+  normalized schema (docs/schema-and-adapters.md), preserving the raw output for
+  auditing.
+- **FR-004**: The verdict engine MUST consolidate findings by file hash into a single
+  verdict with a weighted score, a level (`confirmed`/`likely`/`suspicious`/`clean`) and
+  a list of votes and abstentions.
+- **FR-005**: The system MUST verify the integrity of WordPress installations against
+  the official WordPress.org checksums (the core and, when available, plugins), treating
+  a divergence as the maximum-weight vote and an equality as false-positive protection.
+- **FR-006**: The system MUST automatically quarantine only `confirmed` verdicts (when
+  observation mode is off), reversibly: move it into the vault, remove the execute
+  permission, neutralize the extension and record the complete metadata for a restore.
+- **FR-007**: The user MUST be able to restore, ignore (once) or whitelist (permanently)
+  any flagged file, through the panel and through the CLI.
+- **FR-008**: The system MUST keep a hash baseline for incremental scans and run a full
+  scan on a separate, configurable schedule.
+- **FR-009**: The system MUST operate in daemon mode and in cron-only mode, producing the
+  cron line ready for cPanel in the latter.
+- **FR-010**: The system MUST send e-mail alerts through configurable SMTP (host, port,
+  TLS, credentials, sender, recipients), with a selection of the levels that trigger an
+  immediate alert and an optional periodic digest.
+- **FR-011**: The system MUST deliver events to registered webhooks as a signed JSON
+  POST (HMAC-SHA256 in a header), with an event filter per webhook, retries with
+  exponential backoff and a history of the last send.
+- **FR-012**: The system MUST offer a test send for e-mail and for each webhook,
+  reporting the real result.
+- **FR-013**: The system MUST serve an embedded, authenticated web panel with the areas:
+  the overview, findings, quarantine, engines, the schedule, alerts and settings — per
+  the reference mockup.
+- **FR-014**: Every configuration option exposed in the panel MUST be equally editable in
+  the configuration file and reflected in both directions.
+- **FR-015**: The system MUST record every action (scans, verdicts, quarantines,
+  restores, alerts, config changes) in a structured log queryable in the panel.
+- **FR-016**: The system MUST update the engines' signatures/rules on demand and on a
+  schedule, recording the date per engine.
+- **FR-017**: The score thresholds of the verdict levels and the per-engine weights MUST
+  be configurable, with safe default values and observation mode recommended in the first
+  days.
+- **FR-018**: The system MUST prevent concurrent instances (a lock) and MUST re-hash
+  files immediately before any quarantine action.
 
 ### Key Entities
 
-- **Engine/Adaptador**: motor externo de detecção + camada de conversão; tem
-  slug, versão, estado de disponibilidade, peso, data das assinaturas.
-- **ScanReport**: execução de um engine num ciclo; escopo, status, uso de
-  recursos, achados.
-- **Finding**: um apontamento de um engine sobre um arquivo; categoria,
-  severidade, confiança, regra, trecho sanitizado.
-- **Verdict**: decisão consolidada por arquivo; nível, score, votos,
-  abstenções, ação tomada, decisão do usuário.
-- **QuarantineItem**: arquivo neutralizado; metadados para restauração,
-  retenção, referência ao veredito.
-- **AlertChannel**: canal de notificação (e-mail SMTP, webhook, Telegram
-  futuro); configuração, filtro de níveis/eventos, histórico de entregas.
-- **Baseline**: mapa caminho→(hash, mtime, tamanho) usado pelos ciclos
-  incrementais.
-- **Config**: arquivo único (TOML) com todas as opções; fonte da verdade
-  compartilhada entre CLI e painel.
+- **Engine/Adapter**: the external detection engine + the conversion layer; it has a
+  slug, a version, an availability state, a weight and the date of its signatures.
+- **ScanReport**: one engine's execution in one cycle; the scope, the status, the
+  resource usage, the findings.
+- **Finding**: one engine's flag about one file; the category, the severity, the
+  confidence, the rule, a sanitized snippet.
+- **Verdict**: the consolidated decision per file; the level, the score, the votes, the
+  abstentions, the action taken, the user's decision.
+- **QuarantineItem**: a neutralized file; the metadata for a restore, the retention, a
+  reference to the verdict.
+- **AlertChannel**: a notification channel (SMTP e-mail, a webhook, Telegram in the
+  future); its configuration, its level/event filter, its delivery history.
+- **Baseline**: the path→(hash, mtime, size) map the incremental cycles use.
+- **Config**: a single file (TOML) with every option; the source of truth shared between
+  the CLI and the panel.
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001**: No corpus de teste (WordPress limpo + amostras sintéticas), o
-  consenso detecta ≥ 95% das amostras como `confirmed`/`likely` com zero
-  falso positivo `confirmed` em arquivos oficiais do core.
-- **SC-002**: Scan incremental de um site de 20 mil arquivos com 1% de mudança
-  completa em menos de 5 minutos dentro dos limites padrão de recursos.
-- **SC-003**: Todo arquivo quarentenado é restaurável byte a byte; 100% dos
-  testes de round-trip (quarentenar → restaurar → comparar hash) passam.
-- **SC-004**: Um usuário leigo consegue, só pelo painel, configurar e-mail de
-  alerta e decidir sobre um achado pendente em menos de 5 minutos, sem
-  documentação.
-- **SC-005**: Alertas de vereditos `confirmed` são entregues (e-mail ou
-  webhook) em até 60 segundos após o veredito.
-- **SC-006**: O binário roda em uma conta cPanel real sem root, e o processo
-  nunca ultrapassa os limites de CPU/memória configurados (verificado nos
-  testes de recursos).
+- **SC-001**: On the test corpus (a clean WordPress + synthetic samples), the consensus
+  detects ≥ 95% of the samples as `confirmed`/`likely` with zero `confirmed` false
+  positives on official core files.
+- **SC-002**: An incremental scan of a 20 thousand-file site with 1% changed completes in
+  under 5 minutes within the default resource limits.
+- **SC-003**: Every quarantined file is restorable byte for byte; 100% of the round-trip
+  tests (quarantine → restore → compare the hash) pass.
+- **SC-004**: A non-technical user manages, through the panel alone, to configure an
+  alert e-mail and decide about a pending finding in under 5 minutes, with no
+  documentation.
+- **SC-005**: Alerts for `confirmed` verdicts are delivered (by e-mail or webhook) within
+  60 seconds of the verdict.
+- **SC-006**: The binary runs on a real cPanel account without root, and the process never
+  exceeds the configured CPU/memory limits (verified in the resource tests).
 
 ## Assumptions
 
-- O usuário tem ao menos acesso a cron (cPanel) e, idealmente, SSH; o painel
-  pressupõe capacidade de acessar uma porta local (túnel SSH) ou porta
-  liberada.
-- MVP prioriza sites PHP/WordPress em Linux; outros CMSs funcionam com
-  cobertura reduzida (sem checksums oficiais).
-- Engines do MVP: `wp-checksums` (nativo), `amwscan`, `php-malware-finder`;
-  `maldet` quando o ambiente permitir. `wordfence-cli`, `clamav` e Telegram
-  ficam pós-MVP.
-- Interface do painel em pt-BR no MVP, com i18n preparado para en.
-- Licença do orquestrador: MIT; engines GPL somente via subprocess.
+- The user has at least access to cron (cPanel) and, ideally, SSH; the panel presupposes
+  the ability to reach a local port (an SSH tunnel) or an open port.
+- The MVP prioritizes PHP/WordPress sites on Linux; other CMSs work with reduced coverage
+  (no official checksums).
+- The MVP's engines: `wp-checksums` (native), `amwscan`, `php-malware-finder`; `maldet`
+  when the environment allows. `wordfence-cli`, `clamav` and Telegram are left post-MVP.
+- The panel's interface ships **English** as its base locale, with `i18n` prepared for
+  other languages (constitution 1.1.0, Principle VIII — this reverses the pt-BR
+  assumption of the original draft).
+- The orchestrator's license: MIT; GPL engines only through a subprocess.
