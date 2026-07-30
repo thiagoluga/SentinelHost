@@ -215,22 +215,32 @@ func TestNoPluginsDirectoryIsNotAnError(t *testing.T) {
 
 // Verification -----------------------------------------------------------------
 
+// intactPlugin creates a plugin and publishes checksums that match it exactly, which is
+// the setup every "this plugin is fine" case needs. Shared because writing it twice
+// invites the two copies to drift, and a test whose fixture quietly stops matching the
+// API it imitates is worse than no test at all.
+func intactPlugin(t *testing.T, api *fakeAPI, root, slug, version string, files map[string]string) string {
+	t.Helper()
+	dir := plugin(t, root, slug, version, files)
+	sums := map[string][]string{
+		slug + ".php": {sha256Of(t, filepath.Join(dir, slug+".php"))},
+	}
+	for rel := range files {
+		sums[rel] = []string{sha256Of(t, filepath.Join(dir, rel))}
+	}
+	api.pluginSums[slug] = map[string]map[string][]string{version: sums}
+	return dir
+}
+
 func TestAnIntactPluginBecomesACleanFileAndNotAFinding(t *testing.T) {
 	// A legitimate plugin carries minified JS and base64 — exactly what produces
 	// heuristic false positives. Without entering clean_files it does not get the
 	// veto's protection and another engine could take the user's site down.
 	api := newAPI(t)
 	root := site(t, api)
-	dir := plugin(t, root, "my-plugin", "2.0", map[string]string{
+	dir := intactPlugin(t, api, root, "my-plugin", "2.0", map[string]string{
 		"inc/util.php": "<?php // legitimate\n",
 	})
-
-	api.pluginSums["my-plugin"] = map[string]map[string][]string{
-		"2.0": {
-			"my-plugin.php": {sha256Of(t, filepath.Join(dir, "my-plugin.php"))},
-			"inc/util.php":  {sha256Of(t, filepath.Join(dir, "inc/util.php"))},
-		},
-	}
 
 	rep := run(t, api.adapter(), root)
 
@@ -540,4 +550,40 @@ func md5Of(t *testing.T, path string) string {
 		t.Fatalf("md5 %s: %v", path, err)
 	}
 	return h
+}
+
+// A plugin that WAS verified must not be reported as skipped.
+//
+// `SkippedReasonCounts` answers one question, and it is the question this whole project
+// is organised around: what did the scan NOT look at? Putting a success into it inverts
+// the meaning — a user reading `skipped: plugin_verified=1` concludes coverage was lost
+// and goes hunting for a problem that does not exist.
+//
+// The damage runs the other way too, and that half is worse. `plugin_without_checksum`
+// is a real gap: a plugin nobody verified, sitting in the same list, indistinguishable
+// at a glance from a success. Diluting the skip list is how a genuine gap stops being
+// noticed.
+//
+// Found on a real account, where every single cycle printed `skipped: plugin_verified=1`
+// against a WordPress whose one plugin had just been checked against the official API
+// and found intact.
+func TestAVerifiedPluginIsNotCountedAsSkipped(t *testing.T) {
+	api := newAPI(t)
+	root := site(t, api)
+	intactPlugin(t, api, root, "akismet", "5.0", map[string]string{
+		"inc/util.php": "<?php // legitimate\n",
+	})
+
+	rep := run(t, api.adapter(), root)
+
+	if n, ok := rep.Scope.SkippedReasonCounts["plugin_verified"]; ok {
+		t.Errorf("a verified plugin was reported as skipped (%d): the counter answers "+
+			"\"what did the scan NOT look at?\", and this plugin was looked at", n)
+	}
+	// The coverage itself is not lost by dropping the counter — the plugin's files are
+	// already in FilesScanned, which is where "what was examined" belongs.
+	if rep.Scope.FilesScanned < 2 {
+		t.Errorf("the plugin's files are missing from FilesScanned (%d): dropping the "+
+			"counter must not drop the coverage with it", rep.Scope.FilesScanned)
+	}
 }

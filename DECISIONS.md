@@ -794,3 +794,39 @@ from the same assumption, both passing until reality disagreed.
 **How it was found matters.** No unit test in this repository plants the same content
 twice, because whoever wrote them — me — did not think of it. A real account did, in the
 first ten minutes of trying to test detection by path.
+
+## D-029 — `SkippedReasonCounts` holds gaps only, never successes
+
+**Context**: every cycle on the real cPanel account printed the same line, against a
+WordPress whose single plugin had just been checked against the official API and found
+intact:
+
+```text
+✓ wp-checksums         0 finding(s) in 1.149s
+    skipped: plugin_verified=1
+```
+
+**The defect**: `plugin_verified` counted plugins that **were** verified, and it was
+being written into `Scope.SkippedReasonCounts` — the map the CLI and the panel render
+under `skipped:`. A success was being reported as a gap.
+
+It is wrong in both directions, and the second is the serious one:
+
+- A user reading `skipped: plugin_verified=1` concludes coverage was lost, and goes
+  looking for a problem that does not exist.
+- `plugin_without_checksum` — a **real** gap, a plugin nobody could verify — sits in the
+  same list, indistinguishable at a glance from a success. Diluting the skip list is how
+  a genuine gap stops being noticed, and this project's whole discipline is that anything
+  skipped is counted and reported so it *is* noticed.
+
+**Decision**: `SkippedReasonCounts` answers exactly one question — what did the scan NOT
+look at? — and only genuine gaps go in it. The `plugin_verified` entry is removed.
+
+No coverage information is lost with it: the verified plugin's files are already counted
+in `Scope.FilesConsidered` and `Scope.FilesScanned`, which is where "what was examined"
+belongs. The counter was redundant as well as mislabelled.
+
+**How it was found**: by reading output from a real account rather than a fixture. The
+line had appeared in every cycle of this session and I had walked past it repeatedly
+before asking what it actually meant. A counter that no test asserted, printing a
+reassuring-sounding word in the one place reserved for bad news.

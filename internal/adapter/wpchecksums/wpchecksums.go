@@ -338,17 +338,24 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 	// A plugin that was not verified must NEVER look like a plugin that was
 	// verified and found clean. Each reason enters the report's accounting, which
 	// the panel and `scan` display.
+	//
+	// Only genuine gaps go in here. `SkippedReasonCounts` answers exactly one question —
+	// what did the scan NOT look at? — and it is the question this project is organised
+	// around. A successfully verified plugin used to be counted here too, under
+	// `plugin_verified`, which inverted the meaning twice over: a user reading
+	// `skipped: plugin_verified=1` concludes coverage was lost and goes hunting for a
+	// problem that does not exist, and `plugin_without_checksum` — a real gap, a plugin
+	// nobody checked — ends up in the same list, indistinguishable at a glance from a
+	// success. Diluting the skip list is how a genuine gap stops being noticed.
+	//
+	// Nothing is lost by leaving success out: the verified plugin's files are already
+	// counted in FilesConsidered and FilesScanned just above, which is where "what was
+	// examined" belongs.
 	if len(payload.PluginsSkipped) > 0 {
 		if rep.Scope.SkippedReasonCounts == nil {
 			rep.Scope.SkippedReasonCounts = map[string]int{}
 		}
 		rep.Scope.SkippedReasonCounts["plugin_without_checksum"] = len(payload.PluginsSkipped)
-	}
-	if n := len(payload.Plugins); n > 0 {
-		if rep.Scope.SkippedReasonCounts == nil {
-			rep.Scope.SkippedReasonCounts = map[string]int{}
-		}
-		rep.Scope.SkippedReasonCounts["plugin_verified"] = n
 	}
 
 	return rep, nil
