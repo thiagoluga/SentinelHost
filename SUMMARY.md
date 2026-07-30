@@ -96,7 +96,7 @@ were carried out. A summary per phase:
 | **SC-003** — 100% of the quarantine round trips byte for byte | ✅ | Tested with a binary, CRLF, an empty file, 1 MiB and multibyte UTF-8. The original permissions are restored too. |
 | **SC-004** — a non-technical user configures an alert and decides a finding in under 5 min through the panel | ⚠️ partial | The **functional flow** is covered end to end by a test (`TestSC004TheCompletePanelFlow`). The **real usability** part (the time, with no documentation) requires validation with a real person — see the pending items. |
 | **SC-005** — a `confirmed` alert delivered within 60 s | ✅ by construction | The dispatch happens synchronously inside the cycle, right after the verdict; each delivery's timeout is 10 s. It was not measured under real load. |
-| **SC-006** — it runs on a real cPanel account without root, within the limits | ⚠️ pending | Static linux/amd64 and arm64 binaries were built and verified (an ELF with no dynamic interpreter). **The validation on a real cPanel account is missing** — see the pending items. |
+| **SC-006** — it runs on a real cPanel account without root, within the limits | ✅ | Validated on a real HostGator Brazil shared account (jailshell, no interactive shell, unprivileged). A full cycle over a real WordPress 5.8.1 — 2,755 files, 1,025 PHP — in **2.5 s**, 2 MB of data, a 328 KB database. Both engines the host can run reported; the two it cannot **abstained with an actionable reason**, and the cycle said its coverage was reduced. See below. |
 
 ---
 
@@ -167,16 +167,88 @@ findings** for the same altered file, one per batch.
 an account — a direct violation of Principle IV by the tool itself. Only a real run
 exposed it; no unit test would have measured it.
 
-### 1. Validation on a real cPanel account (SC-006, part of T040)
+### ~~1. Validation on a real cPanel account (SC-006)~~ — done
 
-The static binaries were built and checked, but they **were not executed on a real
-shared hosting account**. That requires a cPanel account, which this environment does
-not have. What is left to verify there:
+Validated 2026-07-30 on a maintainer's own **HostGator Brazil shared account**: cPanel,
+`jailshell`, interactive shell disabled by the provider, unprivileged user. Driven
+entirely through cPanel Cron Jobs, because there was no shell to drive it from — which
+is itself the condition a large share of this project's target audience lives under.
 
-- the CPU/memory consumption under the default limits during a full cycle;
-- how `nice`/`ionice` behave against the hosting's policies;
-- that the process is not killed by the account's process limit;
-- that the generated cron line works in the cPanel manager.
+**The environment, measured rather than assumed:**
+
+| | |
+|---|---|
+| Arch / CPUs | x86_64, 16 |
+| `php` on PATH | **php-cgi**, not the CLI — it rejects `-r`. The real CLI is at `/opt/cpanel/ea-php83/root/usr/bin/php` (SAPI=cli, mbstring, 512M) |
+| `yara`, `maldet` | neither installed |
+| Memory ceiling | no `ulimit -v` |
+| cPanel cron | 15-minute minimum interval on shared plans |
+
+**A full cycle over a real WordPress 5.8.1** (2,755 files, 1,025 PHP):
+
+```text
+Duration: 2.526s | Considered: 2755 | Scanned: 2755
+  ✓ amwscan              0 finding(s) in 658ms
+  ✗ maldet               unavailable — ask the hosting support for `maldet` …
+  ✗ php-malware-finder   unavailable — the `yara` binary was not found on PATH …
+  ✓ wp-checksums         0 finding(s) in 1.149s
+  2 engine(s) abstained: this cycle's coverage is reduced.
+```
+
+2 MB of data, a 328 KB database. AMWScan run by hand through the real PHP CLI also
+found 0 — **the orchestrator saw exactly what the engine saw on its own**, which is what
+rules out an accepted-and-ignored flag.
+
+**Zero findings had to be earned.** A clean result is indistinguishable from a scanner
+that examined nothing, so one innocuous comment line went into
+`wp-includes/pluggable.php` — deliberately not a webshell sample, even an inert one from
+the project's own corpus, because this is a live hosting account whose provider runs its
+own abuse scanning:
+
+```text
+[LIKELY] score 0.75 — …/wp-includes/pluggable.php
+    vote: wp-checksums         weight 1.50 x signature = 1.50  (rule core_file_modified)
+    abstentions: maldet, php-malware-finder
+```
+
+0.75 is exactly 1.50 over the saturation ceiling of 2.0. It stopped at `likely`: one
+vote, however heavy, does not authorise touching a user's files (D-003). The verdict
+carried its vote, weight, rule **and** the abstentions — Principle V, on a real host.
+Restoring the file byte for byte returned the next cycle to clean, exit code 0.
+
+**SC-003, the reversible quarantine, on real POSIX permissions.** With observation mode
+off, the grace period at zero and the threshold at what one checksum vote scores:
+
+```text
+[CONFIRMED] score 0.75 — …/wp-includes/pluggable.php
+    action: quarantined
+→ the file is gone from the site
+→ vault: directories 0700, the stored copy 0400
+→ Restored byte for byte — hash checked, permissions 644 preserved
+```
+
+The **0400** is the detail worth keeping. An earlier defect stored the copy `chmod 000`,
+which blocks the very read that `restore` performs, leaving the vault unrestorable — and
+it passed a green suite on Windows, where permissions are ignored. Read-only is enough
+to protect the copy and still allows the restore.
+
+Two safety behaviours fired on their own, unprompted:
+
+- The first attempt reached `CONFIRMED` and **declined to act**, printing
+  `action: recommended (grace period active until 2026-08-06)`. A fresh install does not
+  move anything for seven days.
+- Turning that off produced a warning on every subsequent command: *"automatic action is
+  on with no grace period: the tool may quarantine on the very first cycle, before you
+  have calibrated the whitelist"*.
+
+Everything was restored afterwards — file, permissions and configuration — and verified
+identical to how it was found.
+
+**What this does not cover.** maldet and php-malware-finder are absent on this host, so
+their real behaviour there is untested; that is exactly the abstention path, and it
+worked. And `public_html` on this account holds 56 files and no PHP at all, so the scan
+target was a real but *trashed* WordPress serving no traffic — chosen over planting
+samples on a live site.
 
 ### ~~2. The `maldet` adapter~~ — implemented
 

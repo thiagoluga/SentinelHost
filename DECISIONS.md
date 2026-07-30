@@ -690,3 +690,55 @@ deploy, and requiring a hand edit of the TOML to fix it invites the mistake.
 **Still the user's responsibility**: keeping the data directory out of the document
 root. The exclusion stops SentinelHost from scanning the vault; it cannot stop a web
 server from serving it. `config init --help` says so.
+
+## D-027 — SC-006 validated on a real shared-hosting account, driven without a shell
+
+**Context**: SC-006 ("runs on a real cPanel account without root, within the limits")
+had stayed pending because no such account was available. One became available on
+2026-07-30: a HostGator Brazil shared plan, cPanel, unprivileged.
+
+**What the account turned out to be** matters more than the pass, because none of it was
+guessable:
+
+- The provider had **shell access disabled**. SSH key authentication succeeded and the
+  session was then closed with `Shell access is not enabled on your account`. The login
+  shell is `jailshell`, and **cron still runs** — which is the only reason the validation
+  was possible at all.
+- **`php` on PATH is php-cgi, not the CLI.** It rejects `-r` and parses arguments
+  differently. The real CLI lives at `/opt/cpanel/ea-php83/root/usr/bin/php`. The AMWScan
+  adapter probes for `php` and reported the engine available; a direct run through the
+  genuine CLI found the same 0 findings as the orchestrator, so php-cgi did not break the
+  scan here. That agreement is the evidence, not the probe's opinion.
+- cPanel enforces a **15-minute minimum** cron interval on shared plans.
+
+**Decision**: SC-006 is closed as met, and the operating mode used to reach it — a fixed
+`runner.sh` called by one unchanging cron entry, executing a replaceable `task.sh`
+exactly once per distinct content — is worth shipping as a documented fallback. Principle
+III says the tool must work without root; a large share of the accounts it targets do not
+even have a shell, and until now the documentation had nothing to offer them.
+
+**What the run actually proved**, beyond "it executes":
+
+- A full cycle over a real WordPress 5.8.1 (2,755 files) in **2.5 s**, 2 MB of data.
+- The two engines the host lacks **abstained with actionable reasons**, and the cycle
+  reported `2 engine(s) abstained: this cycle's coverage is reduced`. It did not report
+  "0 findings" — the failure mode this project exists to prevent, refused on a real host.
+- A planted core modification produced `[LIKELY] score 0.75`, which is exactly 1.50 over
+  the 2.0 ceiling, carrying its vote, weight, rule and abstentions.
+- SC-003's round trip held on real POSIX permissions: `action: quarantined`, the file
+  gone from the site, the vault at 0700 with the stored copy at **0400**, and
+  `Restored byte for byte` with permissions preserved. The 0400 is the point — an earlier
+  defect stored copies `chmod 000`, which blocks the read that `restore` itself performs,
+  and that passed a green suite on Windows.
+- Two safety behaviours fired unprompted: a fresh install reached `CONFIRMED` and
+  declined to act because of the seven-day grace period, saying so; and disabling that
+  produced a warning on every later command.
+
+**Zero findings was not accepted on its own.** A clean result is indistinguishable from a
+scanner that examined nothing, so the positive control was planted deliberately. What was
+planted is one innocuous comment line, **not** a webshell sample — not even an inert one
+from this repository's own corpus. It is a live hosting account, the provider runs its
+own abuse scanning, and a file that trips it could cost the account. Testing our own
+detection is not worth that risk to someone else, which is why only wp-checksums votes
+above and `confirmed` had to be reached by lowering a threshold rather than by adding
+malicious-looking content.
