@@ -19,12 +19,12 @@ echo "=== does the binary run here?"
 
 echo
 echo "=== what this host provides"
-# `php` on a cPanel box is often php-cgi rather than the CLI: it rejects -r and parses
+# The php on a cPanel box is often php-cgi rather than the CLI: it rejects -r and parses
 # arguments differently. Worth knowing, because AMWScan is a PHP program.
 echo "php:    $(php -v 2>&1 | head -1)"
 echo "php -r: $(php -r 'echo PHP_SAPI;' 2>&1 | head -1)"
-echo "  (an error above means `php` is php-cgi; the CLI is usually at"
-echo "   /opt/cpanel/ea-phpXX/root/usr/bin/php)"
+echo "  (an error above means 'php' is php-cgi; the CLI is usually at" >&2
+echo "   /opt/cpanel/ea-phpXX/root/usr/bin/php)" >&2
 echo "yara:   $(command -v yara || echo 'not installed — php-malware-finder will abstain')"
 echo "maldet: $(command -v maldet || echo 'not installed — that engine will abstain')"
 

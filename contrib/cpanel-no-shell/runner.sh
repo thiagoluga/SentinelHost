@@ -43,11 +43,17 @@ LOCK="$BASE/.runner.lock"
 
 # Fingerprint the task so the same one does not run on every tick.
 #
-# sha1sum is not always present on a shared host; size plus mtime is a weaker
-# fingerprint but it is enough here, because the only thing that changes this file is
+# This answers "is this the same file I already ran?", not "can I trust this file?" —
+# trust comes from the 0600 permissions and from the account it lives in. sha256sum all
+# the same: it is present wherever sha1sum is, costs nothing here, and a weak-hash
+# warning in a security tool's own tooling is a distraction nobody should have to
+# re-litigate later.
+#
+# The fallback exists because a stripped-down shared host may have neither. Size plus
+# mtime is a weaker fingerprint, and enough: the only thing that changes this file is
 # you uploading a new one.
-if command -v sha1sum >/dev/null 2>&1; then
-  FINGERPRINT=$(sha1sum "$TASK" | cut -d' ' -f1)
+if command -v sha256sum >/dev/null 2>&1; then
+  FINGERPRINT=$(sha256sum "$TASK" | cut -d' ' -f1)
 else
   FINGERPRINT=$(ls -ln "$TASK" | awk '{print $5}')-$(ls -ln --time-style=+%s "$TASK" 2>/dev/null | awk '{print $6}')
 fi
