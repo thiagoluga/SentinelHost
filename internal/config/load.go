@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/thiagoluga/SentinelHost/internal/pathmatch"
 )
 
 // ErrNotFound signals that the configuration file does not exist.
@@ -75,6 +77,51 @@ func (c *Config) normalize() {
 	if c.Engines == nil {
 		c.Engines = map[string]Engine{}
 	}
+
+	// SentinelHost must never walk its own data directory, whatever it is called.
+	//
+	// The default exclusion list carries the literal `**/.sentinelhost/**`, which
+	// protects only the default NAME. Anyone who points `data_dir` at a folder of their
+	// own — a perfectly ordinary thing to do, and something the README suggests for
+	// keeping the vault out of backups — loses that protection silently if the folder
+	// happens to sit under a watched root. The scan then reads the quarantine vault,
+	// re-detects the malware it already neutralized, quarantines the vault copy, and
+	// does it again next cycle.
+	//
+	// Deriving the exclusion from the CONFIGURED path rather than from a name is what
+	// makes the guarantee real. It is added here, in normalize, so it holds for a
+	// hand-edited TOML exactly as it does for a generated one — a user who deletes the
+	// `.sentinelhost` line from `exclude` cannot switch this off by accident.
+	c.Limits.Exclude = excludeOwnData(c.Limits.Exclude, c.General.DataDir, c.QuarantineDir())
+}
+
+// excludeOwnData appends a glob for each of SentinelHost's own directories.
+//
+// The globs are absolute, which the matcher handles: it trims the leading separator
+// from pattern and path alike, so `/home/u/sh/**` and the walked `/home/u/sh/x.php`
+// line up segment by segment. An absolute glob is deliberate — `**/sh/**` would also
+// exclude an unrelated directory called `sh` somewhere in the user's site, and silently
+// excluding part of someone's site is the same failure as silently including our own.
+func excludeOwnData(exclude []string, dirs ...string) []string {
+	for _, d := range dirs {
+		if d == "" {
+			continue
+		}
+		// Already covered is already covered. This skips three cases at once: loading
+		// the same file twice, the default quarantine dir nested inside data_dir, and a
+		// user who wrote the glob by hand. Adding a redundant entry would not break
+		// anything, but the exclusion list is something people read when a file they
+		// expected to be scanned was not — and a list that repeats itself is a list
+		// nobody trusts.
+		if pathmatch.MatchAny(exclude, d) {
+			continue
+		}
+		// `a/**` also matches `a` itself in this matcher, so one pattern covers both the
+		// directory entry — which is what makes the walker return SkipDir rather than
+		// descend — and everything beneath it.
+		exclude = append(exclude, strings.TrimSuffix(filepath.ToSlash(d), "/")+"/**")
+	}
+	return exclude
 }
 
 func expandHome(p string) string {

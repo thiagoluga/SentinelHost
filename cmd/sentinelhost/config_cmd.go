@@ -33,6 +33,8 @@ func configInit(args []string) error {
 	fs, cfgPath := flagSet("config init")
 	var roots multiFlag
 	fs.Var(&roots, "root", "root of the site to watch (may be repeated)")
+	dataDir := fs.String("data-dir", "",
+		"where the database, baseline and quarantine vault live (default: ~/.sentinelhost)")
 	force := fs.Bool("force", false, "overwrite an existing configuration")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `sentinelhost config init — creates the initial configuration.
@@ -43,6 +45,16 @@ experience has to be "it broke nothing".
 
 EXAMPLE
   sentinelhost config init --root ~/public_html
+
+  Everything in one directory of your own, outside the site:
+
+  sentinelhost config init --root ~/public_html \
+      --config ~/sentinelhost/config.toml --data-dir ~/sentinelhost/data
+
+  The data directory is excluded from the scan automatically, whatever you call
+  it and wherever you put it. Do not place it under a watched root anyway: the
+  quarantine vault holds the files that were removed from the site, and if it is
+  reachable over the web an attacker can fetch their own webshell back.
 
 OPTIONS
 `)
@@ -61,6 +73,19 @@ OPTIONS
 
 	cfg := config.Default()
 	cfg.SetPath(*cfgPath)
+
+	// --data-dir exists because --config alone moves only the TOML. Someone who puts
+	// the configuration somewhere of their own reasonably expects the data to follow,
+	// and discovering afterwards that the quarantine vault went to ~/.sentinelhost is a
+	// bad surprise for the one directory that must not end up in a backup or a deploy.
+	if *dataDir != "" {
+		abs, err := filepath.Abs(expandTilde(*dataDir))
+		if err != nil {
+			return fmt.Errorf("invalid --data-dir %q: %w", *dataDir, err)
+		}
+		cfg.General.DataDir = abs
+	}
+
 	for _, r := range roots {
 		abs, err := filepath.Abs(expandTilde(r))
 		if err != nil {

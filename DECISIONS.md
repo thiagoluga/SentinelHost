@@ -638,3 +638,55 @@ on a host whose `conf.maldet` says `quarantine_hits="1"`. That line, from the en
 itself, is the proof — and `validate-engines` additionally asserts maldet's own
 quarantine directory is still empty after the cycle. A test asserting our own flag
 string would have proven only that we can compare strings.
+
+## D-026 — the data directory is excluded by its configured path, not by its name
+
+**Context**: found while helping a maintainer lay out SentinelHost on a real cPanel
+account. They asked for a dedicated folder for everything, which is good practice — it
+keeps the quarantine vault out of backups and makes uninstalling a single `rm -rf`.
+
+**The defect**: the guarantee that SentinelHost never scans its own data was a literal
+entry in the default exclusion list:
+
+```toml
+"**/.sentinelhost/**"
+```
+
+That protects a **name**, not the directory. Anyone who sets `data_dir` to a folder of
+their own — which the CLI accepts, the panel accepts, and the documentation encourages —
+loses the protection the moment that folder sits under a watched root. And they lose it
+**silently**: the scan simply starts reading the quarantine vault.
+
+What follows is worse than wasted work. The vault holds the malicious files that were
+moved off the site. Scanning it re-detects them, so the tool quarantines its own vault
+copy, and does it again the next cycle: an unbounded loop that reports a growing number
+of "findings" for malware it already neutralized, while the user watches their finding
+count climb on a site that is actually clean. The comment beside the exclusion described
+exactly this risk. The mechanism did not cover it.
+
+**Decision**: `normalize()` derives the exclusion from `General.DataDir` and
+`QuarantineDir()` as they are actually configured, and appends it on every `Load`.
+
+Three consequences follow deliberately:
+
+- **It holds for a hand-edited TOML.** `normalize()` runs on every load, not at
+  `config init`, so someone who deletes the `.sentinelhost` line — or writes the file
+  from scratch — cannot switch the guarantee off by accident. Principle I is not
+  something a user should be able to disable without meaning to.
+- **The glob is absolute.** A `**/<basename>/**` shape would be shorter and would also
+  exclude an unrelated directory of the same name inside the user's site. Silently
+  excluding part of someone's site is the same class of failure as silently including
+  our own: coverage lost without a word.
+- **An already-covered directory is not added again.** The exclusion list is what a user
+  reads when a file they expected to be scanned was not, and a list that repeats itself
+  is a list nobody trusts.
+
+**Also added**: `config init --data-dir`. `--config` alone moved only the TOML, so
+someone placing the configuration in a directory of their own got the data in
+`~/.sentinelhost` regardless. It was visible — `config init` prints the data directory —
+but it is a bad surprise for the one directory that must not end up in a backup or a
+deploy, and requiring a hand edit of the TOML to fix it invites the mistake.
+
+**Still the user's responsibility**: keeping the data directory out of the document
+root. The exclusion stops SentinelHost from scanning the vault; it cannot stop a web
+server from serving it. `config init --help` says so.
