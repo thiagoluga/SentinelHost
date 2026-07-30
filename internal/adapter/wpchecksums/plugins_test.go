@@ -541,3 +541,61 @@ func md5Of(t *testing.T, path string) string {
 	}
 	return h
 }
+
+// A plugin that WAS verified must not be reported as skipped.
+//
+// `SkippedReasonCounts` answers one question, and it is the question this whole project
+// is organised around: what did the scan NOT look at? Putting a success into it inverts
+// the meaning — a user reading `skipped: plugin_verified=1` concludes coverage was lost
+// and goes hunting for a problem that does not exist.
+//
+// The damage runs the other way too, and that half is worse. `plugin_without_checksum`
+// is a real gap: a plugin nobody verified, sitting in the same list, indistinguishable
+// at a glance from a success. Diluting the skip list is how a genuine gap stops being
+// noticed.
+//
+// Found on a real account, where every single cycle printed `skipped: plugin_verified=1`
+// against a WordPress whose one plugin had just been checked against the official API
+// and found intact.
+func TestAVerifiedPluginIsNotCountedAsSkipped(t *testing.T) {
+	api := newAPI(t)
+	root := site(t, api)
+	dir := plugin(t, root, "akismet", "5.0", map[string]string{
+		"inc/util.php": "<?php // legitimate\n",
+	})
+	api.pluginSums["akismet"] = map[string]map[string][]string{
+		"5.0": {
+			"akismet.php":  {sha256Of(t, filepath.Join(dir, "akismet.php"))},
+			"inc/util.php": {sha256Of(t, filepath.Join(dir, "inc/util.php"))},
+		},
+	}
+
+	rep := run(t, api.adapter(), root)
+
+	if n, ok := rep.Scope.SkippedReasonCounts["plugin_verified"]; ok {
+		t.Errorf("a verified plugin was reported as skipped (%d): the counter answers "+
+			"\"what did the scan NOT look at?\", and this plugin was looked at", n)
+	}
+	// The coverage itself is not lost by dropping the counter — the plugin's files are
+	// already in FilesScanned, which is where "what was examined" belongs.
+	if rep.Scope.FilesScanned < 2 {
+		t.Errorf("the plugin's files are missing from FilesScanned (%d): dropping the "+
+			"counter must not drop the coverage with it", rep.Scope.FilesScanned)
+	}
+}
+
+// The counter that must keep working, since it is the one that means something is
+// genuinely uncovered.
+func TestAnUnverifiedPluginIsStillCountedAsSkipped(t *testing.T) {
+	api := newAPI(t)
+	root := site(t, api)
+	plugin(t, root, "no-checksums-published", "1.0", nil)
+	// No entry in api.pluginSums: the API publishes nothing for this plugin.
+
+	rep := run(t, api.adapter(), root)
+
+	if rep.Scope.SkippedReasonCounts["plugin_without_checksum"] == 0 {
+		t.Error("a plugin nobody could verify must be counted as skipped, loudly: " +
+			"an unverified plugin that looks verified is the failure this project exists to prevent")
+	}
+}
