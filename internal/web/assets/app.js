@@ -180,16 +180,45 @@ async function loadStatus() {
     summary.appendChild(d);
   });
 
-  // Reduced coverage is a first-class warning, not a detail.
+  // Reduced coverage is a first-class warning, not a detail. And "reduced" and "none"
+  // are not the same warning.
+  //
+  // With every engine unavailable this banner used to print the same sentence it prints
+  // when one of four is missing, above four KPIs reading zero. Nothing on the screen
+  // told the reader that those zeros mean nothing at all — which is the failure this
+  // whole project is organised against, arriving on the one surface built for people who
+  // are not going to read a log. The CLI grew the same fix (DECISIONS.md D-031); this is
+  // its counterpart.
+  const total = s.engines.available + s.engines.unavailable;
   const cov = $('#banner-coverage');
-  if (s.engines.unavailable > 0) {
+  const nothingScanned = s.engines.available === 0 && total > 0;
+  clear(cov);
+  if (nothingScanned) {
+    cov.className = 'banner bad';
+    cov.appendChild(el('b', {}, 'Nothing was scanned.'));
+    cov.appendChild(el('span', {}, ` All ${total} engines are unavailable, so the counts ` +
+      `below say nothing about this site. Open the Engines tab: each one explains what it ` +
+      `needs, and most are one command or one request to your host.`));
+    cov.hidden = false;
+  } else if (s.engines.unavailable > 0) {
+    cov.className = 'banner';
     cov.textContent =
-      `${s.engines.unavailable} of ${s.engines.available + s.engines.unavailable} engines ` +
+      `${s.engines.unavailable} of ${total} engines ` +
       `are unavailable. This site's coverage is reduced — see the Engines tab.`;
     cov.hidden = false;
   } else {
     cov.hidden = true;
   }
+
+  // And the numbers themselves stop pretending. A zero that was never measured must not
+  // look like a zero that was: it is dimmed, and it says so on hover for anyone checking.
+  ['#kpi-confirmed', '#kpi-likely', '#kpi-suspicious'].forEach((sel) => {
+    const node = $(sel);
+    node.classList.toggle('unmeasured', nothingScanned);
+    node.title = nothingScanned
+      ? 'Not measured: no engine was able to run in the last cycle.'
+      : '';
+  });
 
   const obs = $('#banner-observation');
   if (!s.automatic_action.allowed) {
