@@ -1132,3 +1132,58 @@ of thing a string-matching test does.
 **How it was found**: by a person opening the page. Every automated check passed, the
 panel returned HTTP 200, the assets loaded, and the API answered — nothing anywhere
 looked at what was actually on the screen.
+
+## D-037 — the bridge logs where each request spent its time, and stops hanging
+
+**Context**: the panel stopped answering entirely — no error page, no response at all, a
+browser waiting 300 seconds — while the site around it stayed fine. I said the likeliest
+reading was panel processes piling up against the account's limit. It was not:
+
+```text
+panel processes: 1     (alive 15m57s, 13.5 MB)
+processes on the account: 6     (limit 300)
+starts, whole session: 7
+errors: none
+```
+
+The panel was up and healthy. The guess was wrong, and there was nothing recorded
+anywhere to have checked it against.
+
+**Decision**: the bridge writes one line per request with where the time went.
+
+A proxy that can hang has exactly three places to hang in — the liveness probe, the cold
+start, and the upstream call — so all three are timed:
+
+```text
+200 GET    /            probe=0.00s start=0.15s upstream=0.00s (cold start)
+200 GET    /app.css     probe=0.00s start=0.00s upstream=0.00s
+```
+
+**And the upstream timeout drops from 60s to 20s.** A proxy that hangs is worse than one
+that fails: the browser learned nothing from those 300 seconds, and every pending request
+held a PHP worker open the whole time. Twenty seconds is generous for a panel on the
+loopback, where the slowest page measured is under a second, and anything past it is a
+fault worth reporting as one.
+
+**What the instrumentation then showed**, on the case nothing had tested — four requests
+arriving at once with the panel down, which is what opening a page actually does, and not
+what sequential `curl` does:
+
+```text
+200 0.167s /api/session
+200 0.167s /app.css
+200 0.167s /app.js
+200 0.170s /
+panel processes: 1
+```
+
+Four cold starts of 0.15s each, one process. The lock works.
+
+**The original hang remains unexplained**, and that is recorded rather than covered over.
+What exists now is a log that will say what happened next time, and a ceiling that turns
+a hang into a 502 with a timing line instead of a browser spinning for five minutes.
+
+**The lesson is the guess.** I offered a cause with confidence, from a log that showed
+repeated start lines and nothing else, and the numbers contradicted it fifteen minutes
+later. The reason it took fifteen minutes is that nothing was measuring — which is the
+same failure this project keeps finding in itself, one layer out.
