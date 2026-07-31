@@ -111,7 +111,8 @@ func (c *Config) normalize() {
 	//
 	// Anchored to the home, `~/tmp` is cPanel's scratch directory and `~/mail` is the
 	// maildir, which is what was actually meant. Nothing deeper is touched.
-	c.Limits.Exclude = excludeAccountFurniture(c.Limits.Exclude, homeDir())
+	c.Limits.Exclude = excludeAccountFurniture(
+		c.Limits.Exclude, accountHome(c.General.Roots, c.General.DataDir))
 }
 
 // excludeOwnData appends a glob for each of SentinelHost's own directories.
@@ -178,10 +179,56 @@ func excludeAccountFurniture(exclude []string, home string) []string {
 // homeDir is the account's own directory, or "" when it cannot be determined — in which
 // case nothing is excluded on its account, which is the safe direction.
 func homeDir() string {
-	if h, err := os.UserHomeDir(); err == nil {
+	if h, err := os.UserHomeDir(); err == nil && h != "" {
 		return h
 	}
 	return ""
+}
+
+// accountHome finds the account's home directory, without depending on the environment
+// alone.
+//
+// os.UserHomeDir() reads $HOME on Unix, and $HOME is not always set. Cron runs with a
+// minimal environment; so does a CGI process, and so does the panel when a web server
+// starts it. Those are not edge cases here — cron is this project's primary mode
+// (`schedule.mode = "cron"` by default, because shared hosting rarely keeps a daemon
+// alive), and the panel on shared hosting is started by PHP.
+//
+// An exclusion that depends on an environment variable does not fail loudly. It produces
+// a scan that walks the account's maildir, reports findings about e-mail attachments, and
+// looks entirely successful — which is why the fallback exists rather than an error.
+//
+// The fallback is evidence: a configured root that CONTAINS the account's own furniture
+// is the home. `~/public_html` alongside `~/mail` and `~/.cpanel` is not a coincidence,
+// and it is the same directory $HOME would have named.
+func accountHome(roots []string, dataDir string) string {
+	if h := homeDir(); h != "" {
+		return h
+	}
+	for _, candidate := range append(append([]string{}, roots...), filepath.Dir(dataDir)) {
+		if looksLikeAccountHome(candidate) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// looksLikeAccountHome answers by what is inside, not by the name.
+//
+// Two markers, because one is not evidence: a directory called `mail` could be anything,
+// and `public_html` next to `.cpanel` could not.
+func looksLikeAccountHome(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	markers := []string{"public_html", ".cpanel", "mail", ".trash", "etc", "logs"}
+	found := 0
+	for _, m := range markers {
+		if info, err := os.Stat(filepath.Join(dir, m)); err == nil && info.IsDir() {
+			found++
+		}
+	}
+	return found >= 2
 }
 
 func expandHome(p string) string {
