@@ -5,9 +5,18 @@
 # Everything under this directory goes to the bridge, which works out the real path from
 # REQUEST_URI. Without this, only /index.php would answer and the panel's own routes
 # (/api/status, /assets/app.js) would 404.
+# The path is handed to the bridge explicitly, in __shpath, rather than left for PHP to
+# work out from SCRIPT_NAME and REQUEST_URI.
+#
+# Those two disagree the moment anything upstream rewrites. On the account this was built
+# against, a rule in the parent directory maps /sentinel/ to /motelgrandplace/sentinel/,
+# so SCRIPT_NAME carried a prefix REQUEST_URI never had, nothing was stripped, and the
+# panel answered 404 to every request while looking perfectly healthy.
+#
+# This capture is relative to THIS directory whatever sits in front of it.
 RewriteEngine On
 RewriteCond %{REQUEST_FILENAME} !-f
-RewriteRule ^(.*)$ index.php [QSA,L]
+RewriteRule ^(.*)$ index.php?__shpath=/$1 [QSA,L]
 
 # ---------------------------------------------------------------------------------
 # RESTRICT BY IP. Uncomment and set your own address.
@@ -52,6 +61,13 @@ RewriteRule ^(.*)$ index.php [QSA,L]
 <FilesMatch "^\.">
   Require all denied
 </FilesMatch>
+
+# PHP writes here when something goes wrong, and the file has no extension so the list
+# above does not catch it. A stack trace names paths, and paths are what an attacker is
+# trying to learn.
+<Files "error_log">
+  Require all denied
+</Files>
 
 # There is deliberately NO "deny anything without an extension" rule here, tempting as it
 # is for catching a copied binary.

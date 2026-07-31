@@ -18,33 +18,36 @@ declare(strict_types=1);
 
 require __DIR__ . '/../lib/path.php';
 
-const SCRIPT   = '/sentinel/index.php';
 const UPSTREAM = '127.0.0.1:8787';
 
-/** description => request URI. Every one of these must end up on the loopback. */
+/**
+ * description => the __shpath value the rewrite hands over.
+ *
+ * Every one of these has to end up on the loopback, whatever it says. The hostile ones
+ * are what a visitor can put in a URL, so they are what the anchoring exists for.
+ */
 $cases = [
-    'a normal page'        => '/sentinel/',
-    'a panel route'        => '/sentinel/api/status',
-    'a query string'       => '/sentinel/api/status?a=1',
-    'the bare prefix'      => '/sentinel',
-    'a dot segment'        => '/sentinel/../etc/passwd',
+    'a normal page'        => '/',
+    'a panel route'        => '/api/status',
+    'an empty path'        => '',
+    'a dot segment'        => '/../etc/passwd',
     // The attacks. Unanchored, each of these changes the host that gets dialled.
-    'userinfo injection'   => '/sentinel@evil.com',
-    'userinfo with a path' => '/sentinel@evil.com/x',
-    'protocol-relative'    => '/sentinel//evil.com/x',
-    'backslash separator'  => '/sentinel\\evil.com/x',
-    'many slashes'         => '/sentinel/////evil.com',
+    'userinfo injection'   => '@evil.com',
+    'userinfo with a path' => '@evil.com/x',
+    'protocol-relative'    => '//evil.com/x',
+    'backslash separator'  => '\\evil.com/x',
+    'many slashes'         => '/////evil.com',
 ];
 
 $failed = 0;
 foreach ($cases as $what => $uri) {
-    $url  = upstreamURL(UPSTREAM, upstreamPath($uri, SCRIPT));
+    $url  = upstreamURL(UPSTREAM, upstreamPath($uri));
     $host = $url === null ? null : parse_url($url, PHP_URL_HOST);
     $ok   = $url !== null && $host === '127.0.0.1';
 
-    // Only fixed labels and the derived host are printed — never the input. The URIs come
-    // from the table above rather than from a live request, but keeping the output to
-    // known values means this can never become a reflection of anything.
+    // Only fixed labels and the derived host are printed — never the input. The values
+    // come from the table above rather than from a live request, but keeping the output
+    // to known strings means this can never become a reflection of anything.
     printf("%-22s host=%-12s %s\n", $what, $host ?? '(refused)', $ok ? 'ok' : 'FAILED');
     if (!$ok) {
         $failed++;

@@ -10,7 +10,13 @@
 declare(strict_types=1);
 
 /**
- * The path the panel should see, with the bridge's own prefix removed.
+ * The path the panel should see.
+ *
+ * The value arrives from the rewrite in .htaccess, as __shpath, and is already relative
+ * to the bridge's directory. It is NOT inferred from SCRIPT_NAME and REQUEST_URI: those
+ * two disagree the moment anything upstream rewrites, and on the account this was built
+ * against a parent .htaccess did exactly that — nothing was stripped, and the panel
+ * answered 404 to every request while looking perfectly healthy.
  *
  * The leading slash is forced, and that is not tidiness — it is the difference between a
  * proxy and a fetcher of whatever a visitor names.
@@ -26,14 +32,16 @@ declare(strict_types=1);
  * the loopback and nothing more. Backslashes are folded first, because some parsers treat
  * them as separators.
  */
-function upstreamPath(string $requestUri, string $scriptName): string
+function upstreamPath(string $path, string $query = ''): string
 {
-    $base = rtrim(dirname($scriptName), '/');
-    if ($base !== '' && str_starts_with($requestUri, $base)) {
-        $requestUri = substr($requestUri, strlen($base));
+    $path = str_replace('\\', '/', $path);
+    $path = '/' . ltrim($path, '/');
+    // The query travels separately. Folding it in before anchoring would let a "?" in
+    // the path decide where the path ends, which is one more thing the visitor controls.
+    if ($query !== '') {
+        $path .= '?' . $query;
     }
-    $requestUri = str_replace('\\', '/', $requestUri);
-    return '/' . ltrim($requestUri, '/');
+    return $path;
 }
 
 /**
