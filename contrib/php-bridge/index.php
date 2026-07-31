@@ -30,6 +30,10 @@
 
 declare(strict_types=1);
 
+// Every failure path here answers in plain text: an HTML error page from a security
+// tool invites the reader to wonder what else is being rendered.
+const PLAIN = 'Content-Type: text/plain';
+
 // --- configuration ----------------------------------------------------------------
 //
 // $home is the account's home directory. The binary and the data live under it and NOT
@@ -45,7 +49,7 @@ $bootWait = 8.0;                                 // seconds to wait for a cold s
 // -----------------------------------------------------------------------------------
 
 /** Is the panel accepting connections right now? */
-function panel_is_up(string $hostPort, float $timeout = 1.5): bool
+function panelIsUp(string $hostPort, float $timeout = 1.5): bool
 {
     [$host, $port] = explode(':', $hostPort, 2);
     $sock = @fsockopen($host, (int) $port, $errno, $errstr, $timeout);
@@ -68,7 +72,7 @@ function panel_is_up(string $hostPort, float $timeout = 1.5): bool
  * there holding a PHP worker open, it just waits for the panel the other request is
  * already starting.
  */
-function start_panel(string $binary, string $config, string $lockFile, string $logFile, string $upstream, float $wait): bool
+function startPanel(string $binary, string $config, string $lockFile, string $logFile, string $upstream, float $wait): bool
 {
     if (!is_executable($binary)) {
         return false;
@@ -81,10 +85,11 @@ function start_panel(string $binary, string $config, string $lockFile, string $l
 
     $deadline = microtime(true) + $wait;
 
+    // Between finding the panel down and taking the lock, another request may have
+    // finished starting it, so the check is repeated inside the lock rather than trusted
+    // from before it.
     if (flock($lock, LOCK_EX | LOCK_NB)) {
-        // Between finding the panel down and taking the lock, another request may have
-        // finished starting it. Check again before spawning anything.
-        if (!panel_is_up($upstream)) {
+        if (!panelIsUp($upstream)) {
             $cmd = sprintf(
                 'nohup %s serve --config %s >> %s 2>&1 &',
                 escapeshellarg($binary),
@@ -101,27 +106,44 @@ function start_panel(string $binary, string $config, string $lockFile, string $l
 
     // Whether we started it or someone else did, wait for it to answer.
     while (microtime(true) < $deadline) {
-        if (panel_is_up($upstream)) {
+        if (panelIsUp($upstream)) {
             return true;
         }
         usleep(150000);
     }
-    return panel_is_up($upstream);
+    return panelIsUp($upstream);
 }
 
-/** The path the panel should see, with this script's own prefix removed. */
-function upstream_path(): string
+/**
+ * The path the panel should see, with this script's own prefix removed.
+ *
+ * The leading slash is forced, and that is not tidiness — it is the difference between a
+ * proxy and an open redirect into someone else's network.
+ *
+ * The path is concatenated onto "http://127.0.0.1:8787", and the visitor controls it. A
+ * request for `/sentinel@evil.com` leaves `@evil.com` after the prefix is stripped, and
+ * `http://127.0.0.1:8787@evil.com` is not the loopback at all: everything before the `@`
+ * becomes userinfo and the real host is `evil.com`. The bridge would then fetch an
+ * attacker's server from inside the account and hand the response back as if it were the
+ * panel. Server-side request forgery, in one character.
+ *
+ * Anchoring to a single `/` closes it: `//evil.com` collapses to `/evil.com`, which is a
+ * path on the loopback and nothing more. Backslashes go too, since some parsers treat
+ * them as separators.
+ */
+function upstreamPath(): string
 {
     $uri  = $_SERVER['REQUEST_URI'] ?? '/';
     $base = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/');
     if ($base !== '' && str_starts_with($uri, $base)) {
         $uri = substr($uri, strlen($base));
     }
-    return $uri === '' ? '/' : $uri;
+    $uri = str_replace('\\', '/', $uri);
+    return '/' . ltrim($uri, '/');
 }
 
 /** Headers to forward upstream, minus the ones that describe THIS connection. */
-function forwarded_headers(): array
+function forwardedHeaders(): array
 {
     // Hop-by-hop headers describe the client-to-PHP connection and mean nothing to the
     // panel. Host is rewritten because the panel is being addressed on the loopback.
@@ -162,14 +184,14 @@ function forwarded_headers(): array
 
 if (!extension_loaded('curl')) {
     http_response_code(500);
-    header('Content-Type: text/plain');
+    header(PLAIN);
     exit("SentinelHost bridge: PHP has no curl extension, so it cannot reach the panel.\n");
 }
 
-if (!panel_is_up($upstream)) {
-    if (!start_panel($binary, $config, $lockFile, $logFile, $upstream, $bootWait)) {
+if (!panelIsUp($upstream)) {
+    if (!startPanel($binary, $config, $lockFile, $logFile, $upstream, $bootWait)) {
         http_response_code(503);
-        header('Content-Type: text/plain');
+        header(PLAIN);
         header('Retry-After: 5');
         // Explicit about which of the several possible causes it is, because "503" on a
         // security tool invites the reader to assume the worst.
@@ -180,12 +202,15 @@ if (!panel_is_up($upstream)) {
     }
 }
 
-$ch = curl_init('http://' . $upstream . upstream_path());
+// Plain HTTP, and correctly so: this never leaves the machine. The panel listens on the
+// loopback and terminating TLS against yourself would add a certificate to manage and
+// protect nothing. What reaches the visitor is HTTPS, terminated by the web server.
+$ch = curl_init('http://' . $upstream . upstreamPath());
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 curl_setopt_array($ch, [
     CURLOPT_CUSTOMREQUEST  => $method,
-    CURLOPT_HTTPHEADER     => forwarded_headers(),
+    CURLOPT_HTTPHEADER     => forwardedHeaders(),
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_HEADER         => true,
     CURLOPT_FOLLOWLOCATION => false, // the browser follows redirects, not the bridge
@@ -202,7 +227,7 @@ if ($response === false) {
     $err = curl_error($ch);
     curl_close($ch);
     http_response_code(502);
-    header('Content-Type: text/plain');
+    header(PLAIN);
     exit("SentinelHost bridge: could not reach the panel ({$err}).\n");
 }
 
