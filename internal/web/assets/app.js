@@ -137,7 +137,8 @@ function showGate(firstAccess = false) {
 function showApp() {
   $('#gate').hidden = true;
   $('#app').hidden = false;
-  loadEverything();
+  const active = $('.tab.active');
+  loadTab(active ? active.id.replace(/^tab-/, '') : 'dash');
 }
 
 $('#gate-form').addEventListener('submit', async (ev) => {
@@ -174,6 +175,8 @@ $$('.nav-btn').forEach((b) => {
   b.addEventListener('click', () => {
     $$('.nav-btn').forEach((x) => x.classList.remove('active'));
     $$('.tab').forEach((x) => x.classList.remove('active'));
+    // Fetched when it is first opened, not before. See TAB_LOADERS.
+    loadTab(b.dataset.tab);
     b.classList.add('active');
     $('#tab-' + b.dataset.tab).classList.add('active');
   });
@@ -289,7 +292,7 @@ $('#btn-scan').addEventListener('click', async (ev) => {
   try {
     const r = await api('/api/scan', { method: 'POST', body: JSON.stringify({ full: false }) });
     toast(`Cycle ${r.scan_id} finished: ${r.files_scanned} file(s) scanned.`);
-    await loadEverything();
+    await refreshAfterAction();
   } catch (e) {
     toast(e.message, true);
   } finally {
@@ -436,7 +439,7 @@ function decisionButton(v, action, label, cls) {
       } else {
         toast('Decision recorded.');
       }
-      await loadEverything();
+      await refreshAfterAction();
     } catch (e) {
       toast(e.message, true);
       b.disabled = false;
@@ -483,7 +486,7 @@ async function loadQuarantine() {
         try {
           const r = await api(`/api/quarantine/${encodeURIComponent(it.Ref)}/restore`, { method: 'POST' });
           toast(`Restored byte for byte at ${r.restored_to}`);
-          await loadEverything();
+          await refreshAfterAction();
         } catch (e) {
           toast(e.message, true);
           restore.disabled = false;
@@ -523,7 +526,7 @@ function confirmPurge(item) {
       });
       toast('The item was purged permanently.');
       modal.hidden = true;
-      await loadEverything();
+      await refreshAfterAction();
     } catch (e) {
       toast(e.message, true);
     }
@@ -561,7 +564,7 @@ async function loadEngines() {
         try {
           await api(`/api/engines/${encodeURIComponent(e.slug)}/install`, { method: 'POST' });
           toast(`${e.slug} installed.`);
-          await loadEverything();
+          await refreshAfterAction();
         } catch (err) {
           toast(err.message, true);
           install.disabled = false;
@@ -851,28 +854,70 @@ async function testWebhook(id, card) {
   }
 }
 
-// ------------------------------------------------------------------ full reload
+// ------------------------------------------------------------------ tab loading
 
-async function loadEverything() {
-  const tasks = [
-    ['the overview', loadStatus],
-    ['the engines', loadEngineSummary],
-    ['the findings', loadFindings],
-    ['the quarantine', loadQuarantine],
-    ['the engines', loadEngines],
-    ['the configuration', loadConfig],
-  ];
-  // One area that fails must not wipe out the whole panel: the user still needs to
-  // see the others.
+// What each tab needs, and nothing else.
+//
+// The panel used to fetch all of this at startup: six loaders, eight API calls, for one
+// visible tab. On a shared hosting account every one of those is a PHP process holding a
+// worker while it proxies to the panel, and the account has a hard ceiling on how many
+// may run at once. Loading five invisible tabs to show one is the kind of waste
+// Principle IV exists to prevent — the tool is a guest on somebody's hosting.
+//
+// `the engines` appeared twice, once for the dashboard summary and once for its own tab,
+// so /api/engines was requested twice on every single page view.
+const TAB_LOADERS = {
+  dash:       [['the overview', loadStatus], ['the engines', loadEngineSummary]],
+  findings:   [['the findings', loadFindings]],
+  quarantine: [['the quarantine', loadQuarantine]],
+  engines:    [['the engines', loadEngines]],
+  schedule:   [['the configuration', loadConfig]],
+  alerts:     [['the configuration', loadConfig]],
+  settings:   [['the configuration', loadConfig]],
+};
+
+// Tabs already fetched. Cleared on an explicit refresh, so "reload" still means reload.
+const loaded = new Set();
+
+async function loadTab(tab, { force = false } = {}) {
+  const tasks = TAB_LOADERS[tab];
+  if (!tasks || (loaded.has(tab) && !force)) return;
+  loaded.add(tab);
+
+  // Sequential, not concurrent. Four requests at once from one page view is what a
+  // shared account notices, and nothing here is worth racing for.
   for (const [name, fn] of tasks) {
     try {
       await fn();
     } catch (e) {
+      // One area failing must not wipe out the panel: the user still needs the others.
+      // And the tab is un-marked so opening it again retries rather than showing a
+      // blank pane forever.
+      loaded.delete(tab);
       if (e.message !== 'session expired') {
         toast(`Could not load ${name}: ${e.message}`, true);
       }
     }
   }
+}
+
+/** Re-fetch what is on screen right now. */
+async function reloadCurrentTab() {
+  const active = $('.tab.active');
+  if (active) await loadTab(active.id.replace(/^tab-/, ''), { force: true });
+}
+
+/**
+ * After something that changed state — a scan, a decision, a restore, a purge.
+ *
+ * Everything is marked stale, but only the visible tab is fetched. Quarantining a file
+ * changes the findings AND the quarantine AND the dashboard counts, so none of them can
+ * be trusted afterwards; fetching all of them to show one is the waste this change exists
+ * to remove. The rest re-fetch when they are opened.
+ */
+async function refreshAfterAction() {
+  loaded.clear();
+  await reloadCurrentTab();
 }
 
 bootstrap();

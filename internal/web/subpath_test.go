@@ -220,3 +220,57 @@ func TestTheGroupCollapsesByAnExplicitRule(t *testing.T) {
 			"screen with the findings")
 	}
 }
+
+// The panel fetches the tab you are looking at, and not the other five.
+//
+// It used to run six loaders and eight API calls at startup, for one visible tab —
+// including /api/engines twice, once for the dashboard summary and once for its own tab.
+// On shared hosting every one of those is a PHP process holding a worker while it proxies
+// to the panel, and the account has a hard ceiling on how many may run at once.
+//
+// Whether that ceiling is what produced the intermittent 503s on the validation account
+// is NOT established. What is indefensible either way is loading five invisible tabs to
+// show one: the tool is a guest on somebody's hosting, which is what Principle IV is about.
+func TestThePanelDoesNotLoadEveryTabAtStartup(t *testing.T) {
+	js := readAsset(t, "app.js")
+
+	if strings.Contains(js, "loadEverything") {
+		t.Error("loadEverything is still called: that fetches every tab's data on startup, " +
+			"including tabs nobody is looking at")
+	}
+	if !strings.Contains(js, "TAB_LOADERS") {
+		t.Error("there is no per-tab loader table, so nothing decides what a tab actually needs")
+	}
+}
+
+// Opening a tab has to fetch it. A lazy panel that never loads is worse than an eager one.
+func TestOpeningATabLoadsIt(t *testing.T) {
+	js := readAsset(t, "app.js")
+	if !strings.Contains(js, "loadTab(b.dataset.tab)") {
+		t.Error("switching tabs does not load the tab, so every pane after the first is blank")
+	}
+}
+
+// A failed load must not mark the tab as done, or it stays blank until a full reload.
+func TestAFailedTabLoadCanBeRetried(t *testing.T) {
+	js := readAsset(t, "app.js")
+	if !strings.Contains(js, "loaded.delete(tab)") {
+		t.Error("a tab that failed to load stays marked as loaded, so re-opening it shows a " +
+			"blank pane forever instead of trying again")
+	}
+}
+
+// And after something that changed state, everything is stale — but only what is on
+// screen gets fetched.
+func TestAnActionInvalidatesEveryTabAndReloadsOnlyTheVisibleOne(t *testing.T) {
+	js := readAsset(t, "app.js")
+
+	if !strings.Contains(js, "loaded.clear()") {
+		t.Error("an action does not invalidate the other tabs; quarantining a file changes " +
+			"the findings, the quarantine and the dashboard counts, and stale panes would " +
+			"show the state from before it happened")
+	}
+	if !strings.Contains(js, "reloadCurrentTab()") {
+		t.Error("nothing re-fetches the visible tab after an action")
+	}
+}
