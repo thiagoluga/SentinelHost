@@ -1389,3 +1389,46 @@ something must not be on screen, say so.
 **Verified in a browser**, with the group closed and open, because the last three defects
 in the panel all passed every automated check and were visible immediately to somebody
 looking at the page.
+
+## D-042 — the panel fetches the tab you are looking at
+
+**Context**: the panel intermittently would not open on the validation account — the page
+loaded and nothing appeared — and the site itself returned 503 for a few seconds at a
+time before recovering.
+
+The bridge's request log (D-037) answered the first half immediately: every request
+returned 200 in 0.00s. The server was serving fine.
+
+It also showed the shape of one page view:
+
+```text
+/  /app.css  /app.js  /api/session  /api/status  /api/engines
+/api/verdicts  /api/quarantine  /api/engines  /api/config  /api/cron-line
+```
+
+Eight API calls for one visible tab, with `/api/engines` requested **twice** — once for
+the dashboard summary and once for its own tab.
+
+**What is NOT established**: that this caused the 503s. They hit the site's root, a static
+page, which points at account-wide throttling that anything could trigger. Three earlier
+hypotheses about this account were wrong, and this one is not being added to the list as
+though it were proven.
+
+**What is indefensible regardless**: on shared hosting every one of those requests is a
+PHP process holding a worker while it proxies, and the account has a hard ceiling on how
+many may run at once. Fetching five invisible tabs to show one is exactly the waste
+Principle IV exists to prevent — the tool is a guest on somebody's hosting.
+
+**Decision**: a loader table per tab, fetched when the tab is first opened. The duplicate
+`/api/engines` is gone. A page view is now two calls instead of eight.
+
+Three details:
+
+- **Sequential, not concurrent.** Four requests at once from one page view is what a
+  constrained account notices, and nothing here is worth racing for.
+- **A failed load un-marks the tab**, so re-opening it retries instead of showing a blank
+  pane forever.
+- **An action invalidates everything and re-fetches only what is on screen.**
+  Quarantining a file changes the findings, the quarantine and the dashboard counts, so
+  none can be trusted afterwards — but fetching all of them to show one is the waste being
+  removed.
