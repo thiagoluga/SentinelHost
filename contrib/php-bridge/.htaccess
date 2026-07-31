@@ -32,8 +32,30 @@ RewriteRule ^(.*)$ index.php [QSA,L]
   Header always set Referrer-Policy "no-referrer"
 </IfModule>
 
-# Nothing but the bridge is servable from here. If a stray file ever lands in this
-# directory — an editor backup, a copy of the binary, a config — it is not downloadable.
-<FilesMatch "^(?!index\.php$).*$">
+# If a stray file ever lands in this directory — an editor backup, a copy of the binary,
+# a config — it must not be downloadable.
+#
+# Written as an explicit deny list rather than "everything except index.php". The elegant
+# form is a negative lookahead:
+#
+#   <FilesMatch "^(?!index\.php$).*$">
+#
+# and on LiteSpeed it denied index.php too, so the bridge answered 403 to everyone. Found
+# by installing it on a real account. A rule that is clever about what it permits fails
+# closed in ways nobody notices until the thing simply does not work; a rule that names
+# what it forbids fails in the direction you can see.
+<FilesMatch "\.(toml|db|db-wal|db-shm|log|pid|lock|bak|orig|save|swp|sql|tar|gz|zip)$">
+  Require all denied
+</FilesMatch>
+
+# Dotfiles, including this one.
+<FilesMatch "^\.">
+  Require all denied
+</FilesMatch>
+
+# A file with no extension at all is almost certainly a compiled binary that was copied
+# here by mistake. The Go binary must live outside the document root; this is the second
+# line of defence for the day someone puts it in the first place they look.
+<FilesMatch "^[^.]+$">
   Require all denied
 </FilesMatch>
