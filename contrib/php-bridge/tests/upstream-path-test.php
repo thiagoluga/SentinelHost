@@ -16,7 +16,7 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/../lib/path.php';
+require_once __DIR__ . '/../lib/path.php';
 
 const UPSTREAM = '127.0.0.1:8787';
 

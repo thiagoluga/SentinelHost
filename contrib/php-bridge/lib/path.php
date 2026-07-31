@@ -55,7 +55,9 @@ function upstreamPath(string $path, string $query = ''): string
  */
 function upstreamURL(string $hostPort, string $path): ?string
 {
-    $url = 'http://' . $hostPort . $path;
+    // Plain HTTP by design: this address never leaves the machine. Terminating TLS
+    // against yourself adds a certificate to manage and protects nothing.
+    $url = 'http://' . $hostPort . $path; // NOSONAR - loopback only, verified immediately below
     $parts = parse_url($url);
     if ($parts === false || !isset($parts['host'])) {
         return null;
