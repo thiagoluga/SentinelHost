@@ -38,8 +38,38 @@ function toast(msg, bad = false) {
   toastTimer = setTimeout(() => { t.hidden = true; }, 5200);
 }
 
+// Where the panel is mounted, worked out from the page's own URL.
+//
+// The panel used to address itself with absolute paths — /api/status, /app.css — which
+// works only when it is served at the root of a domain. Behind any reverse proxy on a
+// sub-path, and that includes the PHP bridge for shared hosting, the browser asks the
+// SITE for /api/status instead of the panel, and every request 404s while the page
+// itself loads. Unstyled, inert, and with nothing on screen saying why.
+//
+// document.baseURI already carries the directory the page came from, so relative URLs
+// resolve correctly wherever the panel is mounted, including the root.
+const BASE = new URL('.', document.baseURI);
+
+/**
+ * Turn a panel-relative path into an absolute one for wherever we are mounted.
+ *
+ * The origin is checked rather than assumed. document.baseURI is not a constant: a
+ * `<base href>` element changes it, and one injected into this page would silently
+ * redirect every API call — including the ones that quarantine and restore files — to
+ * somewhere else. Nothing renders untrusted HTML here today, and the check costs one
+ * comparison, which is the right trade for a guarantee that would otherwise depend on
+ * that staying true forever.
+ */
+function url(path) {
+  const resolved = new URL(String(path).replace(/^\//, ''), BASE);
+  if (resolved.origin !== window.location.origin) {
+    throw new Error('refusing to send a panel request off-origin');
+  }
+  return resolved.pathname + resolved.search;
+}
+
 async function api(path, opts = {}) {
-  const resp = await fetch(path, {
+  const resp = await fetch(url(path), {
     credentials: 'same-origin',
     headers: opts.body ? { 'Content-Type': 'application/json' } : {},
     ...opts,
