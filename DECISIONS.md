@@ -1003,3 +1003,53 @@ before anyone tried one.
 **How it was found**: by checking a claim I had just made in a comment. Thirty seconds in
 `auth.go` against a sentence I had written as fact. That is the fifteenth instance of
 D-022 in this session and the only one where I was the sole reviewer.
+
+## D-034 — the panel reaches shared hosting through PHP, not through a daemon
+
+**Context**: on the validation account, `sentinelhost serve` survived **fourteen
+minutes** before the host killed it, and the shell was disabled so an SSH tunnel was out
+too. Two other routes were tested and both refused: Apache would not execute user CGI,
+and an arbitrary public port is firewalled off.
+
+What was available is what shared hosting has always had. Measured on the account:
+
+```text
+PHP-RAN 8.3.32 sapi=litespeed
+disable_functions: (none)
+exec/fsockopen/curl_init: available
+loopback socket: OPEN
+panel through PHP: REACHED IT
+```
+
+**Decision**: `contrib/php-bridge/` — a PHP file in the document root that checks whether
+the panel is answering on the loopback, starts it if it is not, and proxies the request.
+
+The insight it rests on is worth stating, because it took a while to see: **WordPress
+does not stay running either.** It is not more robust than a Go daemon; it simply never
+holds a process. The web server is what stays up, and the web server belongs to the host.
+The bridge gives the panel that same shape, and the fourteen-minute lifetime stops being
+a problem to fight — the next visit fixes it.
+
+Four things in it are load-bearing:
+
+- **A non-blocking lock around the start.** Two simultaneous requests would otherwise
+  both find the panel down and both start one: two processes against one SQLite database
+  and one quarantine vault. Non-blocking on purpose, so a request that loses the race
+  waits for the panel rather than holding a PHP worker open waiting for a lock.
+- **The panel is re-checked after the lock is taken**, because the other request may have
+  finished starting it in between.
+- **`X-Forwarded-Proto` is set from what actually happened**, never assumed. The panel
+  marks its session cookie `Secure` from that header, and guessing "https" would hand out
+  a cookie that travels in the clear.
+- **The binary and the data stay outside the document root.** A Go binary served as a
+  download is a gift to anyone probing, and the vault holds the very files removed from
+  the site — reachable over the web, an attacker fetches their own webshell back.
+
+**This deliberately puts an administrative panel on a public URL.** The shipped
+`.htaccess` carries an IP restriction, commented out with the reason next to it: the
+password is real protection (argon2id, sessions, and a rate limiter that now survives
+across processes — D-033), and it should still not be the only layer.
+
+**Not validated on the host yet.** The bridge is written and staged there; the account's
+cron stopped firing before the installation task ran. Nothing here is claimed as proven
+beyond what the probe above measured — which is that every capability it needs exists.
