@@ -274,3 +274,64 @@ func TestAnActionInvalidatesEveryTabAndReloadsOnlyTheVisibleOne(t *testing.T) {
 		t.Error("nothing re-fetches the visible tab after an action")
 	}
 }
+
+// Each finding can show what the engine actually saw.
+//
+// The votes say a file was flagged and by whom. They do not say WHY, and "why" is the
+// difference between a user who can decide and one who has to trust us. The engines
+// already record it — AMWScan keeps the offending line and its number, yara the strings
+// that matched and their byte offset — and it was going into the database and no further.
+func TestAFindingCanShowWhatTheEngineSaw(t *testing.T) {
+	js := readAsset(t, "app.js")
+
+	if !strings.Contains(js, "matched_content") {
+		t.Error("the panel never reads matched_content, so the evidence the engines record " +
+			"stays in the database where nobody sees it")
+	}
+	if !strings.Contains(js, "matched_offset") {
+		t.Error("the panel never reads matched_offset, so a user is told a file is bad but " +
+			"not where to look in it")
+	}
+}
+
+// Attacker-chosen text. The file paths and snippets shown here were written by whoever
+// wrote the malware; `<img src=x onerror=…>.php` is a legal filename.
+func TestTheSnippetNeverBecomesMarkup(t *testing.T) {
+	js := readAsset(t, "app.js")
+
+	// Assignment, not the word. The file's own comments explain why innerHTML is
+	// forbidden here, and a bare substring search finds those instead — the same way an
+	// earlier test matched a CSS rule quoted inside its own explanation.
+	assigns := regexp.MustCompile(`\.innerHTML\s*=`)
+	if m := assigns.FindAllString(js, -1); len(m) > 0 {
+		t.Errorf("the panel assigns innerHTML %d time(s): every string from the server has "+
+			"to enter the DOM as textContent, or a filename turns this page into an attack "+
+			"on the person reading it", len(m))
+	}
+}
+
+// Fetched when opened, not with the list. Two hundred cards must not mean two hundred
+// extra requests on an account with a ceiling on concurrent processes.
+func TestTheEvidenceIsFetchedOnDemand(t *testing.T) {
+	js := readAsset(t, "app.js")
+
+	if !strings.Contains(js, "addEventListener('toggle'") {
+		t.Error("the evidence is not loaded on opening, so either it is fetched for every " +
+			"card up front or it is never fetched at all")
+	}
+	css := readAsset(t, "app.css")
+	if !strings.Contains(css, ".evidence:not([open]) > *:not(summary)") {
+		t.Error("nothing collapses the evidence explicitly — the same default that failed " +
+			"for the purge dialog and the finding groups")
+	}
+}
+
+// maldet records which signature matched and never the text. An empty box would read as
+// a load that failed.
+func TestAnEngineWithNoSnippetSaysSoRatherThanShowingNothing(t *testing.T) {
+	js := readAsset(t, "app.js")
+	if !strings.Contains(js, "not the text that matched it") {
+		t.Error("an engine that records no snippet produces an empty panel with nothing " +
+			"saying why")
+	}
+}

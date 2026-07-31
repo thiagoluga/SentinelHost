@@ -277,3 +277,34 @@ legend{color:var(--muted);font-size:11px;padding:0 4px}
  * that any other rule can outrank.
  */
 .loc-group:not([open]) > *:not(summary) { display: none !important; }
+
+/* What the engines saw, per finding.
+   Closed by default and fetched on demand: a page of two hundred cards must not become
+   two hundred extra requests on an account with a ceiling on concurrent processes. */
+.evidence{margin:10px 0 4px}
+.evidence>summary{
+  cursor:pointer;user-select:none;color:var(--ink-2);font-size:13px;
+  display:flex;align-items:center;gap:8px;
+}
+.evidence>summary::-webkit-details-marker{display:none}
+.evidence>summary::before{content:"▸";color:var(--muted)}
+.evidence[open]>summary::before{content:"▾"}
+/* Stated rather than inherited, for the same reason as the finding groups: the user
+   agent's own hiding is the weakest link in the cascade (D-036, D-041). */
+.evidence:not([open]) > *:not(summary){display:none !important}
+.evidence-body{padding:8px 0 0 18px}
+.evidence-item{border-left:2px solid var(--grid);padding-left:10px;margin:10px 0}
+.evidence-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;font-size:13px}
+.evidence-head .where{
+  color:var(--muted);font-variant-numeric:tabular-nums;
+  border:1px solid var(--border);border-radius:99px;padding:0 8px;font-size:12px;
+}
+.snippet{
+  margin:6px 0 0;padding:10px 12px;
+  background:var(--surface-2);border-radius:8px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;
+  /* The snippet is attacker-chosen text. It wraps and scrolls rather than stretching
+     the layout, and it never becomes markup. */
+  white-space:pre-wrap;word-break:break-all;
+  max-height:220px;overflow:auto;
+}
