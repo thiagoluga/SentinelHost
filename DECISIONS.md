@@ -1350,3 +1350,42 @@ The tests now include `public_html/app/tmp/cache.php`, `public_html/mail/contact
 `public_html/tmpl/`, which were the ones I thought of. Verified on Linux in the validation
 container, not only on the workstation: this failure was invisible on Windows, where the
 suite's fixtures do not live under `/tmp`.
+
+## D-041 — findings are grouped by where the file sits, and the quiet groups start closed
+
+**Context**: the first whole-account scan produced **209 findings**, nearly all of them
+framework code — Laravel, Symfony, psysh — inside WordPress installations sitting in the
+trash. On the live site there were a handful. An undifferentiated list buries the ones
+somebody can act on under the ones nobody can.
+
+**What was NOT done**: lower their score. They are `suspicious` at 0.32, which is one
+heuristic engine voting alone and is exactly right — the consensus is behaving as designed
+and D-003 keeps it showing its votes rather than a number tuned by context. The problem is
+not the verdicts, it is the reading order.
+
+**Decision**: one section per location, ordered by urgency — served by the web, unknown,
+unrecorded, outside the document root, trash. The first three open, the last two closed.
+
+**Closed is not hidden**, and that distinction is the whole design. The summary carries
+the count, the reason the group exists, and **the worst level inside it**, so a
+`confirmed` finding in a closed group announces itself without being opened. It is the
+same rule the scan report follows for skipped files: anything out of sight stays counted
+and explained. A group that hid its count would be a filter pretending to be a grouping.
+
+**The collapsing is an explicit rule, not the browser's default.** `<details>` is supposed
+to hide its contents through the user agent stylesheet — the weakest link in the cascade.
+Measured in a real browser, the cards stayed laid out at full height with the element
+closed, and a bare `<details>` did too, so it was not our styling. Rather than keep
+bisecting somebody else's cascade:
+
+```css
+.loc-group:not([open]) > *:not(summary) { display: none !important; }
+```
+
+That is the second time this project has been bitten by relying on a default any other
+rule can outrank — the first was the purge dialog that would not close (D-036). When
+something must not be on screen, say so.
+
+**Verified in a browser**, with the group closed and open, because the last three defects
+in the panel all passed every automated check and were visible immediately to somebody
+looking at the page.

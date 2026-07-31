@@ -219,3 +219,61 @@ legend{color:var(--muted);font-size:11px;padding:0 4px}
   text-decoration:line-through;
   text-decoration-thickness:2px;
 }
+
+/* Findings grouped by where the file sits.
+   Reachable first and open; the rest closed, with the count and the reason in the
+   summary so nothing leaves the screen without saying it did. */
+.loc-group{
+  border:1px solid var(--border);
+  border-radius:10px;
+  margin-bottom:14px;
+  background:var(--surface);
+}
+.loc-group>summary{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  padding:12px 14px;
+  cursor:pointer;
+  user-select:none;
+}
+.loc-group>summary::-webkit-details-marker{display:none}
+/* A marker of our own, so the open state reads the same in every browser. */
+.loc-group>summary::before{
+  content:"▸";
+  color:var(--muted);
+  font-size:.9em;
+}
+.loc-group[open]>summary::before{content:"▾"}
+.loc-group>summary small{flex:1 1 100%;margin-left:22px}
+.loc-group>summary .count{
+  background:var(--surface-2);
+  border-radius:99px;
+  padding:1px 9px;
+  font-variant-numeric:tabular-nums;
+}
+.loc-group .chip{
+  border-radius:99px;
+  padding:1px 9px;
+  font-size:.82em;
+  border:1px solid var(--border);
+}
+.loc-group .chip.lvl-confirmed{border-color:var(--st-crit);color:var(--st-crit)}
+.loc-group .chip.lvl-likely{border-color:var(--st-serious);color:var(--st-serious)}
+.loc-group .chip.lvl-suspicious{border-color:var(--st-warn);color:var(--st-warn)}
+.loc-group>.card{margin:0 12px 12px}
+
+/* Collapse the group's contents ourselves, rather than trusting the browser to.
+ *
+ * <details> is supposed to hide everything but the summary when closed, and it does so
+ * through the user agent's own stylesheet — which is the weakest link in the cascade.
+ * Measured in a real browser here, the cards stayed laid out at full height with the
+ * element closed, and a bare <details> behaved the same way, so it was not our styling.
+ *
+ * Rather than keep bisecting somebody else's cascade, the rule is stated. It costs one
+ * line and it is the same lesson as the purge dialog that would not close (D-036): when
+ * something must not be on screen, say so explicitly instead of relying on a default
+ * that any other rule can outrank.
+ */
+.loc-group:not([open]) > *:not(summary) { display: none !important; }
