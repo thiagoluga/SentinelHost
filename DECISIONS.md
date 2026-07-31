@@ -1053,3 +1053,44 @@ across processes — D-033), and it should still not be the only layer.
 **Not validated on the host yet.** The bridge is written and staged there; the account's
 cron stopped firing before the installation task ran. Nothing here is claimed as proven
 beyond what the probe above measured — which is that every capability it needs exists.
+
+## D-035 — the panel addresses itself relatively, so it works anywhere it is mounted
+
+**Context**: found the moment the PHP bridge worked. The panel came up, served its page,
+and then:
+
+```text
+api/session      -> HTTP 200
+assets/app.js    -> HTTP 404
+assets/app.css   -> HTTP 404
+```
+
+The HTML arrived and rendered as bare markup.
+
+**The defect**: the panel addressed itself from the domain root — `<link href="/app.css">`,
+`fetch('/api/status')`. That works only when the panel **is** the site. Mounted at
+`/sentinel/`, the browser asks the SITE for `/app.css`, gets the site's 404, and the panel
+loads unstyled and inert with nothing on screen explaining why.
+
+It was never noticed because every previous test served the panel at the root of
+`127.0.0.1:8787`. The assumption was invisible until something mounted it elsewhere — and
+mounting it elsewhere is the only way it is reachable on shared hosting at all.
+
+**Decision**: the panel derives its mount point from the page it was served as:
+
+```js
+const BASE = new URL('.', document.baseURI).pathname;
+```
+
+and every request goes through a `url()` helper. `document.baseURI` already carries the
+directory the document came from, so this is correct at the root as well — nothing is
+configured, and nothing has to be told where it was installed.
+
+**Three tests hold it**, and they read the shipped assets rather than a copy: no `href`
+or `src` starting at the root, every `fetch` going through the helper, and the base being
+derived from `document.baseURI` rather than assumed. A regression here is silent by
+nature — the page still loads — so it needs a test that fails loudly.
+
+**How it was found**: by looking at what the browser would actually receive, on a real
+host, instead of at whether the request reached the panel. The API answered 200 and the
+page arrived; by every check I had written before this, it worked.

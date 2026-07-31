@@ -38,8 +38,25 @@ function toast(msg, bad = false) {
   toastTimer = setTimeout(() => { t.hidden = true; }, 5200);
 }
 
+// Where the panel is mounted, worked out from the page's own URL.
+//
+// The panel used to address itself with absolute paths — /api/status, /app.css — which
+// works only when it is served at the root of a domain. Behind any reverse proxy on a
+// sub-path, and that includes the PHP bridge for shared hosting, the browser asks the
+// SITE for /api/status instead of the panel, and every request 404s while the page
+// itself loads. Unstyled, inert, and with nothing on screen saying why.
+//
+// document.baseURI already carries the directory the page came from, so relative URLs
+// resolve correctly wherever the panel is mounted, including the root.
+const BASE = new URL('.', document.baseURI).pathname;
+
+/** Turn a panel-relative path into one that works from wherever we are mounted. */
+function url(path) {
+  return BASE.replace(/\/$/, '') + '/' + String(path).replace(/^\//, '');
+}
+
 async function api(path, opts = {}) {
-  const resp = await fetch(path, {
+  const resp = await fetch(url(path), {
     credentials: 'same-origin',
     headers: opts.body ? { 'Content-Type': 'application/json' } : {},
     ...opts,
