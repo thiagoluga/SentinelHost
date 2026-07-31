@@ -82,6 +82,43 @@ func Default() *Config {
 				// Our own data directory: scanning the quarantine vault would
 				// re-detect what has already been neutralized, in a loop.
 				"**/.sentinelhost/**",
+
+				// The hosting account's own furniture.
+				//
+				// Scanning a whole account is the right scope — a webshell in a secondary
+				// domain is exactly as executable as one in the primary, and watching a
+				// single document root leaves the rest invisible. But an account is not
+				// only sites, and the measurements on a real one are lopsided:
+				//
+				//	mail   9,206 files   2.4 GB
+				//	tmp    5,655 files   338 MB
+				//	etc       40 files   9.3 MB
+				//
+				// None of it is served by the web, none of it executes, and the 98 "PHP
+				// files" under mail/ are e-mail attachments — spam samples sitting in a
+				// maildir, which produce findings nobody can act on and which are not on
+				// the site at all.
+				//
+				// These are EXCLUSIONS, not silence. Every one is counted and reported
+				// under `excluded`, because a scanner that quietly skips two thirds of an
+				// account and says "0 findings" is the failure this project exists to
+				// prevent. A user who wants them back removes the line.
+				//
+				// The trash is deliberately NOT here. It holds 11,140 of the 11,399 PHP
+				// files on that account, and hiding it would be a gift to anyone who
+				// noticed. It is scanned, classified as `trash`, and left alone by the
+				// automatic action instead (D-038).
+				"**/mail/**",         // maildirs: attachments, not site content
+				"**/tmp/**",          // session files, webalizer, panel scratch
+				"**/logs/**",         // access and error logs
+				"**/access-logs/**",  // the same, under cPanel's other name
+				"**/.cpanel/**",      // control panel internals
+				"**/.cphorde/**",     // webmail
+				"**/.softaculous/**", // installer cache
+				"**/etc/**",          // account mail/DNS configuration
+				"**/ssl/**",          // certificates and keys
+				"**/.pki/**",
+				"**/.ssh/**", // reading these produces nothing and needs no permission
 			},
 		},
 		Schedule: Schedule{

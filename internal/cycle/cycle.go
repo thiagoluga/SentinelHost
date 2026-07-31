@@ -10,6 +10,7 @@ package cycle
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"time"
 
@@ -565,15 +566,30 @@ func scanID(t time.Time, mode schema.ScanMode) string {
 
 // reachClassifier decides which paths the web serves.
 //
-// With no document_roots configured it falls back to the scanned roots, because on the
-// overwhelmingly common setup they are the same directory — someone scanning
-// ~/public_html is scanning what the web serves. The fallback is a guess, though, and
-// the honest kind: it can only ever classify MORE files as reachable than the truth,
-// which errs towards urgency rather than towards reassurance.
+// Three sources, in order of trust. Configuration wins, because someone who wrote the
+// list meant it. Otherwise the control panel's own records are read — a hosting account
+// is rarely one site, and a domain left out of a hand-written list only ever makes its
+// findings look LESS urgent than they are, which is the direction this project cannot
+// afford to be wrong in.
+//
+// The last resort is the scanned roots themselves, on the reasoning that someone scanning
+// ~/public_html is scanning what the web serves. It is a guess, and the honest kind: it
+// can only classify MORE files as reachable than the truth.
 func (r *Runner) reachClassifier() *reach.Classifier {
 	docRoots := r.cfg.General.DocumentRoots
+	if len(docRoots) == 0 {
+		docRoots = reach.DiscoverDocumentRoots(homeDir())
+	}
 	if len(docRoots) == 0 {
 		docRoots = r.cfg.General.Roots
 	}
 	return reach.New(docRoots, r.cfg.General.TrashDirs)
+}
+
+// homeDir is where the account's own records live.
+func homeDir() string {
+	if h, err := os.UserHomeDir(); err == nil {
+		return h
+	}
+	return ""
 }

@@ -1279,3 +1279,57 @@ Verified by reverting the fix: the tests fail, and with it restored they pass.
 **How it was found**: by a person looking at a screen, again. This is the second defect in
 two days that every automated check passed — HTTP 200, assets loaded, API answering — and
 that was visible immediately to somebody with the page open.
+
+## D-040 — the scope is the account, and the document roots are discovered
+
+**Context**: the maintainer corrected the scope. A hosting account is rarely one site —
+addon domains, subdomains and parked domains each get their own directory — and a webshell
+in a secondary domain is exactly as executable as one in the primary. Watching a single
+document root leaves the rest invisible.
+
+**Decision**: `reach.DiscoverDocumentRoots` reads the roots instead of asking for them, and
+the account's own directories are excluded by default so scanning the whole home is
+practical.
+
+**Why discovery rather than configuration.** A hand-written list is right on the day it is
+written and wrong the first time a domain is added — and nothing says so, because a
+MISSING root only ever makes findings look LESS urgent than they are. That is the one
+direction this project cannot afford to be wrong in.
+
+Two sources, in order of trust. cPanel's `~/.cpanel/userdata/<domain>` files carry a
+`documentroot:` line, which is the server's own answer. Failing that, directories that
+behave like a site — an `index.php` or `index.html` within three levels of the home.
+
+**And the second source is the one that works.** On the validation account,
+`.cpanel/userdata` is not readable by the user at all: the primary source returned
+nothing. The fallback found both real sites and two false positives under `tmp/`, which
+the internal-directory list already excludes. What I wrote as the weak option carries the
+whole feature on the only host it has been tried against.
+
+**The exclusions are measured, not guessed.** From that account:
+
+| | files | PHP | size |
+|---|---|---|---|
+| whole account | 32,416 | 11,399 | 5.5 GB |
+| `.trash` | 16,698 | **11,140** | 759 MB |
+| `mail` | 9,206 | 98 | **2.4 GB** |
+| `tmp` | 5,655 | 150 | 338 MB |
+| `public_html` | 78 | 3 | 5.0 MB |
+
+`mail`, `tmp`, `logs`, `etc`, `ssl` and the panel's own directories are excluded: none is
+served by the web, none executes, and the 98 "PHP files" under `mail/` are e-mail
+attachments — spam samples in a maildir, producing findings nobody can act on about files
+that are not on the site.
+
+They are **exclusions, not silence**: each is counted and reported under `excluded`, and
+removing a line brings it back. A scanner that quietly skips two thirds of an account and
+says "0 findings" is precisely what this project exists to prevent.
+
+**The trash is deliberately NOT excluded.** It holds 11,140 of the 11,399 PHP files on
+that account. Hiding it would remove almost everything scannable and reward anyone who
+worked that out. It is scanned, classified as `trash`, and left alone by the automatic
+action instead (D-038).
+
+**A name is not a directory.** `public_html/mailings/`, `public_html/tmpl/` and
+`public_html/logstash/` are the user's own content inside a served root, and there is a
+test for each — the same trap as D-026 and D-038.
