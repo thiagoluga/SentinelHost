@@ -53,9 +53,16 @@ RewriteRule ^(.*)$ index.php [QSA,L]
   Require all denied
 </FilesMatch>
 
-# A file with no extension at all is almost certainly a compiled binary that was copied
-# here by mistake. The Go binary must live outside the document root; this is the second
-# line of defence for the day someone puts it in the first place they look.
-<FilesMatch "^[^.]+$">
+# There is deliberately NO "deny anything without an extension" rule here, tempting as it
+# is for catching a copied binary.
+#
+# The panel's own routes have no extension — /api/session, /api/status — and such a rule
+# denies them before the rewrite above ever runs. Installed on a real account it returned
+# 403 for every API call while the pages themselves loaded, which reads like a broken
+# panel rather than like a misconfigured directory.
+#
+# The binary is kept out of reach by living outside the document root, which is where the
+# protection belongs. A second line of defence that breaks the first one is not defence.
+<Files "sentinelhost">
   Require all denied
-</FilesMatch>
+</Files>

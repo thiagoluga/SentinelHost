@@ -53,8 +53,12 @@ not something to leave on a live site.
 2. Copy `index.php` and `.htaccess` into a directory of your document root, for example
    `public_html/sentinel/`.
 
-3. Open `index.php` and check the paths at the top. `$home` is computed as three levels
-   above the file; if you nested it differently, set it explicitly.
+3. Open `index.php` and **set `$home` to your account's home directory** — the line is
+   near the top and ships as `/home/YOURUSER`. It is spelled out rather than computed
+   from the file's location on purpose: a `dirname(__DIR__, 3)` depends on how deep you
+   installed the bridge, and being one level off points everything at the wrong place
+   while looking like a broken panel. `php -r 'echo getenv("HOME");'` prints it, and
+   cPanel shows it as *Home Directory*.
 
 4. Edit `.htaccess` and uncomment the IP restriction.
 
