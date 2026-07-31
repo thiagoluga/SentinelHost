@@ -1235,3 +1235,47 @@ Five decisions inside it are load-bearing:
 one click, and restoring the site restores whatever is in it. Leaving that out would
 manufacture exactly the confidence this project is built to refuse — the maintainer's
 account has three whole WordPress installations sitting in there.
+
+## D-039 — the config API sends the names the TOML uses, not Go's field names
+
+**Context**: reported from a screenshot of the running panel. Everything looked right —
+the dashboard, the KPIs, the coverage per engine — with one toast in the corner:
+
+```text
+Could not load the configuration: Cannot read properties of undefined (reading 'enabled')
+```
+
+**The defect**: the config structs carried only `toml:` tags. Go therefore serialized them
+with its own field names:
+
+```json
+"alerts": { "Email": { "Enabled": false, "Host": "", … } }
+```
+
+while the panel reads `CFG.alerts.email.enabled`. The top-level keys were right, because
+the handler builds that map by hand; every field inside them was not.
+
+**What makes this worth a decision rather than a one-line fix** is how it failed. The
+whole Settings tab was being populated from `undefined`, and assigning `undefined` to an
+input's `.value` throws nothing — it just leaves the field blank. A user would have seen
+an empty form, edited it, and saved defaults over their own configuration. The single
+toast came from the one line that read a property *of* the undefined object, and that
+accident is the only reason anybody found out.
+
+**Decision**: every `toml:` tag has a `json:` twin with the same name. The panel and the
+file a user edits by hand now name the same setting the same way, and the API contract
+stops depending on Go identifiers — a rename in Go would otherwise silently break the
+panel.
+
+**The test compares the two sides.** It extracts every `CFG.<section>.<field>` the panel
+reads out of `app.js`, marshals the real config through the same path the handler uses,
+and reports any the API does not send. A test asserting the Go structs would have passed.
+A test asserting the JS would have passed. Only reading both and comparing them catches
+this, which is the same shape as the fixture-versus-reality rule in D-022 — one side
+verified against the other, rather than each against my idea of it.
+
+Verified by reverting the fix: the tests fail, and with it restored they pass.
+
+**How it was found**: by a person looking at a screen, again. This is the second defect in
+two days that every automated check passed — HTTP 200, assets loaded, API answering — and
+that was visible immediately to somebody with the page open.
