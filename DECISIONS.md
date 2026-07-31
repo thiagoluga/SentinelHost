@@ -1187,3 +1187,51 @@ a hang into a 502 with a timing line instead of a browser spinning for five minu
 repeated start lines and nothing else, and the numbers contradicted it fifteen minutes
 later. The reason it took fifteen minutes is that nothing was measuring — which is the
 same failure this project keeps finding in itself, one layer out.
+
+## D-038 — reachability changes the action, never the verdict
+
+**Context**: the maintainer noticed that findings from the validation run were all inside
+`/home1/motel510/.trash/wordpress` — the account's deleted-files area — and asked for the
+tool to at least know that.
+
+The useful question turned out to be broader than the trash: **can a visitor fetch this
+file right now?** A webshell in the document root can be executed by anyone with the URL,
+this minute. The same webshell in the trash cannot be executed by anybody. A backup
+directory, a path above the site, and the trash are all the same answer.
+
+**Decision**: `internal/reach` classifies every path as `web_reachable`, `trash`,
+`outside_docroot` or `unknown`. The result is recorded on the finding and the verdict,
+and it feeds the ACTION — the same place the whitelist acts (D-006).
+
+**What was deliberately NOT done**: adjust the score. Tempting, and it is the mechanism
+through which real findings quietly stop being seen. D-003 keeps the consensus showing
+its votes rather than a number somebody tuned by context, and a file in the trash is
+exactly as detected as it was before; only the automatic quarantine is withheld, with
+`skipped_not_reachable` and a reason.
+
+Nor was the trash excluded from the scan. An attacker who learned that would keep their
+payload there, and silent exclusion is what this project exists to prevent.
+
+Five decisions inside it are load-bearing:
+
+- **`unknown` counts as reachable.** When the question was never answerable — no document
+  roots configured — the safe reading is the urgent one. The opposite default would
+  downgrade every finding on every installation that never set them.
+- **Trash is matched as a whole path SEGMENT, never a substring.** `public_html/trash/`
+  full of a user's drafts, `contrash/`, `mytrash/` — none of those are a control panel's
+  bin, and downgrading a served file because of a folder name would hide a live finding.
+  This is D-026 applied before it could bite a second time: names are a hint, paths are
+  the answer.
+- **`under()` compares segments, not prefixes.** `/home/u/public_html2` is not inside
+  `/home/u/public_html`; a prefix test puts somebody else's site under this one's root.
+- **Trash is checked before the document roots.** A panel's bin can sit inside a served
+  directory, and "the web serves this" is the wrong headline for a file the account has
+  already deleted.
+- **The location is recorded even when it is reachable.** "This IS served" is the half of
+  the answer that makes a finding urgent; a field that appeared only for the sheltered
+  cases would read as a badge for harmless results.
+
+**And unreachable is not safe.** Every explanation says so: the cPanel trash restores with
+one click, and restoring the site restores whatever is in it. Leaving that out would
+manufacture exactly the confidence this project is built to refuse — the maintainer's
+account has three whole WordPress installations sitting in there.

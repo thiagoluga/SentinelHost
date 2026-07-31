@@ -21,6 +21,14 @@ type FileRef struct {
 	// Perms is the octal permission as a string ("0644"), preserved so that
 	// restoring from quarantine puts the file back exactly as it was.
 	Perms string `json:"perms,omitempty"`
+	// Location says whether the web serves this file: web_reachable, trash,
+	// outside_docroot, or unknown.
+	//
+	// It is context for a human deciding what to look at first, and an input to the
+	// ACTION — never to the score. A webshell in the document root can be run by anyone
+	// with the URL this minute; the same webshell in the trash cannot be run by anybody,
+	// and is still a webshell, still reported at its real level.
+	Location string `json:"location,omitempty"`
 }
 
 // Component describes the vulnerable component of a kind=vulnerability finding.
