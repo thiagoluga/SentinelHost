@@ -1093,3 +1093,42 @@ nature — the page still loads — so it needs a test that fails loudly.
 **How it was found**: by looking at what the browser would actually receive, on a real
 host, instead of at whether the request reached the panel. The API answered 200 and the
 page arrived; by every check written before this one, it worked.
+
+## D-036 — the `hidden` attribute is enforced globally, not per component
+
+**Context**: reported by the maintainer opening the panel on their own site for the first
+time. The first-access screen appeared — *"Set the panel password"* — with a dialog on
+top of it reading **Confirm / type: purge**. Neither Cancel nor Confirm did anything.
+
+**The defect**, in one line of CSS:
+
+```css
+.modal{position:fixed;inset:0;…;display:grid;…}
+```
+
+The `hidden` attribute applies `display:none` through the **browser's own** stylesheet,
+which any author rule outranks. So the purge confirmation — the dialog for the only
+irreversible operation in this project — was permanently on screen, over everything.
+
+And it could not be dismissed. The Cancel and Confirm handlers are attached when the
+dialog is opened deliberately by `confirmPurge()`; this one never was, so the buttons did
+nothing. A first-time user was blocked at the password form by a dialog asking them to
+type "purge".
+
+**Decision**: `[hidden] { display: none !important; }`, declared before the component
+styles.
+
+Not a `.modal[hidden]` rule. Every element the panel toggles with the attribute — the
+gate, the app, both banners — is exposed to exactly this the moment it gains a display of
+its own, and fixing the one instance leaves the next to be found the same way: by
+somebody opening the panel and being confronted with it. `!important` is warranted here
+in a way it rarely is: nothing should ever out-specify "this element is not here".
+
+**Two tests hold it**: the rule exists with `!important`, and it appears before `.modal`.
+The second one matched the rule quoted inside its own explanatory comment on the first
+attempt and failed for that reason — line-anchored now, and worth recording as the sort
+of thing a string-matching test does.
+
+**How it was found**: by a person opening the page. Every automated check passed, the
+panel returned HTTP 200, the assets loaded, and the API answered — nothing anywhere
+looked at what was actually on the screen.

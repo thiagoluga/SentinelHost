@@ -1,6 +1,21 @@
 /* SentinelHost panel.
    A direct evolution of docs/panel-mockup.html: same variables, same classes,
    same visual language — now consuming the real API. */
+/* The hidden attribute has to win.
+ *
+ * `hidden` sets `display:none` through the browser's own stylesheet, which any author
+ * rule outranks. `.modal{display:grid}` therefore beat it, and the purge confirmation —
+ * the dialog for the one irreversible operation in this project — sat on screen over
+ * everything, including the first-access password form. It was reported by someone
+ * opening the panel for the first time and being asked to type "purge".
+ *
+ * A rule per component would fix the one case and leave the next one to be found the
+ * same way, because every element toggled with `hidden` is exposed the moment it gains
+ * a display of its own. This is the general answer, and !important is warranted: nothing
+ * should ever out-specify "this element is not here".
+ */
+[hidden] { display: none !important; }
+
 
 :root{
   --page:#0d0d0d;
