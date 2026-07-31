@@ -30,6 +30,8 @@
 
 declare(strict_types=1);
 
+require __DIR__ . '/lib/path.php';
+
 // Every failure path here answers in plain text: an HTML error page from a security
 // tool invites the reader to wonder what else is being rendered.
 const PLAIN = 'Content-Type: text/plain';
@@ -114,34 +116,6 @@ function startPanel(string $binary, string $config, string $lockFile, string $lo
     return panelIsUp($upstream);
 }
 
-/**
- * The path the panel should see, with this script's own prefix removed.
- *
- * The leading slash is forced, and that is not tidiness — it is the difference between a
- * proxy and an open redirect into someone else's network.
- *
- * The path is concatenated onto "http://127.0.0.1:8787", and the visitor controls it. A
- * request for `/sentinel@evil.com` leaves `@evil.com` after the prefix is stripped, and
- * `http://127.0.0.1:8787@evil.com` is not the loopback at all: everything before the `@`
- * becomes userinfo and the real host is `evil.com`. The bridge would then fetch an
- * attacker's server from inside the account and hand the response back as if it were the
- * panel. Server-side request forgery, in one character.
- *
- * Anchoring to a single `/` closes it: `//evil.com` collapses to `/evil.com`, which is a
- * path on the loopback and nothing more. Backslashes go too, since some parsers treat
- * them as separators.
- */
-function upstreamPath(): string
-{
-    $uri  = $_SERVER['REQUEST_URI'] ?? '/';
-    $base = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/');
-    if ($base !== '' && str_starts_with($uri, $base)) {
-        $uri = substr($uri, strlen($base));
-    }
-    $uri = str_replace('\\', '/', $uri);
-    return '/' . ltrim($uri, '/');
-}
-
 /** Headers to forward upstream, minus the ones that describe THIS connection. */
 function forwardedHeaders(): array
 {
@@ -203,9 +177,23 @@ if (!panelIsUp($upstream)) {
 }
 
 // Plain HTTP, and correctly so: this never leaves the machine. The panel listens on the
-// loopback and terminating TLS against yourself would add a certificate to manage and
-// protect nothing. What reaches the visitor is HTTPS, terminated by the web server.
-$ch = curl_init('http://' . $upstream . upstreamPath());
+// loopback, and terminating TLS against yourself adds a certificate to manage while
+// protecting nothing. What reaches the visitor is HTTPS, terminated by the web server.
+//
+// upstreamURL() re-checks that the assembled URL really points at the loopback, and
+// returns null if anything in the path moved the host. That should be impossible after
+// upstreamPath() anchors it; it is checked at the point of use anyway, because the cost
+// is one call and the alternative is resting on a function three screens away continuing
+// to behave as it does today.
+$target = upstreamURL($upstream, upstreamPath($_SERVER['REQUEST_URI'] ?? '/', $_SERVER['SCRIPT_NAME'] ?? '/'));
+if ($target === null) {
+    http_response_code(400);
+    header(PLAIN);
+    exit("SentinelHost bridge: refusing a request whose path does not resolve to the panel.
+");
+}
+
+$ch = curl_init($target);
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 curl_setopt_array($ch, [
