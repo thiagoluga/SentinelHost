@@ -80,3 +80,44 @@ func TestTheResolvedURLIsCheckedAgainstThePagesOrigin(t *testing.T) {
 		t.Error("nothing refuses an off-origin request: the comparison has to act on its result")
 	}
 }
+
+// The hidden attribute must not be out-specified by anything.
+//
+// `hidden` applies display:none through the browser's own stylesheet, which any author
+// rule outranks. `.modal{display:grid}` beat it, so the purge confirmation — the dialog
+// for the only irreversible operation in this project — sat on screen over everything,
+// including the first-access password form. Someone opening the panel for the first time
+// was asked to type "purge", and could not dismiss it: the Cancel and Confirm handlers
+// are attached when the dialog is opened deliberately, and this one never was.
+//
+// A rule per component would fix that case and leave the next one to be found the same
+// way, because every element toggled with `hidden` is exposed the moment it gains a
+// display of its own.
+func TestTheHiddenAttributeCannotBeOverridden(t *testing.T) {
+	css := readAsset(t, "app.css")
+
+	if !strings.Contains(css, "[hidden]") {
+		t.Fatal("no [hidden] rule: any component with its own display will ignore the attribute")
+	}
+	if !strings.Contains(css, "[hidden] { display: none !important; }") {
+		t.Error("the [hidden] rule is not !important, so a component rule can still out-specify " +
+			"\"this element is not here\"")
+	}
+}
+
+// Every element the code hides with the attribute is a candidate for the same bug, so
+// the rule above has to come before the component styles that would otherwise win.
+func TestTheHiddenRuleComesBeforeTheComponents(t *testing.T) {
+	css := readAsset(t, "app.css")
+	hidden := strings.Index(css, "[hidden] { display: none !important; }")
+	// Line-anchored: the explanatory comment above the rule quotes `.modal{display:grid}`,
+	// and a bare substring search finds that instead of the declaration.
+	modal := strings.Index(css, "\n.modal{")
+	if hidden == -1 || modal == -1 {
+		t.Skip("one of the rules is absent; the test above reports that")
+	}
+	if hidden > modal {
+		t.Error("the [hidden] rule appears after .modal; with equal specificity the later " +
+			"rule wins, which is how this bug worked in the first place")
+	}
+}
