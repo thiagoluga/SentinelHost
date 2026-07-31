@@ -195,6 +195,24 @@ var migrations = []migration{
 			)`,
 		},
 	},
+	{
+		version: 2,
+		name:    "verdict file_location",
+		stmts: []string{
+			// Where the file sits relative to what the web serves: web_reachable, trash,
+			// outside_docroot or unknown (D-038).
+			//
+			// It was being computed on every cycle and printed by the CLI, then dropped on
+			// the way to disk — so the panel, which reads from here, showed every finding
+			// as unclassified no matter what the scan had worked out. A value the writer
+			// filled and the schema never had a place for.
+			//
+			// Existing rows keep '' rather than a guess. They were decided before the
+			// classification existed, and inventing a location for them would assert
+			// something nobody measured; the panel has a group that says exactly that.
+			`ALTER TABLE verdicts ADD COLUMN file_location TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 func (s *Store) migrate(ctx context.Context) error {

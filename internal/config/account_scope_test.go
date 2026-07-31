@@ -209,3 +209,47 @@ func looksLikeHomeFromOutside(dir string) bool {
 	}
 	return found >= 2
 }
+
+// The tool must not spend its credibility reporting itself.
+//
+// The PHP bridge lives IN the document root — that is what makes the panel reachable on
+// shared hosting — so the data-directory exclusion never covered it. And it genuinely
+// calls exec(), because starting the panel is its whole job, so AMWScan flags it as
+// `Function` on every cycle. Observed on a real account: a permanent `suspicious` finding
+// about a file this project installed.
+func TestOurOwnComponentsAreNotScanned(t *testing.T) {
+	root := t.TempDir()
+	bridge := filepath.Join(root, "sentinel")
+	if err := os.MkdirAll(bridge, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bridge, ".sentinelhost-component"), []byte("ours\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := writeConfig(t, "[general]\nroots = ["+tomlPath(root)+"]\n")
+
+	if !pathmatch.MatchAny(cfg.Limits.Exclude, filepath.Join(bridge, "index.php")) {
+		t.Errorf("the bridge is scanned, so it is flagged on every cycle for calling exec() "+
+			"— which is its entire purpose.\nexclusions: %v", cfg.Limits.Exclude)
+	}
+}
+
+// By the marker, never by the name. A scanner that trusted directory names would be told
+// what to ignore by whoever it was scanning — and this is the fourth time in this project
+// that a name has been mistaken for a path (D-026, D-038, D-040).
+func TestADirectoryNamedLikeOursIsStillScanned(t *testing.T) {
+	root := t.TempDir()
+	impostor := filepath.Join(root, "sentinel")
+	if err := os.MkdirAll(impostor, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// No marker file: it is just a directory somebody named `sentinel`.
+
+	cfg := writeConfig(t, "[general]\nroots = ["+tomlPath(root)+"]\n")
+
+	if pathmatch.MatchAny(cfg.Limits.Exclude, filepath.Join(impostor, "shell.php")) {
+		t.Error("a directory was excluded for being called `sentinel`. An attacker who read " +
+			"this code would put their payload in one")
+	}
+}

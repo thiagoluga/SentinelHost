@@ -50,8 +50,15 @@ not something to leave on a live site.
    └── data/                 0700  (database, baseline, quarantine vault)
    ```
 
-2. Copy `index.php` and `.htaccess` into a directory of your document root, for example
-   `public_html/sentinel/`.
+2. Copy `index.php`, `.htaccess` and **`.sentinelhost-component`** into a directory of
+   your document root, for example `public_html/sentinel/`.
+
+   That third file matters more than it looks. The bridge has to live inside the document
+   root, and it calls `exec()` because starting the panel is its whole job — which is
+   exactly what a PHP malware scanner is built to notice. Without the marker, AMWScan
+   flags the bridge on every cycle, forever, and the tool spends its credibility reporting
+   itself. The marker is what the scanner looks for, rather than the directory's name:
+   a scanner that trusted names would be told what to ignore by whoever it was scanning.
 
 3. Open `index.php` and **set `$home` to your account's home directory** — the line is
    near the top and ships as `/home/YOURUSER`. It is spelled out rather than computed
