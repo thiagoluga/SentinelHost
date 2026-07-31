@@ -38,10 +38,14 @@ const PLAIN = 'Content-Type: text/plain';
 
 // --- configuration ----------------------------------------------------------------
 //
-// $home is the account's home directory. The binary and the data live under it and NOT
-// under the document root: a Go binary served as a download is a gift to anyone probing,
-// and the quarantine vault holds the files that were removed from the site.
-$home     = dirname(__DIR__, 3);                 // adjust if this file is nested differently
+// SET THIS to your account's home directory. It is spelled out rather than computed on
+// purpose: a `dirname(__DIR__, 3)` depends on how deep you happened to install the
+// bridge, and installing it one level in or out silently points everything at the wrong
+// place. On a real account that produced /home/user/public_html instead of /home/user,
+// and the failure looked like the panel being broken rather than like a path being wrong.
+//
+// `php -r 'echo getenv("HOME");'` prints it, and cPanel shows it as "Home Directory".
+$home     = '/home/YOURUSER';
 $binary   = $home . '/sentinelhost/bin/sentinelhost';
 $config   = $home . '/sentinelhost/config.toml';
 $lockFile = $home . '/sentinelhost/.bridge.lock';
