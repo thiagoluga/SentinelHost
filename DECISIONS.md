@@ -1432,3 +1432,47 @@ Three details:
   Quarantining a file changes the findings, the quarantine and the dashboard counts, so
   none can be trusted afterwards — but fetching all of them to show one is the waste being
   removed.
+
+## D-043 — the panel shows what the engine actually saw
+
+**Context**: the maintainer asked for a preview of the offending line. Checking what the
+engines record rather than assuming turned up that **half of it already existed and was
+never displayed**:
+
+| Engine | Evidence recorded | Position |
+|---|---|---|
+| `amwscan` | the offending snippet | **line number** |
+| `php-malware-finder` | the strings that matched | **byte offset** |
+| `maldet` | only `{TYPE}signature` | none |
+| `wp-checksums` | a message | none |
+
+It was going into `matched_content` and `matched_offset`, into the database, and no
+further. The votes told a user that a file was flagged and by whom; they never said why,
+and "why" is the difference between somebody who can decide and somebody who has to trust
+us — which Principle V exists to prevent.
+
+**Decision**: an expandable block per finding, fetched when it is opened.
+
+- **On demand, not with the list.** A findings page holding two hundred cards would
+  otherwise be two hundred extra requests, on an account with a ceiling on how many
+  processes may run at once (D-042).
+- **The unit is named.** AMWScan counts lines and yara counts bytes; "offset 4211" and
+  "line 4211" send someone to very different places in a file.
+- **An engine with no snippet says so.** maldet records which signature matched and never
+  the text, and an empty box reads as a load that failed.
+- **Collapsed explicitly**, for the third time in this panel — the user agent's own hiding
+  is the weakest link in the cascade (D-036, D-041).
+
+**The snippet is attacker-chosen text**, and it enters the DOM through `textContent`. A
+file named `<img src=x onerror=…>.php` is a legal filename, and rendering it as markup
+would turn the panel into an attack on the person reading it. Verified in a browser with a
+deliberately hostile snippet carrying an identifiable element: it stayed text.
+
+The test for this checks for `.innerHTML =`, an assignment, rather than the word —
+its first version matched the file's own comments explaining why innerHTML is forbidden,
+which is the second time a string-matching test has found the explanation instead of the
+code.
+
+**Not done, by instruction**: the diff against the official WordPress file for
+`wp-checksums` findings. It is the only way to show a line for a hash-based detection, and
+it would mean a network call per preview.

@@ -403,6 +403,8 @@ function verdictCard(v) {
   });
   card.appendChild(t);
 
+  card.appendChild(evidenceBlock(v));
+
   if (v.abstentions && v.abstentions.length) {
     card.appendChild(el('p', { class: 'muted small' },
       `Abstentions: ${v.abstentions.join(', ')} — this cycle's coverage was reduced.`));
@@ -424,6 +426,87 @@ function verdictCard(v) {
     card.appendChild(actions);
   }
   return card;
+}
+
+/**
+ * What the engine actually saw, fetched when somebody asks for it.
+ *
+ * The votes above say a file was flagged and by whom. They do not say WHY, and "why" is
+ * the difference between a user who can decide and one who has to trust us. The engines
+ * already record it — AMWScan keeps the offending line and its number, yara keeps the
+ * strings that matched and their byte offset — and it has been going into the database
+ * and no further.
+ *
+ * Loaded on demand rather than with the list. A findings page holding two hundred cards
+ * would otherwise be two hundred extra requests, on an account that has a ceiling on how
+ * many may run at once.
+ *
+ * Everything here is snippet text chosen by whoever wrote the malware, and it enters the
+ * DOM through textContent — never innerHTML — because a file named
+ * `<img src=x onerror=…>.php` would otherwise turn this panel into an attack on the
+ * person reading it. It is already sanitized and length-capped server side; this is the
+ * second barrier, and the CSP is the third.
+ */
+function evidenceBlock(v) {
+  const box = el('details', { class: 'evidence' });
+  const sum = el('summary');
+  sum.appendChild(el('span', {}, 'What the engines saw'));
+  box.appendChild(sum);
+
+  const body = el('div', { class: 'evidence-body' });
+  body.appendChild(el('p', { class: 'muted small' }, 'Loading…'));
+  box.appendChild(body);
+
+  let loaded = false;
+  box.addEventListener('toggle', async () => {
+    if (!box.open || loaded) return;
+    loaded = true;
+    try {
+      const { findings } = await api(`/api/verdicts/${encodeURIComponent(v.verdict_id)}`);
+      renderEvidence(body, findings || []);
+    } catch (e) {
+      loaded = false; // so opening it again retries instead of staying on the error
+      clear(body);
+      body.appendChild(el('p', { class: 'small c-warn' },
+        `Could not load the evidence: ${e.message}`));
+    }
+  });
+  return box;
+}
+
+function renderEvidence(body, findings) {
+  clear(body);
+  if (!findings.length) {
+    body.appendChild(el('p', { class: 'muted small' }, 'No detail was recorded for this file.'));
+    return;
+  }
+
+  findings.forEach((f) => {
+    const item = el('div', { class: 'evidence-item' });
+
+    const head = el('div', { class: 'evidence-head' });
+    head.appendChild(el('b', {}, f.engine));
+    head.appendChild(el('span', { class: 'muted' }, f.rule));
+    // Where in the file. AMWScan counts lines; yara counts bytes. Saying which is which
+    // matters — "offset 4211" and "line 4211" send someone to very different places.
+    if (f.matched_offset) {
+      head.appendChild(el('span', { class: 'where' },
+        f.engine === 'php-malware-finder' ? `byte ${f.matched_offset}` : `line ${f.matched_offset}`));
+    }
+    item.appendChild(head);
+
+    if (f.matched_content) {
+      // A <pre> so whitespace survives: indentation and line breaks are often the
+      // clearest sign that something was pasted into an otherwise tidy file.
+      item.appendChild(el('pre', { class: 'snippet' }, f.matched_content));
+    } else {
+      // maldet reports only which signature matched, never a snippet. Saying so beats
+      // an empty box that looks like something failed to load.
+      item.appendChild(el('p', { class: 'muted small' },
+        `${f.engine} reports which signature matched, not the text that matched it.`));
+    }
+    body.appendChild(item);
+  });
 }
 
 function decisionButton(v, action, label, cls) {
