@@ -1,0 +1,39 @@
+# SentinelHost PHP bridge — routing and access control.
+#
+# Copy this next to index.php, inside the directory you expose the panel at.
+
+# Everything under this directory goes to the bridge, which works out the real path from
+# REQUEST_URI. Without this, only /index.php would answer and the panel's own routes
+# (/api/status, /assets/app.js) would 404.
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^(.*)$ index.php [QSA,L]
+
+# ---------------------------------------------------------------------------------
+# RESTRICT BY IP. Uncomment and set your own address.
+#
+# The panel's password is real protection — argon2id, sessions, and a rate limiter that
+# survives across processes. It is still one secret standing between the public internet
+# and a button that moves files on your site. An address restriction costs nothing and
+# means an attacker has to be on your network before the password matters at all.
+#
+# If your address is dynamic, prefer the SSH tunnel instead of leaving this open.
+# ---------------------------------------------------------------------------------
+# <RequireAny>
+#   Require ip 203.0.113.7
+#   Require ip 198.51.100.0/24
+# </RequireAny>
+
+# The panel sets its own security headers. These cover the case where the bridge itself
+# errors before reaching it, so an error page cannot be framed or sniffed either.
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "no-referrer"
+</IfModule>
+
+# Nothing but the bridge is servable from here. If a stray file ever lands in this
+# directory — an editor backup, a copy of the binary, a config — it is not downloadable.
+<FilesMatch "^(?!index\.php$).*$">
+  Require all denied
+</FilesMatch>
