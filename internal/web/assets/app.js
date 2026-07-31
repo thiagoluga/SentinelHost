@@ -48,11 +48,24 @@ function toast(msg, bad = false) {
 //
 // document.baseURI already carries the directory the page came from, so relative URLs
 // resolve correctly wherever the panel is mounted, including the root.
-const BASE = new URL('.', document.baseURI).pathname;
+const BASE = new URL('.', document.baseURI);
 
-/** Turn a panel-relative path into one that works from wherever we are mounted. */
+/**
+ * Turn a panel-relative path into an absolute one for wherever we are mounted.
+ *
+ * The origin is checked rather than assumed. document.baseURI is not a constant: a
+ * `<base href>` element changes it, and one injected into this page would silently
+ * redirect every API call — including the ones that quarantine and restore files — to
+ * somewhere else. Nothing renders untrusted HTML here today, and the check costs one
+ * comparison, which is the right trade for a guarantee that would otherwise depend on
+ * that staying true forever.
+ */
 function url(path) {
-  return BASE.replace(/\/$/, '') + '/' + String(path).replace(/^\//, '');
+  const resolved = new URL(String(path).replace(/^\//, ''), BASE);
+  if (resolved.origin !== window.location.origin) {
+    throw new Error('refusing to send a panel request off-origin');
+  }
+  return resolved.pathname + resolved.search;
 }
 
 async function api(path, opts = {}) {

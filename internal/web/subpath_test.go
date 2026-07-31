@@ -61,3 +61,22 @@ func TestTheBaseIsDerivedFromThePageRatherThanAssumed(t *testing.T) {
 			"an assumption about where the panel was installed")
 	}
 }
+
+// document.baseURI is not a constant: a `<base href>` element changes it. One injected
+// into this page would silently redirect every API call — including the ones that
+// quarantine and restore files — to somewhere else entirely.
+//
+// Nothing renders untrusted HTML in the panel today. The check costs one comparison,
+// which is the right trade for a guarantee that would otherwise depend on that staying
+// true forever.
+func TestTheResolvedURLIsCheckedAgainstThePagesOrigin(t *testing.T) {
+	js := readAsset(t, "app.js")
+
+	if !strings.Contains(js, "window.location.origin") {
+		t.Error("url() does not compare the resolved origin against the page's own; " +
+			"a <base href> would then redirect every API call off-origin")
+	}
+	if !strings.Contains(js, "refusing to send a panel request off-origin") {
+		t.Error("nothing refuses an off-origin request: the comparison has to act on its result")
+	}
+}
