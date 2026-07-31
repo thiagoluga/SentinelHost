@@ -300,6 +300,20 @@ $('#btn-scan').addEventListener('click', async (ev) => {
 
 // -------------------------------------------------------------------- findings
 
+// Where each location sits in the reading order, and what to say about it.
+//
+// Reachable first, because that is the only group where somebody can execute the file
+// right now. The trash last: on a real account it produced 209 findings — framework code
+// from Laravel and Symfony in deleted installations — against a handful on the live site,
+// and an undifferentiated list buries the ones that matter under the ones that do not.
+const LOCATIONS = [
+  { key: 'web_reachable',   title: 'Served by the web',        note: 'A visitor can request these files.', open: true },
+  { key: 'unknown',         title: 'Location unknown',         note: 'No document root is configured, so whether the web serves these is not known. Treated as if it does.', open: true },
+  { key: '',                title: 'Location not recorded',    note: 'Found before this cycle started classifying paths.', open: true },
+  { key: 'outside_docroot', title: 'Outside every document root', note: 'Nothing serves these. They are still on the account, and a copy or a restore brings them back into play.', open: false },
+  { key: 'trash',           title: 'In the trash',             note: 'Nothing serves these — but the trash restores with one click, and restoring the site restores them with it.', open: false },
+];
+
 async function loadFindings() {
   const pending = $('#f-pending').checked ? '?pending=1' : '';
   const { verdicts } = await api('/api/verdicts' + pending);
@@ -311,7 +325,47 @@ async function loadFindings() {
       pending ? 'No finding is waiting for a decision.' : 'No finding recorded.'));
     return;
   }
-  verdicts.forEach((v) => list.appendChild(verdictCard(v)));
+
+  const groups = new Map(LOCATIONS.map((l) => [l.key, []]));
+  verdicts.forEach((v) => {
+    const key = groups.has(v.file_location || '') ? (v.file_location || '') : '';
+    groups.get(key).push(v);
+  });
+
+  LOCATIONS.forEach((loc) => {
+    const found = groups.get(loc.key);
+    if (!found.length) return;
+    list.appendChild(locationGroup(loc, found));
+  });
+}
+
+// One collapsible section per location.
+//
+// <details> rather than a div and a click handler: it collapses without JavaScript, it is
+// reachable from the keyboard, and a screen reader announces its state — none of which a
+// hand-rolled toggle gets for free.
+//
+// The groups that are not urgent start CLOSED, and that is the only thing hidden: the
+// count and the reason sit in the summary, always visible. Anything out of sight stays
+// counted and explained, which is the same rule the scan report follows for skipped files.
+function locationGroup(loc, verdicts) {
+  const box = el('details', { class: 'loc-group' });
+  if (loc.open) box.open = true;
+
+  const worst = ['confirmed', 'likely', 'suspicious', 'clean']
+    .find((lvl) => verdicts.some((v) => v.level === lvl));
+
+  const sum = el('summary');
+  sum.appendChild(el('b', {}, loc.title));
+  sum.appendChild(el('span', { class: 'count' }, `${verdicts.length}`));
+  if (worst) {
+    sum.appendChild(el('span', { class: `chip lvl-${worst}` }, `worst: ${worst}`));
+  }
+  sum.appendChild(el('small', { class: 'muted' }, loc.note));
+  box.appendChild(sum);
+
+  verdicts.forEach((v) => box.appendChild(verdictCard(v)));
+  return box;
 }
 
 function verdictCard(v) {

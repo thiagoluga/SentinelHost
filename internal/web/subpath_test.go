@@ -121,3 +121,102 @@ func TestTheHiddenRuleComesBeforeTheComponents(t *testing.T) {
 			"rule wins, which is how this bug worked in the first place")
 	}
 }
+
+// Findings are grouped by where the file sits, and the groups that are not urgent start
+// closed.
+//
+// On a real account this mattered immediately: 209 findings, nearly all of them framework
+// code from Laravel and Symfony inside deleted WordPress installations, against a handful
+// on the live site. An undifferentiated list buries the ones somebody can act on under
+// the ones nobody can.
+//
+// Closed is not hidden. The count and the reason live in the summary, always on screen —
+// the same rule the scan report follows for skipped files, and the reason this is a
+// grouping rather than a filter.
+func TestFindingsAreGroupedByLocation(t *testing.T) {
+	js := readAsset(t, "app.js")
+
+	for _, key := range []string{"web_reachable", "trash", "outside_docroot", "unknown"} {
+		if !strings.Contains(js, "'"+key+"'") {
+			t.Errorf("the panel does not group %q", key)
+		}
+	}
+
+	// Reachable before trash: it is the only group where somebody can execute the file
+	// right now, and reading order is the whole point of the change.
+	reachable := strings.Index(js, "'web_reachable'")
+	trash := strings.Index(js, "'trash',")
+	if reachable == -1 || trash == -1 || reachable > trash {
+		t.Error("the trash is listed before the served files; the urgent group has to come first")
+	}
+}
+
+func TestTheGroupsThatAreNotUrgentStartClosed(t *testing.T) {
+	js := readAsset(t, "app.js")
+
+	// The declaration carries `open` per location. Reachable true, trash false.
+	trashLine := ""
+	for _, line := range strings.Split(js, "\n") {
+		if strings.Contains(line, "key: 'trash'") {
+			trashLine = line
+		}
+	}
+	if trashLine == "" {
+		t.Fatal("no trash group declared")
+	}
+	if !strings.Contains(trashLine, "open: false") {
+		t.Errorf("the trash group starts open, so 209 findings nobody can act on still bury "+
+			"the ones somebody can:\n  %s", strings.TrimSpace(trashLine))
+	}
+}
+
+// Whatever is collapsed still says how much it is and why. A group that hid its count
+// would be a filter pretending to be a grouping.
+func TestACollapsedGroupStillShowsItsCountAndReason(t *testing.T) {
+	js := readAsset(t, "app.js")
+
+	if !strings.Contains(js, "verdicts.length") {
+		t.Error("the summary does not carry the count")
+	}
+	if !strings.Contains(js, "loc.note") {
+		t.Error("the summary does not carry the reason the group exists")
+	}
+	// And the worst level inside, so a confirmed finding in a closed group is visible
+	// from the outside without opening it.
+	if !strings.Contains(js, "worst") {
+		t.Error("a closed group does not say the worst level it contains, so a confirmed " +
+			"finding could sit inside one with nothing on screen suggesting it")
+	}
+}
+
+// A verdict recorded before locations existed still has to appear somewhere.
+func TestAVerdictWithNoLocationIsStillShown(t *testing.T) {
+	js := readAsset(t, "app.js")
+	if !strings.Contains(js, "key: ''") {
+		t.Error("there is no group for verdicts with no location, so older ones vanish " +
+			"from the list entirely")
+	}
+}
+
+// The groups collapse because we say so, not because the browser is expected to.
+//
+// <details> hides its contents through the user agent stylesheet, the weakest link in the
+// cascade. Measured in a real browser, the cards stayed laid out at full height with the
+// element closed — and a bare <details> did too, so it was not our styling. Rather than
+// keep bisecting somebody else's cascade, the rule is stated.
+//
+// Same lesson as the purge dialog that would not close (D-036): when something must not
+// be on screen, say so, instead of relying on a default any other rule can outrank.
+func TestTheGroupCollapsesByAnExplicitRule(t *testing.T) {
+	css := readAsset(t, "app.css")
+
+	if !strings.Contains(css, ".loc-group:not([open]) > *:not(summary)") {
+		t.Error("nothing collapses a closed group explicitly; a closed group that still " +
+			"renders its findings is not a grouping at all")
+	}
+	// The summary must survive it — that is where the count and the reason live.
+	if strings.Contains(css, ".loc-group:not([open]) > * {") {
+		t.Error("the rule hides the summary as well, taking the count and the reason off " +
+			"screen with the findings")
+	}
+}
