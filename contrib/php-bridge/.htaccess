@@ -1,0 +1,84 @@
+# SentinelHost PHP bridge — routing and access control.
+#
+# Copy this next to index.php, inside the directory you expose the panel at.
+
+# Everything under this directory goes to the bridge, which works out the real path from
+# REQUEST_URI. Without this, only /index.php would answer and the panel's own routes
+# (/api/status, /assets/app.js) would 404.
+# The path is handed to the bridge explicitly, in __shpath, rather than left for PHP to
+# work out from SCRIPT_NAME and REQUEST_URI.
+#
+# Those two disagree the moment anything upstream rewrites. On the account this was built
+# against, a rule in the parent directory maps /sentinel/ to /motelgrandplace/sentinel/,
+# so SCRIPT_NAME carried a prefix REQUEST_URI never had, nothing was stripped, and the
+# panel answered 404 to every request while looking perfectly healthy.
+#
+# This capture is relative to THIS directory whatever sits in front of it.
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^(.*)$ index.php?__shpath=/$1 [QSA,L]
+
+# ---------------------------------------------------------------------------------
+# RESTRICT BY IP. Uncomment and set your own address.
+#
+# The panel's password is real protection — argon2id, sessions, and a rate limiter that
+# survives across processes. It is still one secret standing between the public internet
+# and a button that moves files on your site. An address restriction costs nothing and
+# means an attacker has to be on your network before the password matters at all.
+#
+# If your address is dynamic, prefer the SSH tunnel instead of leaving this open.
+# ---------------------------------------------------------------------------------
+# <RequireAny>
+#   Require ip 203.0.113.7
+#   Require ip 198.51.100.0/24
+# </RequireAny>
+
+# The panel sets its own security headers. These cover the case where the bridge itself
+# errors before reaching it, so an error page cannot be framed or sniffed either.
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "no-referrer"
+</IfModule>
+
+# If a stray file ever lands in this directory — an editor backup, a copy of the binary,
+# a config — it must not be downloadable.
+#
+# Written as an explicit deny list rather than "everything except index.php". The elegant
+# form is a negative lookahead:
+#
+#   <FilesMatch "^(?!index\.php$).*$">
+#
+# and on LiteSpeed it denied index.php too, so the bridge answered 403 to everyone. Found
+# by installing it on a real account. A rule that is clever about what it permits fails
+# closed in ways nobody notices until the thing simply does not work; a rule that names
+# what it forbids fails in the direction you can see.
+<FilesMatch "\.(toml|db|db-wal|db-shm|log|pid|lock|bak|orig|save|swp|sql|tar|gz|zip)$">
+  Require all denied
+</FilesMatch>
+
+# Dotfiles, including this one.
+<FilesMatch "^\.">
+  Require all denied
+</FilesMatch>
+
+# PHP writes here when something goes wrong, and the file has no extension so the list
+# above does not catch it. A stack trace names paths, and paths are what an attacker is
+# trying to learn.
+<Files "error_log">
+  Require all denied
+</Files>
+
+# There is deliberately NO "deny anything without an extension" rule here, tempting as it
+# is for catching a copied binary.
+#
+# The panel's own routes have no extension — /api/session, /api/status — and such a rule
+# denies them before the rewrite above ever runs. Installed on a real account it returned
+# 403 for every API call while the pages themselves loaded, which reads like a broken
+# panel rather than like a misconfigured directory.
+#
+# The binary is kept out of reach by living outside the document root, which is where the
+# protection belongs. A second line of defence that breaks the first one is not defence.
+<Files "sentinelhost">
+  Require all denied
+</Files>

@@ -123,6 +123,11 @@ cron entry calls a fixed `runner.sh`, which executes a replaceable `task.sh` exa
 once per distinct content. Everything the CLI does works through it. SC-006 was
 validated that way, on an account with no shell at all.
 
+And for the panel, [`contrib/php-bridge/`](contrib/php-bridge/) makes it behave the way
+WordPress does — open the URL and it is there. The mechanism is the one WordPress
+actually uses: nothing runs continuously. A small PHP file starts the panel if it is down
+and proxies to it, so a host that kills long-lived processes stops mattering.
+
 ## Design documentation
 
 - [`docs/schema-and-adapters.md`](docs/schema-and-adapters.md) — the normalized
