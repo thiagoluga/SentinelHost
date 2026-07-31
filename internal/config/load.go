@@ -99,6 +99,19 @@ func (c *Config) normalize() {
 	// hand-edited TOML exactly as it does for a generated one — a user who deletes the
 	// `.sentinelhost` line from `exclude` cannot switch this off by accident.
 	c.Limits.Exclude = excludeOwnData(c.Limits.Exclude, c.General.DataDir, c.QuarantineDir())
+
+	// The hosting account's own furniture, anchored to the HOME and nowhere else.
+	//
+	// These were `**/mail/**`, `**/tmp/**` and friends, and that was wrong in the way this
+	// project keeps being wrong: a glob on a NAME matches any directory called that, at
+	// any depth. `**/tmp/**` excluded /tmp on Linux — where the suite builds its
+	// fixtures, so the 20,000-file benchmark scanned nothing — and it would exclude
+	// `public_html/app/tmp/`, which is a stock directory in Laravel and CakePHP. Live
+	// site content, silently skipped.
+	//
+	// Anchored to the home, `~/tmp` is cPanel's scratch directory and `~/mail` is the
+	// maildir, which is what was actually meant. Nothing deeper is touched.
+	c.Limits.Exclude = excludeAccountFurniture(c.Limits.Exclude, homeDir())
 }
 
 // excludeOwnData appends a glob for each of SentinelHost's own directories.
@@ -128,6 +141,47 @@ func excludeOwnData(exclude []string, dirs ...string) []string {
 		exclude = append(exclude, strings.TrimSuffix(filepath.ToSlash(d), "/")+"/**")
 	}
 	return exclude
+}
+
+// accountFurniture are the top-level directories of a hosting account that hold no site.
+//
+// Measured on a real cPanel account rather than assumed: of 32,416 files and 5.5 GB,
+// `mail` is 9,206 files and 2.4 GB and `tmp` another 5,655. None of it is served by the
+// web, none of it executes, and the 98 "PHP files" under `mail` are e-mail attachments —
+// spam samples in a maildir, which produce findings about files that are not on the site.
+//
+// Exclusions, not silence: each is counted under `excluded`, and removing a line brings
+// it back. The TRASH is deliberately absent — it held 11,140 of the 11,399 PHP files on
+// that account, and hiding it would reward anyone who noticed. It is scanned, classified,
+// and left alone by the automatic action instead (D-038).
+var accountFurniture = []string{
+	"mail", "tmp", "logs", "access-logs", "etc", "ssl", "public_ftp",
+	".cpanel", ".cphorde", ".softaculous", ".pki", ".ssh", ".security", ".htpasswds",
+}
+
+// excludeAccountFurniture anchors each of those to the home directory.
+func excludeAccountFurniture(exclude []string, home string) []string {
+	if home == "" {
+		return exclude
+	}
+	base := strings.TrimSuffix(filepath.ToSlash(home), "/")
+	for _, dir := range accountFurniture {
+		g := base + "/" + dir + "/**"
+		if pathmatch.MatchAny(exclude, base+"/"+dir) {
+			continue
+		}
+		exclude = append(exclude, g)
+	}
+	return exclude
+}
+
+// homeDir is the account's own directory, or "" when it cannot be determined — in which
+// case nothing is excluded on its account, which is the safe direction.
+func homeDir() string {
+	if h, err := os.UserHomeDir(); err == nil {
+		return h
+	}
+	return ""
 }
 
 func expandHome(p string) string {

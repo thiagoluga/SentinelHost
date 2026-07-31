@@ -1330,6 +1330,23 @@ that account. Hiding it would remove almost everything scannable and reward anyo
 worked that out. It is scanned, classified as `trash`, and left alone by the automatic
 action instead (D-038).
 
-**A name is not a directory.** `public_html/mailings/`, `public_html/tmpl/` and
-`public_html/logstash/` are the user's own content inside a served root, and there is a
-test for each — the same trap as D-026 and D-038.
+**A name is not a directory** — and I made the mistake anyway, in the same commit that
+says so.
+
+The exclusions shipped as `**/mail/**`, `**/tmp/**` and friends, which match a directory
+of that NAME at any depth. CI caught it on Linux within minutes: `**/tmp/**` excluded
+`/tmp`, where the suite builds its fixtures, so the 20,000-file benchmark scanned **zero
+files** and reported success at the level below. On a real site it would have excluded
+`public_html/app/tmp/`, which is a stock directory in Laravel and CakePHP — live content,
+silently skipped.
+
+They are now anchored to the account's HOME and nowhere else: `~/mail`, `~/tmp`. That is
+what was meant all along, and it is the same correction as D-026 (data dir by path, not by
+name) and D-038 (trash by segment, not by substring). Third time it was written down,
+first time it was actually committed.
+
+The tests now include `public_html/app/tmp/cache.php`, `public_html/mail/contact.php` and
+`/tmp/fixture/x.php` — the cases that broke — alongside `public_html/mailings/` and
+`public_html/tmpl/`, which were the ones I thought of. Verified on Linux in the validation
+container, not only on the workstation: this failure was invisible on Windows, where the
+suite's fixtures do not live under `/tmp`.
