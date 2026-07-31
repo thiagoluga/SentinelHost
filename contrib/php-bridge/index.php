@@ -191,7 +191,7 @@ if (!panelIsUp($upstream) && !startPanel($binary, $config, $lockFile, $logFile, 
 $params = $_GET;
 $rawPath = (string) ($params['__shpath'] ?? '/');
 unset($params['__shpath']);
-$target = upstreamURL($upstream, upstreamPath($rawPath, http_build_query($params))); // NOSONAR - upstreamURL refuses anything whose host is not the loopback
+$target = upstreamURL($upstream, upstreamPath($rawPath, http_build_query($params)));
 if ($target === null) {
     http_response_code(400);
     header(PLAIN);
@@ -199,7 +199,12 @@ if ($target === null) {
 ");
 }
 
-$ch = curl_init($target);
+// $target has been through upstreamURL(), which returns null unless the assembled URL
+// really points at the loopback — no userinfo, host unchanged — and the request is
+// refused above when it does. The path being visitor-controlled is the point of a proxy;
+// what matters is that it cannot move the destination, and that is checked rather than
+// assumed.
+$ch = curl_init($target); // NOSONAR - validated by upstreamURL() and refused above if it moved
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 curl_setopt_array($ch, [
