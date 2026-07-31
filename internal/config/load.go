@@ -74,6 +74,12 @@ func (c *Config) normalize() {
 	for i, r := range c.General.Roots {
 		c.General.Roots[i] = expandHome(r)
 	}
+	for i, r := range c.General.DocumentRoots {
+		c.General.DocumentRoots[i] = expandHome(r)
+	}
+	for i, r := range c.General.TrashDirs {
+		c.General.TrashDirs[i] = expandHome(r)
+	}
 	if c.Engines == nil {
 		c.Engines = map[string]Engine{}
 	}

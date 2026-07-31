@@ -31,6 +31,14 @@ type General struct {
 	// Roots are the watched root directories. Nothing outside them is ever
 	// scanned — not even through a symlink.
 	Roots []string `toml:"roots"`
+	// DocumentRoots are the directories the WEB SERVER serves, which is not always the
+	// same as Roots: a scan can cover the whole account while only part of it is
+	// published. Empty means unknown, and unknown is treated as served — the safe
+	// reading, since the opposite would quietly downgrade every finding here.
+	DocumentRoots []string `toml:"document_roots"`
+	// TrashDirs are deleted-file areas beyond the ones recognized by name (cPanel's
+	// `.trash` and friends). For panels this does not know about.
+	TrashDirs []string `toml:"trash_dirs"`
 	// DataDir holds the baseline, the quarantine vault, raw output and SQLite.
 	DataDir string `toml:"data_dir"`
 	// ObservationMode disables every automatic action: verdicts keep coming out

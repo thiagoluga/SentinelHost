@@ -17,6 +17,7 @@ import (
 
 	"github.com/thiagoluga/SentinelHost/internal/config"
 	"github.com/thiagoluga/SentinelHost/internal/pathmatch"
+	"github.com/thiagoluga/SentinelHost/internal/reach"
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
 
@@ -50,7 +51,10 @@ type Input struct {
 	ExpectedEngines []string
 	// Whitelist of the user's globs.
 	Whitelist []string
-	Now       time.Time
+	// Reach classifies a path as served by the web or not. Optional: without it every
+	// verdict is treated as reachable, which is the safe reading of "not known".
+	Reach *reach.Classifier
+	Now   time.Time
 }
 
 // Result is the output of the consolidation.
@@ -163,9 +167,35 @@ func (e *Engine) consolidateFile(
 		return v
 	}
 
+	// Where the file sits, relative to what the web serves.
+	//
+	// Recorded on every verdict, including the reachable ones: "this IS served" is the
+	// half of the answer that makes a finding urgent, and leaving it off would make the
+	// field look like a flag that only appears for the harmless cases.
+	if in.Reach != nil {
+		loc := in.Reach.Of(path)
+		v.FileLocation = string(loc)
+
+		// Not served means the tool does not act by itself. The verdict is untouched and
+		// stays at its real level — this blocks the ACTION only, exactly as the whitelist
+		// does (D-006).
+		//
+		// Moving a file out of the trash and into our vault swaps one holding area for
+		// another without reducing any risk, and takes it further from where its owner
+		// expects to find it. The reason travels with it, and says what "unreachable"
+		// does NOT mean, because that is the half that invites the wrong conclusion.
+		if !loc.Reachable() && v.Level != schema.LevelClean {
+			v.ActionTaken = schema.ActionSkippedNotReachable
+			v.ActionError = "not acted on automatically: " + loc.Explain()
+		}
+	}
+
 	// The whitelist blocks the ACTION, not the verdict (D-006). The file stays
 	// visible in the report at its real level: downgrading it to clean would hide
 	// from the user that the engines keep flagging that file.
+	//
+	// After the reachability check, so an explicit whitelist entry — something the user
+	// wrote themselves — is the reason shown when both apply.
 	if rule := pathmatch.WhichMatches(in.Whitelist, path); rule != "" && v.Level != schema.LevelClean {
 		v.ActionTaken = schema.ActionSkippedWhitelist
 		v.ActionError = "protected by the whitelist rule: " + rule

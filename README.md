@@ -85,6 +85,36 @@ version banner and exit code 0. Read as success, that makes the engine look heal
 while it is refusing to scan anything — the one failure mode this project treats as
 worse than having no scanner at all.
 
+## Where a finding sits changes what happens to it
+
+A webshell in the document root can be executed by anyone with the URL, this minute. The
+same webshell in the account's trash cannot be executed by anybody. That is a real
+difference in urgency, and every verdict now records which one it is:
+
+| `location` | Meaning |
+|---|---|
+| `web_reachable` | inside a document root — a visitor can request it |
+| `trash` | the control panel's deleted-files area |
+| `outside_docroot` | on the account but not served — backups, a home directory |
+| `unknown` | no document root configured, so nothing is claimed |
+
+**It changes the action, never the verdict.** A file the web does not serve keeps its real
+level, its votes and its place in the report; what it does not get is an automatic
+quarantine, because moving a file out of the trash and into our vault swaps one holding
+area for another without reducing any risk. The reason travels with it, as
+`skipped_not_reachable`.
+
+Adjusting a score by context is how real findings quietly stop being seen, so the score
+is not touched. This acts where the whitelist acts (`DECISIONS.md` D-006).
+
+**And unreachable is not safe.** The trash restores with one click: restoring the site
+restores whatever is in it. `unknown` counts as reachable for the same reason — when the
+question was never answerable, the safe reading is the urgent one.
+
+Set `document_roots` in the TOML when your scan covers more than the site does. Without
+it, the scanned roots are assumed to be served, which can only ever classify more files
+as reachable than the truth.
+
 ## Notifications — what exists today
 
 | Channel | State |

@@ -202,6 +202,16 @@ const (
 	ActionSkippedWhitelist ActionTaken = "skipped_whitelist"
 	// ActionSkippedOfficial: the file matches the official WordPress checksum.
 	ActionSkippedOfficial ActionTaken = "skipped_official_checksum"
+	// ActionSkippedNotReachable: the file is not served by the web — it is in the
+	// account's trash, or outside every document root.
+	//
+	// The verdict is unchanged and stays visible at its real level: this blocks the
+	// ACTION only, the same way the whitelist does (D-006). Moving a file out of the
+	// trash and into our vault swaps one holding area for another without reducing any
+	// risk, and it takes the file further from where its owner expects to find it.
+	//
+	// It is emphatically not "safe". The trash restores with one click.
+	ActionSkippedNotReachable ActionTaken = "skipped_not_reachable"
 	// ActionRescanNeeded: the re-hash taken immediately before acting differed
 	// from the verdict's hash. The file changed between scan and action, so it
 	// gets rescanned instead of blindly quarantined (FR-018).
@@ -218,7 +228,8 @@ const (
 func (a ActionTaken) Valid() bool {
 	switch a {
 	case ActionNone, ActionQuarantined, ActionRecommended,
-		ActionSkippedWhitelist, ActionSkippedOfficial, ActionRescanNeeded,
+		ActionSkippedWhitelist, ActionSkippedOfficial, ActionSkippedNotReachable,
+		ActionRescanNeeded,
 		ActionFailed, ActionRestored, ActionIgnored:
 		return true
 	}

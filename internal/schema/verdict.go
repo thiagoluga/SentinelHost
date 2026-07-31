@@ -29,7 +29,9 @@ type Verdict struct {
 
 	FileSHA256 string `json:"file_sha256"`
 	FilePath   string `json:"file_path"`
-	FileSize   int64  `json:"file_size,omitempty"`
+	// FileLocation mirrors FileRef.Location: whether the web serves this path.
+	FileLocation string `json:"file_location,omitempty"`
+	FileSize     int64  `json:"file_size,omitempty"`
 
 	Level Level   `json:"level"`
 	Score float64 `json:"score"`

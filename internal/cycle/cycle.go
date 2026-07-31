@@ -19,6 +19,7 @@ import (
 	sexec "github.com/thiagoluga/SentinelHost/internal/exec"
 	"github.com/thiagoluga/SentinelHost/internal/lock"
 	"github.com/thiagoluga/SentinelHost/internal/quarantine"
+	"github.com/thiagoluga/SentinelHost/internal/reach"
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 	"github.com/thiagoluga/SentinelHost/internal/store"
 	"github.com/thiagoluga/SentinelHost/internal/verdict"
@@ -206,6 +207,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 		Reports:         reports,
 		ExpectedEngines: r.enabledSlugs(),
 		Whitelist:       r.cfg.Verdict.Whitelist,
+		Reach:           r.reachClassifier(),
 		Now:             r.now(),
 	})
 	sum.Abstentions = consolidated.Abstentions
@@ -559,4 +561,19 @@ func scanID(t time.Time, mode schema.ScanMode) string {
 		prefix = "sf"
 	}
 	return fmt.Sprintf("%s_%s", prefix, t.UTC().Format("20060102_150405"))
+}
+
+// reachClassifier decides which paths the web serves.
+//
+// With no document_roots configured it falls back to the scanned roots, because on the
+// overwhelmingly common setup they are the same directory — someone scanning
+// ~/public_html is scanning what the web serves. The fallback is a guess, though, and
+// the honest kind: it can only ever classify MORE files as reachable than the truth,
+// which errs towards urgency rather than towards reassurance.
+func (r *Runner) reachClassifier() *reach.Classifier {
+	docRoots := r.cfg.General.DocumentRoots
+	if len(docRoots) == 0 {
+		docRoots = r.cfg.General.Roots
+	}
+	return reach.New(docRoots, r.cfg.General.TrashDirs)
 }
