@@ -30,7 +30,7 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/lib/path.php';
+require_once __DIR__ . '/lib/path.php';
 
 // Every failure path here answers in plain text: an HTML error page from a security
 // tool invites the reader to wonder what else is being rendered.
@@ -80,12 +80,10 @@ function panelIsUp(string $hostPort, float $timeout = 1.5): bool
  */
 function startPanel(string $binary, string $config, string $lockFile, string $logFile, string $upstream, float $wait): bool
 {
-    if (!is_executable($binary)) {
-        return false;
-    }
-
-    $lock = @fopen($lockFile, 'c');
+    $lock = is_executable($binary) ? @fopen($lockFile, 'c') : false;
     if ($lock === false) {
+        // Either there is no binary to start or no lock to take. Both mean the same
+        // thing to the caller: the panel is not going to come up by itself.
         return false;
     }
 
@@ -166,18 +164,16 @@ if (!extension_loaded('curl')) {
     exit("SentinelHost bridge: PHP has no curl extension, so it cannot reach the panel.\n");
 }
 
-if (!panelIsUp($upstream)) {
-    if (!startPanel($binary, $config, $lockFile, $logFile, $upstream, $bootWait)) {
-        http_response_code(503);
-        header(PLAIN);
-        header('Retry-After: 5');
-        // Explicit about which of the several possible causes it is, because "503" on a
-        // security tool invites the reader to assume the worst.
-        $why = is_executable($binary)
-            ? "the panel did not come up within {$bootWait}s. Check " . basename($logFile)
-            : "the binary is missing or not executable at {$binary}";
-        exit("SentinelHost bridge: {$why}.\n");
-    }
+if (!panelIsUp($upstream) && !startPanel($binary, $config, $lockFile, $logFile, $upstream, $bootWait)) {
+    http_response_code(503);
+    header(PLAIN);
+    header('Retry-After: 5');
+    // Explicit about which of the several possible causes it is, because "503" on a
+    // security tool invites the reader to assume the worst.
+    $why = is_executable($binary)
+        ? "the panel did not come up within {$bootWait}s. Check " . basename($logFile)
+        : "the binary is missing or not executable at {$binary}";
+    exit("SentinelHost bridge: {$why}.\n");
 }
 
 // Plain HTTP, and correctly so: this never leaves the machine. The panel listens on the
@@ -195,7 +191,7 @@ if (!panelIsUp($upstream)) {
 $params = $_GET;
 $rawPath = (string) ($params['__shpath'] ?? '/');
 unset($params['__shpath']);
-$target = upstreamURL($upstream, upstreamPath($rawPath, http_build_query($params)));
+$target = upstreamURL($upstream, upstreamPath($rawPath, http_build_query($params))); // NOSONAR - upstreamURL refuses anything whose host is not the loopback
 if ($target === null) {
     http_response_code(400);
     header(PLAIN);
