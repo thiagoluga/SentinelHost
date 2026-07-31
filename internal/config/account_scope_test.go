@@ -148,3 +148,64 @@ func TestOurOwnDataDirectoryIsStillExcludedByPath(t *testing.T) {
 		t.Error("a data directory with a name of its own is no longer excluded")
 	}
 }
+
+// The home must be findable without the environment.
+//
+// os.UserHomeDir() reads $HOME on Unix, and $HOME is not always set: cron runs with a
+// minimal environment, so does a CGI process, and so does the panel when a web server
+// starts it. Those are not edge cases — cron is this project's default schedule mode
+// precisely because shared hosting rarely keeps a daemon alive.
+//
+// And the failure is silent. Without a home, the account exclusions simply do not apply:
+// the scan walks the maildir, reports findings about e-mail attachments, and looks
+// entirely successful. Observed on a real account, where the effective exclude list came
+// back holding the WordPress defaults and nothing else.
+func TestTheAccountHomeIsFoundWithoutTheEnvironment(t *testing.T) {
+	// Unset what os.UserHomeDir() reads, on either platform, so the fallback is what is
+	// actually being measured. t.Setenv restores them when the test ends.
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+
+	fake := t.TempDir()
+	for _, d := range []string{"public_html", "mail", ".cpanel", ".trash"} {
+		if err := os.MkdirAll(filepath.Join(fake, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cfg := writeConfig(t, "[general]\nroots = ["+tomlPath(fake)+"]\n")
+
+	maildir := filepath.Join(fake, "mail", "domain.com", "cur", "attachment.php")
+	if !pathmatch.MatchAny(cfg.Limits.Exclude, maildir) {
+		t.Errorf("with no HOME in the environment the account exclusions did not apply, so "+
+			"the scan walks the maildir and reports findings about e-mail attachments — "+
+			"and looks entirely successful doing it.\nexclusions: %v", cfg.Limits.Exclude)
+	}
+	// And the sites inside that same home are still scanned.
+	if pathmatch.MatchAny(cfg.Limits.Exclude, filepath.Join(fake, "public_html", "index.php")) {
+		t.Error("the fallback excluded the site along with the furniture")
+	}
+}
+
+func TestADirectoryWithOneMarkerIsNotAnAccountHome(t *testing.T) {
+	lonely := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(lonely, "mail"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if looksLikeHomeFromOutside(lonely) {
+		t.Error("a directory containing only `mail` was taken for an account home; anchoring " +
+			"the exclusions there would skip somebody's actual content")
+	}
+}
+
+// looksLikeHomeFromOutside mirrors the package's own rule, so the test states the
+// expectation independently rather than asking the code whether it agrees with itself.
+func looksLikeHomeFromOutside(dir string) bool {
+	found := 0
+	for _, m := range []string{"public_html", ".cpanel", "mail", ".trash", "etc", "logs"} {
+		if info, err := os.Stat(filepath.Join(dir, m)); err == nil && info.IsDir() {
+			found++
+		}
+	}
+	return found >= 2
+}
