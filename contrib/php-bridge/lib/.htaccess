@@ -1,0 +1,10 @@
+# Nothing in here is servable.
+#
+# lib/path.php answered HTTP 200 over the web on a real install. It contains no secret —
+# it is in the public repository — but a file the bridge includes is a file an attacker
+# can read to learn exactly how paths are validated before trying to get past it, and the
+# directory is a natural place for the next person to drop something that does matter.
+#
+# The deny list in the parent .htaccess cannot cover this: index.php has to stay servable,
+# so ".php" cannot be denied there.
+Require all denied

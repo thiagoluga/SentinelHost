@@ -189,7 +189,13 @@ if (!panelIsUp($upstream)) {
 // upstreamPath() anchors it; it is checked at the point of use anyway, because the cost
 // is one call and the alternative is resting on a function three screens away continuing
 // to behave as it does today.
-$target = upstreamURL($upstream, upstreamPath($_SERVER['REQUEST_URI'] ?? '/', $_SERVER['SCRIPT_NAME'] ?? '/'));
+// The path comes from the rewrite, in __shpath, already relative to this directory. The
+// query string is rebuilt without it, so the panel sees the visitor's own parameters and
+// not the bridge's plumbing.
+$params = $_GET;
+$rawPath = (string) ($params['__shpath'] ?? '/');
+unset($params['__shpath']);
+$target = upstreamURL($upstream, upstreamPath($rawPath, http_build_query($params)));
 if ($target === null) {
     http_response_code(400);
     header(PLAIN);
