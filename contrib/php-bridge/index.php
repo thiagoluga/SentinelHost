@@ -52,7 +52,35 @@ $lockFile = $home . '/sentinelhost/.bridge.lock';
 $logFile  = $home . '/sentinelhost/panel.log';
 $upstream = '127.0.0.1:8787';                    // must match web.listen in the TOML
 $bootWait = 8.0;                                 // seconds to wait for a cold start
+$traceLog = $home . '/sentinelhost/bridge.log';  // one line per request; '' turns it off
 // -----------------------------------------------------------------------------------
+
+/**
+ * One line per request, with where the time went.
+ *
+ * This exists because the bridge stopped answering — no error page, no response at all,
+ * a browser waiting 300 seconds — while the panel itself was up, healthy, and the only
+ * process of its kind on the account. Every hypothesis about why was a guess, and the
+ * first one was wrong.
+ *
+ * A proxy that can hang has exactly three places to hang in: the liveness probe, the
+ * start, and the upstream request. Timing all three turns the next occurrence from a
+ * mystery into a line of text.
+ *
+ * It writes outside the document root, and the .htaccess denies *.log regardless.
+ */
+function trace(string $file, string $line): void
+{
+    if ($file === '') {
+        return;
+    }
+    // Truncate rather than rotate: this is a debugging aid on an account with a disk
+    // quota, and a log that outgrows the site it is meant to protect helps nobody.
+    if (@filesize($file) > 512 * 1024) {
+        @file_put_contents($file, "(truncated)\n");
+    }
+    @file_put_contents($file, gmdate('c') . ' ' . $line . "\n", FILE_APPEND);
+}
 
 /** Is the panel accepting connections right now? */
 function panelIsUp(string $hostPort, float $timeout = 1.5): bool
@@ -164,7 +192,13 @@ if (!extension_loaded('curl')) {
     exit("SentinelHost bridge: PHP has no curl extension, so it cannot reach the panel.\n");
 }
 
-if (!panelIsUp($upstream) && !startPanel($binary, $config, $lockFile, $logFile, $upstream, $bootWait)) {
+$t0 = microtime(true);
+$wasUp = panelIsUp($upstream);
+$tProbe = microtime(true);
+$started = $wasUp || startPanel($binary, $config, $lockFile, $logFile, $upstream, $bootWait);
+$tStart = microtime(true);
+
+if (!$started) {
     http_response_code(503);
     header(PLAIN);
     header('Retry-After: 5');
@@ -173,6 +207,8 @@ if (!panelIsUp($upstream) && !startPanel($binary, $config, $lockFile, $logFile, 
     $why = is_executable($binary)
         ? "the panel did not come up within {$bootWait}s. Check " . basename($logFile)
         : "the binary is missing or not executable at {$binary}";
+    trace($traceLog, sprintf('503 probe=%.2fs start=%.2fs %s',
+        $tProbe - $t0, $tStart - $tProbe, $why));
     exit("SentinelHost bridge: {$why}.\n");
 }
 
@@ -213,7 +249,12 @@ curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_HEADER         => true,
     CURLOPT_FOLLOWLOCATION => false, // the browser follows redirects, not the bridge
-    CURLOPT_TIMEOUT        => 60,
+    // 20s, not 60. A proxy that HANGS is worse than one that fails: a browser waited
+    // 300 seconds on this and learned nothing, while each pending request held a PHP
+    // worker open. Twenty seconds is generous for a panel on the loopback — the slowest
+    // page measured is under a second — and anything past it is a fault worth reporting
+    // as one, with a line in the trace log saying where the time went.
+    CURLOPT_TIMEOUT        => 20,
     CURLOPT_CONNECTTIMEOUT => 5,
 ]);
 
@@ -222,9 +263,12 @@ if (!in_array($method, ['GET', 'HEAD'], true)) {
 }
 
 $response = curl_exec($ch);
+$tUp = microtime(true);
 if ($response === false) {
     $err = curl_error($ch);
     curl_close($ch);
+    trace($traceLog, sprintf('502 %-6s probe=%.2fs start=%.2fs upstream=%.2fs curl=%s',
+        $method, $tProbe - $t0, $tStart - $tProbe, $tUp - $tStart, $err));
     http_response_code(502);
     header(PLAIN);
     exit("SentinelHost bridge: could not reach the panel ({$err}).\n");
@@ -233,6 +277,14 @@ if ($response === false) {
 $headerLen = (int) curl_getinfo($ch, CURLINFO_HEADER_SIZE);
 $status    = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
+
+// probe: how long it took to learn whether the panel was listening.
+// start: how long a cold start took, 0 when it was already up.
+// upstream: the panel's own response time.
+trace($traceLog, sprintf('%3d %-6s %-28s probe=%.2fs start=%.2fs upstream=%.2fs%s',
+    $status, $method, substr(upstreamPath($rawPath), 0, 28),
+    $tProbe - $t0, $tStart - $tProbe, $tUp - $tStart,
+    $wasUp ? '' : ' (cold start)'));
 
 $rawHeaders = substr($response, 0, $headerLen);
 $body       = substr($response, $headerLen);
