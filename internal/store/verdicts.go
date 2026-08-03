@@ -34,11 +34,11 @@ func (s *Store) SaveVerdict(ctx context.Context, v schema.Verdict) error {
 
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO verdicts (
-			verdict_id, file_sha256, file_path, file_size, level, score,
+			verdict_id, file_sha256, file_path, file_location, file_size, level, score,
 			votes_json, abstentions_json, clean_reason, action_taken, action_at,
 			action_error, quarantine_ref, acknowledged_by_user, acknowledged_at,
 			scan_id, created_at, updated_at
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(verdict_id) DO UPDATE SET
 			level = excluded.level,
 			score = excluded.score,
@@ -51,9 +51,10 @@ func (s *Store) SaveVerdict(ctx context.Context, v schema.Verdict) error {
 			quarantine_ref = excluded.quarantine_ref,
 			acknowledged_by_user = excluded.acknowledged_by_user,
 			acknowledged_at = excluded.acknowledged_at,
+			file_location = excluded.file_location,
 			updated_at = excluded.updated_at
 	`,
-		v.VerdictID, v.FileSHA256, v.FilePath, v.FileSize, string(v.Level), v.Score,
+		v.VerdictID, v.FileSHA256, v.FilePath, v.FileLocation, v.FileSize, string(v.Level), v.Score,
 		string(votes), string(abst), nullString(v.CleanReason), string(v.ActionTaken),
 		nullTime(v.ActionAt), nullString(v.ActionError), nullString(v.QuarantineRef),
 		boolToInt(v.AcknowledgedByUser), nullTime(v.AcknowledgedAt),
@@ -207,7 +208,7 @@ func (s *Store) CountByLevel(ctx context.Context, scanID string) (map[schema.Lev
 // SQL and scanning -----------------------------------------------------------
 
 const verdictSelect = `
-	SELECT verdict_id, file_sha256, file_path, file_size, level, score,
+	SELECT verdict_id, file_sha256, file_path, file_location, file_size, level, score,
 	       votes_json, abstentions_json, clean_reason, action_taken, action_at,
 	       action_error, quarantine_ref, acknowledged_by_user, acknowledged_at,
 	       scan_id, created_at
@@ -228,7 +229,7 @@ func scanVerdict(r rowScanner) (schema.Verdict, error) {
 		createdAt, level       string
 		action                 string
 	)
-	err := r.Scan(&v.VerdictID, &v.FileSHA256, &v.FilePath, &v.FileSize, &level, &v.Score,
+	err := r.Scan(&v.VerdictID, &v.FileSHA256, &v.FilePath, &v.FileLocation, &v.FileSize, &level, &v.Score,
 		&votesJSON, &abstJSON, &cleanReason, &action, &actionAt,
 		&actionErr, &qRef, &ack, &ackAt, &v.ScanID, &createdAt)
 	if err != nil {

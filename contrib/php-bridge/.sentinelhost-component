@@ -1,0 +1,15 @@
+This directory is part of SentinelHost.
+
+Its presence is what tells the scanner to leave this directory alone. Not the directory's
+name — anybody can call a directory `sentinel`, and a scanner that trusted the name would
+be told what to ignore by whoever it was scanning.
+
+The bridge has to live inside the document root: that is what makes the panel reachable on
+hosting with no shell. And it calls exec(), because starting the panel is its whole job —
+which is exactly what a PHP malware scanner is built to notice. Without this file, AMWScan
+flags the bridge on every cycle, forever, and the tool spends its credibility reporting
+itself.
+
+Deleting this file makes the bridge visible to the scan again. That is a reasonable thing
+to want: it is code in your document root, and checking that nobody has altered it is not
+paranoid. Expect the `Function` finding at `suspicious` if you do.

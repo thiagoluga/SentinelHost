@@ -1476,3 +1476,42 @@ code.
 **Not done, by instruction**: the diff against the official WordPress file for
 `wp-checksums` findings. It is the only way to show a line for a hash-based detection, and
 it would mean a network call per preview.
+
+## D-044 — the classification reaches the database, and the tool stops reporting itself
+
+**Context**: a screenshot of the panel showing findings on the real account. Two defects
+in one picture, and the second is the more embarrassing.
+
+**The location never reached the panel.** Every finding sat under *"Location not
+recorded"*, including files plainly inside a discovered document root. The `verdicts`
+table had no `file_location` column: the value was computed on every cycle, printed by
+the CLI, and dropped on the way to disk.
+
+Nothing failed. The CLI was right, the panel was empty, and the two never compared notes —
+which is why the test now writes a verdict and reads it back rather than checking either
+side alone. Existing rows keep `''`: they were decided before the classification existed,
+and inventing a location for them would assert something nobody measured. The panel has a
+group that says exactly that.
+
+**And the flagged file was our own PHP bridge.** `sentinel/index.php`, at `suspicious`,
+rule `Function`, because it calls `exec()` — which is correct detection. Starting the
+panel is the bridge's entire job.
+
+The bridge has to live IN the document root; that is what makes the panel reachable on
+hosting with no shell. So the data-directory exclusion never covered it, and every install
+using the bridge would carry a permanent finding about a file this project put there. A
+scanner that spends its credibility reporting itself teaches the user to ignore it.
+
+**Decision**: a component marker. The bridge ships `.sentinelhost-component` beside
+itself, and any directory carrying it is left out of the scan.
+
+**By the marker, never by the name.** A directory called `sentinel` proves nothing —
+anybody can choose that name, including somebody who read this code and wants to know
+where to put a payload. Presence of a file we install is a claim only we can make about
+our own installation. This is the fourth time in this project that a name has been
+mistaken for a path (D-026, D-038, D-040), and the first time the alternative was designed
+in from the start rather than after CI caught it.
+
+**Deleting the marker puts the bridge back in scope**, and the file says so. Wanting the
+scanner to watch code in your own document root is reasonable, not paranoid — the finding
+that comes with it is now a choice rather than a surprise.
