@@ -111,3 +111,58 @@ func TestAnEmptyListDoesNotBreak(t *testing.T) {
 		t.Errorf("the default should have been preserved: %q", *cfg)
 	}
 }
+
+// The help calls --config a GLOBAL OPTION. It has to behave like one.
+//
+// The parser read os.Args[1] and rejected anything starting with a dash, so the form the
+// documentation implies — `sentinelhost --config X scan` — died with `unknown command:
+// --config`. Two automated cycles against a real account were spent on it: the scan never
+// ran, the report was zero bytes, and the check reading that report concluded "no
+// findings", which is the precise failure this project exists to prevent.
+func TestTheConfigFlagIsGlobalBecauseTheHelpSaysSo(t *testing.T) {
+	cases := []struct {
+		argv     []string
+		wantCmd  string
+		wantArgs []string
+	}{
+		// The form that used to fail.
+		{[]string{"--config", "/etc/s.toml", "scan"}, "scan", []string{"--config", "/etc/s.toml"}},
+		// The form that always worked, unchanged.
+		{[]string{"scan", "--config", "/etc/s.toml"}, "scan", []string{"--config", "/etc/s.toml"}},
+		// Leading flag plus the subcommand's own flags.
+		{[]string{"--config", "/etc/s.toml", "scan", "--full", "--json"}, "scan",
+			[]string{"--full", "--json", "--config", "/etc/s.toml"}},
+		// The = form, where the value is not a separate argument.
+		{[]string{"--config=/etc/s.toml", "serve"}, "serve", []string{"--config=/etc/s.toml"}},
+		// A boolean before the subcommand must not swallow it.
+		{[]string{"--json", "scan"}, "scan", []string{"--json"}},
+		// Commands spelled like flags stay commands.
+		{[]string{"--version"}, "--version", []string{}},
+		{[]string{"-h"}, "-h", []string{}},
+	}
+
+	for _, c := range cases {
+		gotCmd, gotArgs := splitCommand(c.argv)
+		if gotCmd != c.wantCmd {
+			t.Errorf("%v: command %q, wanted %q", c.argv, gotCmd, c.wantCmd)
+			continue
+		}
+		if len(gotArgs) != len(c.wantArgs) {
+			t.Errorf("%v: args %v, wanted %v", c.argv, gotArgs, c.wantArgs)
+			continue
+		}
+		for i := range gotArgs {
+			if gotArgs[i] != c.wantArgs[i] {
+				t.Errorf("%v: args %v, wanted %v", c.argv, gotArgs, c.wantArgs)
+				break
+			}
+		}
+	}
+}
+
+// No subcommand at all is a usage error, not a panic.
+func TestNoSubcommandIsNotACrash(t *testing.T) {
+	if cmd, _ := splitCommand(nil); cmd != "" {
+		t.Errorf("empty arguments produced the command %q", cmd)
+	}
+}

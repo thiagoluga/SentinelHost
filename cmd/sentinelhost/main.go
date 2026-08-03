@@ -49,8 +49,11 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	cmd := os.Args[1]
-	args := os.Args[2:]
+	cmd, args := splitCommand(os.Args[1:])
+	if cmd == "" {
+		usage()
+		return exitUsage
+	}
 
 	var err error
 	switch cmd {

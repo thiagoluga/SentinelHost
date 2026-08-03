@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/thiagoluga/SentinelHost/internal/adapter"
 	"github.com/thiagoluga/SentinelHost/internal/adapter/amwscan"
@@ -119,4 +120,58 @@ func parseArgs(fs *flag.FlagSet, args []string) ([]string, error) {
 		positional = append(positional, rest[0])
 		args = rest[1:]
 	}
+}
+
+// splitCommand finds the subcommand in the arguments and moves anything that came before
+// it to the back, so that `--config X scan` and `scan --config X` are the same command.
+//
+// The help calls --config a GLOBAL OPTION, which is a promise that it goes with the
+// program rather than with one subcommand — and every convention that word carries says
+// it may precede the subcommand. The parser read os.Args[1] and rejected anything
+// starting with a dash: `unknown command: --config`.
+//
+// The cost was not theoretical. Two automated cycles against a real account produced an
+// empty report and a usage error nobody read, and the run that consumed them concluded
+// "no findings" from a zero-byte file. A flag documented as global has to be global, or
+// the documentation has to stop saying so; of the two, this is the one that does not
+// require every existing user to be wrong.
+//
+// Returns "" when the arguments hold no subcommand at all.
+func splitCommand(argv []string) (string, []string) {
+	var leading []string
+
+	for i := 0; i < len(argv); i++ {
+		a := argv[i]
+		if !strings.HasPrefix(a, "-") {
+			// The subcommand. Whatever preceded it belongs to it.
+			return a, append(append([]string{}, argv[i+1:]...), leading...)
+		}
+		leading = append(leading, a)
+		// `--config <path>` puts the path in the next argument; `--config=<path>` does
+		// not. Taking the value with the flag keeps the two forms equivalent, and stops
+		// a path being mistaken for the subcommand.
+		if !strings.Contains(a, "=") && i+1 < len(argv) && needsValue(a) {
+			i++
+			leading = append(leading, argv[i])
+		}
+	}
+
+	// Only flags. `--version` and `--help` are commands spelled like flags, so they are
+	// still worth returning; anything else falls through to the usage text.
+	if len(argv) > 0 {
+		return argv[0], argv[1:]
+	}
+	return "", nil
+}
+
+// needsValue reports whether a leading flag takes a separate argument.
+//
+// Deliberately a short list rather than a guess: treating every unrecognised flag as
+// value-taking would swallow the subcommand after a boolean like `--json`.
+func needsValue(flag string) bool {
+	switch flag {
+	case "--config", "-config", "--data-dir", "-data-dir":
+		return true
+	}
+	return false
 }
