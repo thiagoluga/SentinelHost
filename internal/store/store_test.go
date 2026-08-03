@@ -66,10 +66,16 @@ func sampleVerdict(id string, level schema.Level, score float64) schema.Verdict 
 		SchemaVersion: schema.Version,
 		VerdictID:     id,
 		FileSHA256:    sha,
-		FilePath:      "/home/user/public_html/cache.php",
-		FileSize:      1024,
-		Level:         level,
-		Score:         score,
+		// The path carries the id, so two sample verdicts are two files.
+		//
+		// They used to share one path, which made them — by the identity the listing now
+		// uses — the same file decided twice, and the listing collapsed them to the newest.
+		// That collapse is correct; the fixture was describing one file while the tests
+		// meant two.
+		FilePath: "/home/user/public_html/" + id + ".php",
+		FileSize: 1024,
+		Level:    level,
+		Score:    score,
 		Votes: []schema.Vote{
 			{Engine: "amwscan", Weight: 0.8, Confidence: schema.ConfidenceSignature, EffectiveWeight: 0.8, Rule: "eval_backdoor", Category: schema.CategoryBackdoor},
 			{Engine: "php-malware-finder", Weight: 0.8, Confidence: schema.ConfidenceHeuristic, EffectiveWeight: 0.64, Rule: "ObfuscatedPhp", Category: schema.CategoryObfuscation},
