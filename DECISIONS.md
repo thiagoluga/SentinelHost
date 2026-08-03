@@ -1553,3 +1553,43 @@ unrecognised leading flag as value-taking would let `--json scan` swallow the su
 on the report, a `grep -c` rather than a silent `grep -q`, an explicit line when a field
 is absent. A count of zero and a command that never executed look identical in a log; only
 one of them is information.
+
+## D-046 — the listing is one row per file, not one per cycle
+
+**Context**: a screenshot of the panel showing the same path three times, and then the
+database behind it: **1050 verdict rows for 213 distinct files**, growing by ~208 every
+cycle.
+
+A verdict's id includes the scan that produced it, deliberately (see `verdictID`): the
+record of what was decided when is worth keeping, and `ON CONFLICT(verdict_id)` therefore
+never fires across cycles. The consequence nobody had followed through: a cron every
+fifteen minutes re-decides the same file **ninety-six times a day**, and the panel listed
+every one of them. The page a user opens to decide what to do was mostly the same file,
+repeated.
+
+**Decision**: keep the history, collapse the listing. The newest row per
+(`file_path`, `file_sha256`) is what the panel shows; `AllCycles` asks for the rest.
+
+Keyed on both columns, not either alone:
+
+- **Not content alone** — the same payload at two paths is two decisions, and quarantining
+  one does not clean the other. That is exactly what `verdictID` was fixed to preserve;
+  collapsing by hash would have undone it one layer up.
+- **Not path alone** — a file whose content changed is a different thing to decide about.
+  The old verdict does not describe the new file.
+
+**`ROW_NUMBER`, not `GROUP BY`.** A bare `GROUP BY file_path` with no aggregate leaves
+SQLite free to return any row from each group; the `ORDER BY` of an inner query does not
+bind it. The obvious spelling would have shown an arbitrary cycle's verdict and looked
+right nearly always. `verdict_id` breaks ties, because rows from one cycle share a
+`created_at` to the nanosecond — observed in the real data.
+
+**The filter runs before the collapse**, so `pending only` returns the newest row that is
+*pending*, rather than taking the newest row and then discarding it for being
+acknowledged — which would hide a file still awaiting a decision.
+
+**A fixture was describing one file while the tests meant two.** Every `sampleVerdict`
+shared one path and one hash, so by the identity the listing now uses they were the same
+file decided twice, and the collapse merged them. The path now carries the id. Worth
+recording because the failing test looked at first like the collapse was wrong, and it
+was the fixture that had never said what it meant.
