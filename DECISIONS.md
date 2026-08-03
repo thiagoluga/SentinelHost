@@ -1515,3 +1515,41 @@ in from the start rather than after CI caught it.
 **Deleting the marker puts the bridge back in scope**, and the file says so. Wanting the
 scanner to watch code in your own document root is reasonable, not paranoid — the finding
 that comes with it is now a choice rather than a surprise.
+
+## D-045 — a flag documented as global has to be global
+
+**Context**: two automated cycles against the real account were spent producing nothing,
+and the run that consumed them reported success.
+
+The help text says:
+
+```
+GLOBAL OPTIONS
+  --config <file>   Path to the TOML
+```
+
+The parser read `os.Args[1]`, found `--config`, and answered `unknown command: --config`.
+The word *global* is a promise that the option belongs to the program rather than to one
+subcommand, and every CLI convention that carries the word allows it before the
+subcommand. Ours allowed it only after.
+
+**What it actually cost.** A scan invoked as `sentinelhost --config X scan --full --json`
+exited 64 and wrote a zero-byte report. The check reading that report asked
+`grep -q 'sentinel/index.php'`, found nothing, and printed *"the bridge is out of
+scope"* — a pass, from a file that was empty because the program never ran.
+
+That is the failure this repository exists to prevent, committed by its own verification
+step. `ScanStatus.CountsAsVote()` stops an engine that could not run from voting; nothing
+was stopping a *check* that could not run from reporting a clean result.
+
+**Decision**: `--config` is accepted before or after the subcommand, and the two forms
+produce identical arguments. Fixing the parser rather than the help, because the help
+describes what a user would reasonably expect and the parser describes an accident.
+
+`needsValue` is a deliberate short list rather than a heuristic: treating every
+unrecognised leading flag as value-taking would let `--json scan` swallow the subcommand.
+
+**And every remote check now proves it ran before it interprets a result.** A byte count
+on the report, a `grep -c` rather than a silent `grep -q`, an explicit line when a field
+is absent. A count of zero and a command that never executed look identical in a log; only
+one of them is information.
