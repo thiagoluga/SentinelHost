@@ -1593,3 +1593,50 @@ shared one path and one hash, so by the identity the listing now uses they were 
 file decided twice, and the collapse merged them. The path now carries the id. Worth
 recording because the failing test looked at first like the collapse was wrong, and it
 was the fixture that had never said what it meant.
+
+## D-047 — timestamps that sort the way the clock does
+
+**Context**: looking for the next defect after D-046, not prompted by a symptom. The
+store writes time with `time.RFC3339Nano`, and SQLite compares `TEXT` byte by byte.
+
+`RFC3339Nano`'s own documentation says it *"removes trailing zeros from the seconds
+field"*. So the stored fraction is variable-width:
+
+```
+2026-08-03T17:01:23Z              is .000000000
+2026-08-03T17:01:23.9Z            is .900000000
+2026-08-03T17:01:23.905504385Z    is .905504385 — the latest of the three
+```
+
+Compared as text, byte four of the fraction is `Z` (0x5A) against `0` (0x30), so **the
+earlier instant sorts last**. A whole second is worse: it carries no fraction at all and
+sorts after everything within its own second. Confirmed by running it, not by reading the
+documentation:
+
+```
+chronologically  a < b : true
+as SQLite sorts  a < b : false
+```
+
+**What rested on this**: `ORDER BY created_at DESC` in every listing,
+`LatestVerdictForHash`, the one-row-per-file collapse shipped hours earlier in D-046,
+session expiry, quarantine retention, delivery retry scheduling. All of them decide
+something by comparing these strings.
+
+It is wrong for roughly one write in ten — whenever the nanosecond value ends in a zero —
+and never the same way twice, which is why it had never produced a reproducible complaint.
+`ORDER BY` on a database is the last place anyone looks.
+
+**Decision**: a fixed nine-digit layout, `2006-01-02T15:04:05.000000000Z07:00`, so
+lexicographic order is chronological order. Reading still accepts the old shape, because
+`RFC3339Nano` parses any fraction width and every timestamp already on disk has to keep
+meaning what it meant.
+
+**Migration 3 rewrites what is already stored**, across every timestamp column in every
+table. New writes being correct is not enough: a table holding both shapes sorts wrongly
+at each boundary between them, and that boundary is exactly where "most recent" lives.
+
+Guarded twice — the `LIKE` matches only a well-formed `YYYY-MM-DDThh:mm:ss…Z` so a NULL or
+an empty string is left alone rather than mangled into a plausible wrong time, and the
+length check skips rows already at nine digits. There is a test for each guard, including
+one that runs the migration three times over.
