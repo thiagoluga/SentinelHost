@@ -213,6 +213,107 @@ var migrations = []migration{
 			`ALTER TABLE verdicts ADD COLUMN file_location TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		version: 3,
+		name:    "fixed-width timestamps",
+		stmts: []string{
+			// Pad every stored timestamp to nine fractional digits.
+			//
+			// They were written with time.RFC3339Nano, which trims trailing zeros, and
+			// SQLite compares TEXT byte by byte — so `...23.9Z` sorted after
+			// `...23.905504385Z` even though it is the earlier instant, and `...23Z`
+			// sorted after everything in its own second. See timeLayout in time.go.
+			//
+			// Rewriting the rows is the only way to fix the data already on disk: new
+			// writes are fixed-width from here on, but a mixed table sorts wrongly at
+			// every boundary between the two shapes, which is exactly where "most
+			// recent" matters.
+			//
+			// Guarded twice. The LIKE matches only a well-formed `YYYY-MM-DDThh:mm:ss…Z`,
+			// so a NULL, an empty string or anything unexpected is left untouched rather
+			// than mangled into a plausible-looking wrong time. The length check skips
+			// rows already at nine digits, making the migration idempotent in practice
+			// and cheap on a database that has none of the old shape.
+			`UPDATE verdicts SET created_at = substr(created_at,1,19) || '.' ||
+			   substr(substr(replace(substr(created_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE created_at LIKE '____-__-__T__:__:__%Z' AND length(created_at) <> 30`,
+			`UPDATE verdicts SET updated_at = substr(updated_at,1,19) || '.' ||
+			   substr(substr(replace(substr(updated_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE updated_at LIKE '____-__-__T__:__:__%Z' AND length(updated_at) <> 30`,
+			`UPDATE verdicts SET action_at = substr(action_at,1,19) || '.' ||
+			   substr(substr(replace(substr(action_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE action_at LIKE '____-__-__T__:__:__%Z' AND length(action_at) <> 30`,
+			`UPDATE verdicts SET acknowledged_at = substr(acknowledged_at,1,19) || '.' ||
+			   substr(substr(replace(substr(acknowledged_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE acknowledged_at LIKE '____-__-__T__:__:__%Z' AND length(acknowledged_at) <> 30`,
+			`UPDATE scans SET started_at = substr(started_at,1,19) || '.' ||
+			   substr(substr(replace(substr(started_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE started_at LIKE '____-__-__T__:__:__%Z' AND length(started_at) <> 30`,
+			`UPDATE scans SET finished_at = substr(finished_at,1,19) || '.' ||
+			   substr(substr(replace(substr(finished_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE finished_at LIKE '____-__-__T__:__:__%Z' AND length(finished_at) <> 30`,
+			`UPDATE scan_reports SET started_at = substr(started_at,1,19) || '.' ||
+			   substr(substr(replace(substr(started_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE started_at LIKE '____-__-__T__:__:__%Z' AND length(started_at) <> 30`,
+			`UPDATE scan_reports SET finished_at = substr(finished_at,1,19) || '.' ||
+			   substr(substr(replace(substr(finished_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE finished_at LIKE '____-__-__T__:__:__%Z' AND length(finished_at) <> 30`,
+			`UPDATE findings SET detected_at = substr(detected_at,1,19) || '.' ||
+			   substr(substr(replace(substr(detected_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE detected_at LIKE '____-__-__T__:__:__%Z' AND length(detected_at) <> 30`,
+			`UPDATE quarantine_items SET quarantined_at = substr(quarantined_at,1,19) || '.' ||
+			   substr(substr(replace(substr(quarantined_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE quarantined_at LIKE '____-__-__T__:__:__%Z' AND length(quarantined_at) <> 30`,
+			`UPDATE quarantine_items SET retention_until = substr(retention_until,1,19) || '.' ||
+			   substr(substr(replace(substr(retention_until,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE retention_until LIKE '____-__-__T__:__:__%Z' AND length(retention_until) <> 30`,
+			`UPDATE quarantine_items SET restored_at = substr(restored_at,1,19) || '.' ||
+			   substr(substr(replace(substr(restored_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE restored_at LIKE '____-__-__T__:__:__%Z' AND length(restored_at) <> 30`,
+			`UPDATE quarantine_items SET purged_at = substr(purged_at,1,19) || '.' ||
+			   substr(substr(replace(substr(purged_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE purged_at LIKE '____-__-__T__:__:__%Z' AND length(purged_at) <> 30`,
+			`UPDATE quarantine_items SET original_mtime = substr(original_mtime,1,19) || '.' ||
+			   substr(substr(replace(substr(original_mtime,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE original_mtime LIKE '____-__-__T__:__:__%Z' AND length(original_mtime) <> 30`,
+			`UPDATE deliveries SET created_at = substr(created_at,1,19) || '.' ||
+			   substr(substr(replace(substr(created_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE created_at LIKE '____-__-__T__:__:__%Z' AND length(created_at) <> 30`,
+			`UPDATE deliveries SET last_attempt_at = substr(last_attempt_at,1,19) || '.' ||
+			   substr(substr(replace(substr(last_attempt_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE last_attempt_at LIKE '____-__-__T__:__:__%Z' AND length(last_attempt_at) <> 30`,
+			`UPDATE deliveries SET next_attempt_at = substr(next_attempt_at,1,19) || '.' ||
+			   substr(substr(replace(substr(next_attempt_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE next_attempt_at LIKE '____-__-__T__:__:__%Z' AND length(next_attempt_at) <> 30`,
+			`UPDATE deliveries SET delivered_at = substr(delivered_at,1,19) || '.' ||
+			   substr(substr(replace(substr(delivered_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE delivered_at LIKE '____-__-__T__:__:__%Z' AND length(delivered_at) <> 30`,
+			`UPDATE events SET ts = substr(ts,1,19) || '.' ||
+			   substr(substr(replace(substr(ts,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE ts LIKE '____-__-__T__:__:__%Z' AND length(ts) <> 30`,
+			`UPDATE sessions SET created_at = substr(created_at,1,19) || '.' ||
+			   substr(substr(replace(substr(created_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE created_at LIKE '____-__-__T__:__:__%Z' AND length(created_at) <> 30`,
+			`UPDATE sessions SET expires_at = substr(expires_at,1,19) || '.' ||
+			   substr(substr(replace(substr(expires_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE expires_at LIKE '____-__-__T__:__:__%Z' AND length(expires_at) <> 30`,
+			`UPDATE settings SET updated_at = substr(updated_at,1,19) || '.' ||
+			   substr(substr(replace(substr(updated_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE updated_at LIKE '____-__-__T__:__:__%Z' AND length(updated_at) <> 30`,
+			`UPDATE engine_state SET signatures_updated_at = substr(signatures_updated_at,1,19) || '.' ||
+			   substr(substr(replace(substr(signatures_updated_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE signatures_updated_at LIKE '____-__-__T__:__:__%Z' AND length(signatures_updated_at) <> 30`,
+			`UPDATE engine_state SET last_probe_at = substr(last_probe_at,1,19) || '.' ||
+			   substr(substr(replace(substr(last_probe_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE last_probe_at LIKE '____-__-__T__:__:__%Z' AND length(last_probe_at) <> 30`,
+			`UPDATE engine_state SET last_run_at = substr(last_run_at,1,19) || '.' ||
+			   substr(substr(replace(substr(last_run_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE last_run_at LIKE '____-__-__T__:__:__%Z' AND length(last_run_at) <> 30`,
+			`UPDATE schema_migrations SET applied_at = substr(applied_at,1,19) || '.' ||
+			   substr(substr(replace(substr(applied_at,20),'Z',''),2) || '000000000',1,9) || 'Z'
+			 WHERE applied_at LIKE '____-__-__T__:__:__%Z' AND length(applied_at) <> 30`,
+		},
+	},
 }
 
 func (s *Store) migrate(ctx context.Context) error {
