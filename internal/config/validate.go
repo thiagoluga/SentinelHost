@@ -238,13 +238,29 @@ func (c *Config) validateEngines(r *ValidationResult) {
 	}
 }
 
+// usesSMTP reports whether this configuration will actually open a socket.
+//
+// Under "auto" that is decided by whether a host was given, which is the same rule the
+// sender applies at send time. The two have to agree: a configuration the validator
+// accepts and the sender then refuses is worse than either check alone.
+func usesSMTP(e EmailConfig) bool {
+	switch strings.ToLower(e.Transport) {
+	case "smtp":
+		return true
+	case "sendmail":
+		return false
+	default: // "" and "auto"
+		return e.Host != ""
+	}
+}
+
 func (c *Config) validateAlerts(r *ValidationResult) {
 	e := c.Alerts.Email
 	if e.Enabled {
-		if e.Host == "" {
-			r.fatal("alerts.email.host", "empty with email enabled")
-		}
-		if e.Port <= 0 || e.Port > 65535 {
+		// The port only has to make sense when something is going to dial it. Under
+		// sendmail nothing is, and the field keeps whatever default the file was written
+		// with.
+		if usesSMTP(e) && (e.Port <= 0 || e.Port > 65535) {
 			r.fatal("alerts.email.port", "invalid port: %d", e.Port)
 		}
 		switch strings.ToLower(e.Transport) {
@@ -255,8 +271,12 @@ func (c *Config) validateAlerts(r *ValidationResult) {
 		}
 		// A host is required only when SMTP is actually going to be used. Demanding one
 		// under `sendmail` would force a user with no mailbox to invent a server they
-		// will never contact.
-		if strings.EqualFold(e.Transport, "smtp") && e.Host == "" {
+		// will never contact — and an unconditional check here is what made the local-MTA
+		// transport unusable the first time it was deployed: it was added beside the old
+		// rule instead of replacing it, so a valid sendmail configuration was rejected
+		// for lacking a field it does not use.
+		if e.Transport != "" && !strings.EqualFold(e.Transport, "auto") && e.Host == "" &&
+			strings.EqualFold(e.Transport, "smtp") {
 			r.fatal("alerts.email.host", "empty with transport set to smtp")
 		}
 		if e.From == "" {
