@@ -59,15 +59,49 @@ func (s *Sender) WithDialer(fn func(string) (net.Conn, error)) *Sender {
 // show the actual error: "failed to send" helps nobody find out that the hosting
 // blocks port 587.
 func (s *Sender) Send(ctx context.Context, msg Message) error {
-	if s.cfg.Host == "" {
-		return errors.New("no SMTP host configured")
-	}
 	recipients := msg.To
 	if len(recipients) == 0 {
 		recipients = s.cfg.To
 	}
 	if len(recipients) == 0 {
 		return errors.New("no recipient configured")
+	}
+
+	// Which transport, decided before anything is dialled.
+	switch strings.ToLower(s.cfg.Transport) {
+	case "sendmail":
+		binary := s.cfg.SendmailPath
+		if binary == "" {
+			binary = findSendmail()
+		}
+		if binary == "" {
+			return errNoTransport(true)
+		}
+		return s.sendViaSendmail(ctx, binary, s.cfg.From, recipients, msg)
+
+	case "smtp":
+		if s.cfg.Host == "" {
+			return errNoTransport(false)
+		}
+
+	case "", "auto":
+		// A configured host wins: someone who filled it in meant it. Only when there is
+		// none does this fall back to the local MTA, which needs no credentials and is
+		// what makes mail work on an account that has no mailbox to authenticate as.
+		if s.cfg.Host == "" {
+			binary := s.cfg.SendmailPath
+			if binary == "" {
+				binary = findSendmail()
+			}
+			if binary == "" {
+				return errNoTransport(true)
+			}
+			return s.sendViaSendmail(ctx, binary, s.cfg.From, recipients, msg)
+		}
+
+	default:
+		return fmt.Errorf("unknown alerts.email.transport %q (use auto, smtp or sendmail)",
+			s.cfg.Transport)
 	}
 
 	addr := net.JoinHostPort(s.cfg.Host, fmt.Sprint(s.cfg.Port))
@@ -133,7 +167,11 @@ func (s *Sender) Send(ctx context.Context, msg Message) error {
 	if err != nil {
 		return fmt.Errorf("starting the message body: %w", err)
 	}
-	if _, err := w.Write(build(s.cfg.From, recipients, msg)); err != nil {
+	body, err := buildSafe(s.cfg.From, recipients, msg)
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(body); err != nil {
 		_ = w.Close()
 		return fmt.Errorf("writing the message: %w", err)
 	}
