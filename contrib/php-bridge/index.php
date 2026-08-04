@@ -58,14 +58,19 @@ $upstream = '127.0.0.1:8787';                    // must match web.listen in the
 // Unavailable" page — the one that also says "a 503 was encountered while trying to use
 // an ErrorDocument", which means PHP never ran at all.
 //
-// A cPanel account has a small ceiling on concurrent PHP processes. The panel is a
+// A cPanel account has a small ceiling on concurrent PHP processes, and the panel is a
 // long-running daemon that shared hosting reaps whenever it goes idle, so cold starts are
-// routine rather than rare, and a page view fires more than one request. Each one that
-// arrived while the panel was down sat on a worker for up to 8 seconds. A handful of them
-// at once exhausts the pool, and then the SERVER starts refusing requests before PHP is
-// reached — which is why the static site root kept answering in 0.14s while /sentinel/
-// timed out. That difference is not the account being healthy; it is static files not
-// needing a worker.
+// routine rather than rare.
+//
+// This was first justified by saying each request arriving during a cold start held a
+// worker for the full 8 seconds. Measured afterwards on the real account, a cold start
+// takes 0.113s, so that is not what was happening and the cause of the 503 that prompted
+// this is still unknown (D-049).
+//
+// The smaller claim survives and is the reason to keep this: when the panel CANNOT start,
+// every request held a worker for the full ceiling, and a browser was given a connection
+// held open until the web server killed it rather than an answer. Waiting 1.5s covers the
+// 0.113s case with room to spare, and anything slower is handed back to the client.
 //
 // So: wait only long enough to cover the case where the panel answers almost at once, and
 // otherwise hand the wait back to the client. A browser gets a page that retries itself,

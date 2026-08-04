@@ -1717,3 +1717,41 @@ cPanel still offers, so the bridge cannot quietly start requiring something newe
 `wantsHTML()` lives in `lib/request.php` rather than `index.php` because `index.php` begins
 proxying the moment it is included and nothing in it can be required from a test. That is
 why the one bridge test that existed covered `lib/path.php` and nothing else.
+
+## D-049 — the mechanism claimed in D-048 was wrong
+
+**Context**: the cold-start measurement D-048 was written without. It was queued three
+times and bumped by deploys each time, and the entry went in anyway.
+
+Measured on the real account, on a spare port so the live panel was not disturbed:
+
+```
+cold start to first answer: 0.113s
+```
+
+**D-048 says** each request arriving while the panel was down "sat on a worker for up to
+8 seconds", and that a handful at once exhausted the account's PHP process pool. At 113ms
+that does not happen. `$bootWait` was a ceiling, reached only when the panel fails to
+start altogether — and an account whose panel cannot start has a different problem than
+the one described.
+
+**So the cause of the 503 remains unknown.** What is still true and still measured: the
+server's own error page appeared, with its "ErrorDocument" line, which means PHP did not
+run; the static site root answered throughout, which only proves static files need no
+worker. Everything between those two facts was reasoning, and the reasoning has now been
+contradicted by the thing it was reasoning about.
+
+**The change in D-048 stands on a smaller claim.** A panel that cannot start no longer
+holds a worker for eight seconds per request, and a browser gets a page that explains
+itself instead of a connection held until the web server kills it. Both are improvements.
+Neither is the explanation that entry gave, and D-048 should be read with this one.
+
+**What to do about it**: the next 503 gets `ps` and the account's process count taken
+*while it is happening*, rather than reconstructed afterwards from a log that records only
+the requests that completed. A bridge that never reaches PHP writes nothing, so the
+evidence for this class of failure is exactly the evidence the bridge cannot produce.
+
+The lesson is not that the reasoning was careless — it fit every fact available at the
+time. It is that the measurement which would have tested it was already written, already
+queued, and was dropped three times in favour of shipping. **A pending measurement is not
+a formality to get to later; it is the part that decides whether the explanation is true.**
