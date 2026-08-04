@@ -110,7 +110,11 @@ func (s *Sender) Send(ctx context.Context, msg Message) error {
 	}
 
 	if s.cfg.Username != "" {
-		auth := smtp.PlainAuth("", s.cfg.Username, s.cfg.Password, s.cfg.Host)
+		// Which mechanism, decided from what the server advertises rather than assumed.
+		// Outlook refuses PLAIN and answers 504 "Unrecognized authentication type", which
+		// looks like a rejected account and is the server declining the method — the
+		// password never leaves the client.
+		auth := chooseAuth(c, s.cfg.Username, s.cfg.Password, s.cfg.Host)
 		if err := c.Auth(auth); err != nil {
 			return fmt.Errorf("authenticating with %s: %w", s.cfg.Host, err)
 		}
