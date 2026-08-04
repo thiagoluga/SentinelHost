@@ -3,6 +3,8 @@ package alert
 import (
 	"context"
 	"fmt"
+	"html"
+	"strings"
 	"time"
 
 	"github.com/thiagoluga/SentinelHost/internal/alert/email"
@@ -69,10 +71,27 @@ func (d *Dispatcher) SendDigestNow(ctx context.Context, since time.Time) error {
 }
 
 func (d *Dispatcher) sendDigest(ctx context.Context, start, end time.Time) (bool, error) {
-	vs, err := d.store.ListVerdicts(ctx, store.VerdictFilter{IncludeClean: true, Limit: 2000})
+	// The window goes to the database, not to a loop afterwards.
+	//
+	// This used to fetch the 2000 most recent verdicts and compare dates in Go. A window
+	// holding more than 2000 was reported as if the subset were the whole; and because the
+	// 2000 were the most recent OVERALL, verdicts newer than `end` consumed the budget
+	// first — so a summary of yesterday, sent today, could report nothing at all for a day
+	// that had hundreds. An empty digest and a digest that never looked read identically.
+	const cap = 5000
+	vs, err := d.store.ListVerdicts(ctx, store.VerdictFilter{
+		IncludeClean: true,
+		Since:        start,
+		Until:        end,
+		Limit:        cap,
+	})
 	if err != nil {
 		return false, err
 	}
+	// A cap still exists, because a digest is an e-mail and not a database dump. When it
+	// bites, the mail says so: silent truncation is the failure this project is built to
+	// avoid, and a count that quietly means "at least" is exactly that.
+	truncated := len(vs) == cap
 
 	counts := map[schema.Level]int{}
 	actions := map[schema.ActionTaken]int{}
@@ -80,9 +99,6 @@ func (d *Dispatcher) sendDigest(ctx context.Context, start, end time.Time) (bool
 	relevant := 0
 
 	for _, v := range vs {
-		if v.CreatedAt.Before(start) || v.CreatedAt.After(end) {
-			continue
-		}
 		counts[v.Level]++
 		actions[v.ActionTaken]++
 		if v.Level != schema.LevelClean {
@@ -102,6 +118,14 @@ func (d *Dispatcher) sendDigest(ctx context.Context, start, end time.Time) (bool
 	}
 
 	msg := email.DigestMessage(start, end, counts, actions, pending, d.cfg.Alerts.Email.PanelURL)
+	if truncated {
+		notice := fmt.Sprintf("\n\nThis summary covers the most recent %d verdicts of the "+
+			"period; there were more. Open the panel for the complete list.\n", cap)
+		msg.Text += notice
+		if msg.HTML != "" {
+			msg.HTML += "<p><strong>" + html.EscapeString(strings.TrimSpace(notice)) + "</strong></p>"
+		}
+	}
 	if err := d.mailer.Send(ctx, msg); err != nil {
 		return false, fmt.Errorf("sending the digest: %w", err)
 	}

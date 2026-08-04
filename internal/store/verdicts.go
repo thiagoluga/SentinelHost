@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/thiagoluga/SentinelHost/internal/schema"
 )
@@ -91,6 +92,19 @@ type VerdictFilter struct {
 	// of them is a panel nobody can read. Set this when the history is the point.
 	AllCycles bool
 
+	// Since and Until bound the window, in SQL rather than after the fact.
+	//
+	// The digest used to take the 2000 most recent verdicts and filter them by date in Go.
+	// Two ways that goes wrong: a window holding more than 2000 reports a subset as if it
+	// were the whole, and — worse — verdicts NEWER than the window consume the budget
+	// first, so a summary of yesterday run today could come back empty for a day that had
+	// hundreds. Zero findings and a report that never looked are the same sentence to a
+	// reader, which is the failure this project exists to avoid.
+	//
+	// A zero time means unbounded on that side.
+	Since time.Time
+	Until time.Time
+
 	// IncludeClean: by default the clean level is left out of listings,
 	// otherwise the panel would show thousands of clean files and hide the 3
 	// that matter.
@@ -116,6 +130,14 @@ func (s *Store) ListVerdicts(ctx context.Context, f VerdictFilter) ([]schema.Ver
 	if f.ScanID != "" {
 		q += ` AND scan_id = ?`
 		args = append(args, f.ScanID)
+	}
+	if !f.Since.IsZero() {
+		q += ` AND created_at >= ?`
+		args = append(args, formatTime(f.Since))
+	}
+	if !f.Until.IsZero() {
+		q += ` AND created_at <= ?`
+		args = append(args, formatTime(f.Until))
 	}
 	if f.PendingOnly {
 		// "Pending" means nobody has decided and the tool did not resolve it on
