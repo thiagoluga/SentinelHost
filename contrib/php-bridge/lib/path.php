@@ -55,6 +55,23 @@ function upstreamPath(string $path, string $query = ''): string
  */
 function upstreamURL(string $hostPort, string $path): ?string
 {
+    // A path is a single leading slash and then a path, or it is nothing.
+    //
+    // Anything else is refused before it is concatenated, rather than assembled and then
+    // inspected. `//evil.com` is the case that matters: it assembles to
+    // http://127.0.0.1:8787//evil.com, whose host really is the loopback — the string
+    // became a path, not a destination — so the check below passes it, and the test that
+    // says a hostile path must be "refused outright" fails.
+    //
+    // Not exploitable as it stood: the request would have gone to the panel and 404ed.
+    // Tightened anyway, because this function exists as the second line behind
+    // upstreamPath(), and a guard that only refuses the attacks someone already thought
+    // of is not a second line. Legitimate input never has this shape: every real path
+    // reaches here from upstreamPath(), already anchored to exactly one slash.
+    if ($path !== '' && (substr($path, 0, 1) !== '/' || substr($path, 0, 2) === '//')) {
+        return null;
+    }
+
     // Plain HTTP by design: this address never leaves the machine. Terminating TLS
     // against yourself adds a certificate to manage and protects nothing.
     $url = 'http://' . $hostPort . $path; // NOSONAR - loopback only, verified immediately below
