@@ -216,6 +216,27 @@ if (!extension_loaded('curl')) {
     exit("SentinelHost bridge: PHP has no curl extension, so it cannot reach the panel.\n");
 }
 
+// An arrival line, written before anything can block.
+//
+// Every other trace() call here reports what happened, which means a request that never
+// finishes is a request that never appears. That absence has cost real time: the panel
+// stopped answering from outside, the log showed a healthy sequence of 200s, and the two
+// could not be reconciled because the failing requests were exactly the ones missing from
+// it. The evidence for this class of failure was the evidence the log could not produce.
+//
+// Now an unfinished request leaves a `>>>` with no matching outcome, which is a fact
+// rather than a silence, and it distinguishes the two possibilities that look identical
+// from a browser: no `>>>` at all means the request never reached PHP and the web server
+// refused it; a `>>>` with nothing after it means PHP ran and something here hung.
+//
+// The id ties the two lines together, since requests overlap. getmypid plus a counter
+// would be prettier; uniqid needs no state and cannot collide across processes.
+$reqID = substr(uniqid('', true), -8);
+trace($traceLog, sprintf('>>> %-6s %-28s id=%s',
+    $_SERVER['REQUEST_METHOD'] ?? '?',
+    substr((string) ($_SERVER['REQUEST_URI'] ?? '/'), 0, 28),
+    $reqID));
+
 $t0 = microtime(true);
 $wasUp = panelIsUp($upstream);
 $tProbe = microtime(true);
@@ -232,15 +253,15 @@ if (!$started) {
 
     if ($missing) {
         $why = "the binary is missing or not executable at {$binary}";
-        trace($traceLog, sprintf('503 probe=%.2fs start=%.2fs %s',
-            $tProbe - $t0, $tStart - $tProbe, $why));
+        trace($traceLog, sprintf('503 probe=%.2fs start=%.2fs id=%s %s',
+            $tProbe - $t0, $tStart - $tProbe, $reqID, $why));
         header(PLAIN);
         exit("SentinelHost bridge: {$why}.\n");
     }
 
     $why = sprintf('still starting after %.1fs; worker released for the client to retry', $bootWait);
-    trace($traceLog, sprintf('503 probe=%.2fs start=%.2fs %s',
-        $tProbe - $t0, $tStart - $tProbe, $why));
+    trace($traceLog, sprintf('503 probe=%.2fs start=%.2fs id=%s %s',
+        $tProbe - $t0, $tStart - $tProbe, $reqID, $why));
 
     // A browser asking for a page gets a page that retries itself. Handing the waiting
     // back to the client is the entire point: the worker is free the moment this is sent,
@@ -323,7 +344,7 @@ $tUp = microtime(true);
 if ($response === false) {
     $err = curl_error($ch);
     curl_close($ch);
-    trace($traceLog, sprintf('502 %-6s probe=%.2fs start=%.2fs upstream=%.2fs curl=%s',
+    trace($traceLog, sprintf('502 %-6s probe=%.2fs start=%.2fs upstream=%.2fs id=' . $reqID . ' curl=%s',
         $method, $tProbe - $t0, $tStart - $tProbe, $tUp - $tStart, $err));
     http_response_code(502);
     header(PLAIN);
@@ -337,7 +358,7 @@ curl_close($ch);
 // probe: how long it took to learn whether the panel was listening.
 // start: how long a cold start took, 0 when it was already up.
 // upstream: the panel's own response time.
-trace($traceLog, sprintf('%3d %-6s %-28s probe=%.2fs start=%.2fs upstream=%.2fs%s',
+trace($traceLog, sprintf('%3d %-6s %-28s probe=%.2fs start=%.2fs upstream=%.2fs id=' . $reqID . '%s',
     $status, $method, substr(upstreamPath($rawPath), 0, 28),
     $tProbe - $t0, $tStart - $tProbe, $tUp - $tStart,
     $wasUp ? '' : ' (cold start)'));
