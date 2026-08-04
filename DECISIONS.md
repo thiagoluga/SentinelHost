@@ -1671,3 +1671,49 @@ now reads *"the cycle that produced this verdict recorded no detail"* rather tha
 detail was recorded for this file"* — the second sentence is false under the new scoping
 and would send someone looking for a bug that is not there. The response also carries an
 explicit `findings_count`, so an empty list can be told apart from a request that failed.
+
+## D-048 — the bridge hands the waiting back to the client
+
+**Context**: the panel returned the web server's own *Service Unavailable* page — the one
+that adds *"a 503 was encountered while trying to use an ErrorDocument"*. That sentence is
+the diagnosis: **PHP never ran**. The bridge's own 503, with its explanation and
+`Retry-After`, never had the chance to be produced.
+
+I first read the static site root answering `200` in 0.14s as proof the account was
+healthy, and said so. It proves nothing of the kind — a static file needs no PHP worker.
+The 503 was specific to PHP, and the root was answering *because* it never asked for one.
+
+**The mechanism.** A cPanel account has a small ceiling on concurrent PHP processes. The
+panel is a long-running daemon that shared hosting reaps whenever it goes idle, so a cold
+start is routine rather than exceptional, and one page view fires more than one request.
+Every request arriving while the panel was down sat on a worker for up to **8 seconds**
+(`$bootWait`). A handful at once exhausts the pool, and from then on the *server* refuses
+requests before PHP is reached. The panel was starting normally the whole time.
+
+**Decision**: wait only long enough to cover a panel that answers almost immediately —
+`$bootWait` drops from 8.0s to 1.5s — and otherwise release the worker and let the client
+come back.
+
+- **A navigation** gets a small self-contained HTML page that refreshes every two seconds
+  and says the panel is starting. Ten people reloading now cost ten short requests instead
+  of ten held workers.
+- **Anything else** gets a bare `503` with `Retry-After: 2`. The panel's own `fetch()`
+  would treat an HTML body as a parse error, where a 503 is a case it already handles.
+- **A missing binary keeps its own answer**, with `Retry-After: 30` and the path. "Wait a
+  moment" and "go and fix your install" should not be indistinguishable.
+
+`wantsHTML()` prefers `Sec-Fetch-Mode` over `Accept`, because an XHR whose `Accept` still
+mentions `text/html` is common and trusting `Accept` alone would hand a JSON caller a web
+page. Where neither is sent — curl, a probe — it falls back to plain text, which is the
+safe direction to be wrong in.
+
+**And CI now parses the bridge, which it never had.** `contrib/php-bridge/` is the only
+thing between a visitor and the panel on hosting with no shell, it runs on the account
+being protected, and no job had ever run `php -l` over it. A syntax error would have
+reached the live host and taken the panel down completely — and the bridge is exactly what
+you would reach for to find out why the panel is down. Pinned to PHP 8.1, the oldest
+cPanel still offers, so the bridge cannot quietly start requiring something newer.
+
+`wantsHTML()` lives in `lib/request.php` rather than `index.php` because `index.php` begins
+proxying the moment it is included and nothing in it can be required from a test. That is
+why the one bridge test that existed covered `lib/path.php` and nothing else.

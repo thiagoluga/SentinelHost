@@ -31,6 +31,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/lib/path.php';
+require_once __DIR__ . '/lib/request.php';
 
 // Every failure path here answers in plain text: an HTML error page from a security
 // tool invites the reader to wonder what else is being rendered.
@@ -51,7 +52,25 @@ $config   = $home . '/sentinelhost/config.toml';
 $lockFile = $home . '/sentinelhost/.bridge.lock';
 $logFile  = $home . '/sentinelhost/panel.log';
 $upstream = '127.0.0.1:8787';                    // must match web.listen in the TOML
-$bootWait = 8.0;                                 // seconds to wait for a cold start
+// How long a request may hold a PHP worker waiting for a cold start.
+//
+// This was 8 seconds, and that is what produced the web server's own "Service
+// Unavailable" page — the one that also says "a 503 was encountered while trying to use
+// an ErrorDocument", which means PHP never ran at all.
+//
+// A cPanel account has a small ceiling on concurrent PHP processes. The panel is a
+// long-running daemon that shared hosting reaps whenever it goes idle, so cold starts are
+// routine rather than rare, and a page view fires more than one request. Each one that
+// arrived while the panel was down sat on a worker for up to 8 seconds. A handful of them
+// at once exhausts the pool, and then the SERVER starts refusing requests before PHP is
+// reached — which is why the static site root kept answering in 0.14s while /sentinel/
+// timed out. That difference is not the account being healthy; it is static files not
+// needing a worker.
+//
+// So: wait only long enough to cover the case where the panel answers almost at once, and
+// otherwise hand the wait back to the client. A browser gets a page that retries itself,
+// an API caller gets 503 with Retry-After. Both free the worker immediately.
+$bootWait = 1.5;
 $traceLog = $home . '/sentinelhost/bridge.log';  // one line per request; '' turns it off
 // -----------------------------------------------------------------------------------
 
@@ -199,16 +218,48 @@ $started = $wasUp || startPanel($binary, $config, $lockFile, $logFile, $upstream
 $tStart = microtime(true);
 
 if (!$started) {
+    // Two situations wear the same status code, and telling them apart is the difference
+    // between "wait a moment" and "go and fix your install".
+    $missing = !is_executable($binary);
+
     http_response_code(503);
-    header(PLAIN);
-    header('Retry-After: 5');
-    // Explicit about which of the several possible causes it is, because "503" on a
-    // security tool invites the reader to assume the worst.
-    $why = is_executable($binary)
-        ? "the panel did not come up within {$bootWait}s. Check " . basename($logFile)
-        : "the binary is missing or not executable at {$binary}";
+    header('Retry-After: ' . ($missing ? '30' : '2'));
+
+    if ($missing) {
+        $why = "the binary is missing or not executable at {$binary}";
+        trace($traceLog, sprintf('503 probe=%.2fs start=%.2fs %s',
+            $tProbe - $t0, $tStart - $tProbe, $why));
+        header(PLAIN);
+        exit("SentinelHost bridge: {$why}.\n");
+    }
+
+    $why = sprintf('still starting after %.1fs; worker released for the client to retry', $bootWait);
     trace($traceLog, sprintf('503 probe=%.2fs start=%.2fs %s',
         $tProbe - $t0, $tStart - $tProbe, $why));
+
+    // A browser asking for a page gets a page that retries itself. Handing the waiting
+    // back to the client is the entire point: the worker is free the moment this is sent,
+    // so ten people reloading cost ten short requests instead of ten held workers.
+    if (wantsHTML($_SERVER)) {
+        header('Content-Type: text/html; charset=utf-8');
+        // Nothing external: this renders while the panel is, by definition, not answering.
+        exit('<!doctype html><meta charset="utf-8">'
+            . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            . '<meta http-equiv="refresh" content="2">'
+            . '<title>SentinelHost — starting</title>'
+            . '<style>body{font:16px/1.6 system-ui,sans-serif;margin:0;min-height:100vh;'
+            . 'display:grid;place-items:center;background:#111;color:#eee}'
+            . 'div{max-width:32rem;padding:2rem;text-align:center}'
+            . 'p{color:#aaa;font-size:.9rem}</style>'
+            . '<div><h1>Starting the panel</h1>'
+            . '<p>Shared hosting does not keep the panel running between visits, so the '
+            . 'first request after an idle period has to start it. This page reloads by '
+            . 'itself every two seconds.</p>'
+            . '<p>If it has not settled within a minute the panel failed to start: check '
+            . htmlspecialchars(basename($logFile), ENT_QUOTES, 'UTF-8') . '.</p></div>');
+    }
+
+    header(PLAIN);
     exit("SentinelHost bridge: {$why}.\n");
 }
 
