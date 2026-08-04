@@ -219,8 +219,20 @@ func (s *Server) handleVerdictDetail(w http.ResponseWriter, req *http.Request) {
 	}
 	// Each engine's raw findings travel with the verdict: it is what answers "why
 	// was this file flagged?" in detail.
-	findings, _ := s.store.FindingsForHash(req.Context(), v.FileSHA256)
-	writeJSON(w, http.StatusOK, map[string]any{"verdict": v, "findings": findings})
+	//
+	// Scoped to the verdict's own cycle. Asking by content hash alone returns every
+	// finding for that file across every cycle, and a cron running every fifteen minutes
+	// re-detects the same file all day — the panel showed one wp-checksums vote above
+	// three identical wp-checksums evidence blocks, contradicting the votes printed
+	// directly above it.
+	findings, _ := s.store.FindingsForVerdict(req.Context(), v.FileSHA256, v.ScanID)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"verdict":  v,
+		"findings": findings,
+		// Stated so the panel can tell "this cycle recorded no evidence" apart from
+		// "the request failed", which look identical in an empty list.
+		"findings_count": len(findings),
+	})
 }
 
 // handleDecide applies the user's decision about a finding.

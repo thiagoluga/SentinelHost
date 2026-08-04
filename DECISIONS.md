@@ -1640,3 +1640,34 @@ Guarded twice — the `LIKE` matches only a well-formed `YYYY-MM-DDThh:mm:ss…Z
 an empty string is left alone rather than mangled into a plausible wrong time, and the
 length check skips rows already at nine digits. There is a test for each guard, including
 one that runs the migration three times over.
+
+## D-048 — the evidence belongs to the cycle that decided
+
+**Context**: a screenshot of one verdict on `pluggable.php` showing **one** `wp-checksums`
+vote and **three identical** `wp-checksums` evidence blocks, all reading
+`core file altered: wp-includes/pluggable.php`.
+
+`FindingsForHash` returns every finding recorded for that content hash across every cycle.
+A cron running every fifteen minutes re-detects the same file all day, so the panel
+collected three cycles' worth and stacked them under one verdict.
+
+The same shape as D-046, one layer down — and D-046 made it visible: collapsing the
+listing to one verdict per file left three evidence blocks under it, where before the
+repetition was spread across three cards and looked like three findings.
+
+**It is worse than noise: it contradicts the card it sits in.** The votes printed directly
+above say one engine voted once. Principle V says every verdict carries its votes so a
+user can answer "why was this file quarantined?" — evidence from a cycle other than the
+one being displayed answers a different question, and quietly disagrees with the answer
+above it.
+
+**Decision**: `FindingsForVerdict(sha, scanID)`. The verdict's votes come from one cycle's
+findings; that cycle's findings are what appear under it. `FindingsForHash` stays, because
+the full history is still the right answer for anything asking about the file rather than
+about one decision.
+
+**A cycle that recorded nothing shows nothing, and says so.** The panel's empty message
+now reads *"the cycle that produced this verdict recorded no detail"* rather than *"no
+detail was recorded for this file"* — the second sentence is false under the new scoping
+and would send someone looking for a bug that is not there. The response also carries an
+explicit `findings_count`, so an empty list can be told apart from a request that failed.

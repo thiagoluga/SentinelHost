@@ -162,8 +162,33 @@ func (s *Store) SaveFinding(ctx context.Context, f schema.Finding) error {
 // FindingsForHash returns every engine's findings about one file. It is what the
 // panel uses to answer "why was this file flagged?".
 func (s *Store) FindingsForHash(ctx context.Context, sha string) ([]schema.Finding, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT finding_json FROM findings WHERE file_sha256 = ? ORDER BY detected_at DESC`, sha)
+	return s.findings(ctx, sha, "")
+}
+
+// FindingsForVerdict returns the evidence one verdict was actually built from.
+//
+// FindingsForHash returns every finding for that content across every cycle, and a cron
+// running every fifteen minutes re-detects the same file all day. The panel showed one
+// wp-checksums vote above three identical wp-checksums evidence blocks — which is not
+// only noise, it contradicts the votes printed directly above it.
+//
+// The verdict's votes come from one cycle's findings. Showing another cycle's evidence
+// under them answers "why was this file flagged, at some point, by anyone" when the
+// question on screen is "why does THIS verdict say what it says".
+func (s *Store) FindingsForVerdict(ctx context.Context, sha, scanID string) ([]schema.Finding, error) {
+	return s.findings(ctx, sha, scanID)
+}
+
+func (s *Store) findings(ctx context.Context, sha, scanID string) ([]schema.Finding, error) {
+	q := `SELECT finding_json FROM findings WHERE file_sha256 = ?`
+	args := []any{sha}
+	if scanID != "" {
+		q += ` AND scan_id = ?`
+		args = append(args, scanID)
+	}
+	q += ` ORDER BY detected_at DESC`
+
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("looking for findings of %s: %w", sha, err)
 	}

@@ -477,7 +477,12 @@ function evidenceBlock(v) {
 function renderEvidence(body, findings) {
   clear(body);
   if (!findings.length) {
-    body.appendChild(el('p', { class: 'muted small' }, 'No detail was recorded for this file.'));
+    // "This cycle", not "this file". The evidence is scoped to the cycle that produced
+    // the verdict you are looking at, so an earlier cycle may well have recorded some —
+    // and a message saying otherwise would send someone looking for a bug that is not
+    // there.
+    body.appendChild(el('p', { class: 'muted small' },
+      'The cycle that produced this verdict recorded no detail.'));
     return;
   }
 
