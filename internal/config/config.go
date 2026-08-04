@@ -155,7 +155,20 @@ type Alerts struct {
 
 // EmailConfig is the SMTP setup.
 type EmailConfig struct {
-	Enabled  bool   `toml:"enabled" json:"enabled"`
+	Enabled bool `toml:"enabled" json:"enabled"`
+
+	// Transport: "auto", "smtp" or "sendmail".
+	//
+	// "auto" — the default and what an empty value means — uses SMTP when a host is
+	// configured, and otherwise hands the message to a local MTA. That covers the two
+	// shapes shared hosting actually comes in: an account with mailbox credentials, and
+	// an account with no credentials at all but a working sendmail binary, which is most
+	// of them. Neither alone is general.
+	Transport string `toml:"transport" json:"transport"`
+
+	// SendmailPath overrides the search when the MTA is somewhere unusual.
+	SendmailPath string `toml:"sendmail_path" json:"sendmail_path"`
+
 	Host     string `toml:"host" json:"host"`
 	Port     int    `toml:"port" json:"port"`
 	Username string `toml:"username" json:"username"`

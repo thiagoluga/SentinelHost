@@ -247,6 +247,18 @@ func (c *Config) validateAlerts(r *ValidationResult) {
 		if e.Port <= 0 || e.Port > 65535 {
 			r.fatal("alerts.email.port", "invalid port: %d", e.Port)
 		}
+		switch strings.ToLower(e.Transport) {
+		case "", "auto", "smtp", "sendmail":
+		default:
+			r.fatal("alerts.email.transport",
+				"unknown value %q (use auto, smtp or sendmail)", e.Transport)
+		}
+		// A host is required only when SMTP is actually going to be used. Demanding one
+		// under `sendmail` would force a user with no mailbox to invent a server they
+		// will never contact.
+		if strings.EqualFold(e.Transport, "smtp") && e.Host == "" {
+			r.fatal("alerts.email.host", "empty with transport set to smtp")
+		}
 		if e.From == "" {
 			r.fatal("alerts.email.from", "empty with email enabled")
 		}
