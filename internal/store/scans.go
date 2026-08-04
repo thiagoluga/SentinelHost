@@ -162,7 +162,7 @@ func (s *Store) SaveFinding(ctx context.Context, f schema.Finding) error {
 // FindingsForHash returns every engine's findings about one file. It is what the
 // panel uses to answer "why was this file flagged?".
 func (s *Store) FindingsForHash(ctx context.Context, sha string) ([]schema.Finding, error) {
-	return s.findings(ctx, sha, "")
+	return s.findings(ctx, sha, "", "")
 }
 
 // FindingsForVerdict returns the evidence one verdict was actually built from.
@@ -175,16 +175,27 @@ func (s *Store) FindingsForHash(ctx context.Context, sha string) ([]schema.Findi
 // The verdict's votes come from one cycle's findings. Showing another cycle's evidence
 // under them answers "why was this file flagged, at some point, by anyone" when the
 // question on screen is "why does THIS verdict say what it says".
-func (s *Store) FindingsForVerdict(ctx context.Context, sha, scanID string) ([]schema.Finding, error) {
-	return s.findings(ctx, sha, scanID)
+// It is also narrowed to one PATH. Findings are stored per file, and identical content at
+// several paths produces one finding each — this account has three WordPress copies under
+// .trash whose pluggable.php is byte-identical, so the card for one of them was showing
+// the evidence for all three. The verdict's identity is (path, content), settled in D-046;
+// its evidence has to be keyed the same way or the two describe different things.
+//
+// An empty path means "every path", for callers that predate the distinction.
+func (s *Store) FindingsForVerdict(ctx context.Context, sha, scanID, path string) ([]schema.Finding, error) {
+	return s.findings(ctx, sha, scanID, path)
 }
 
-func (s *Store) findings(ctx context.Context, sha, scanID string) ([]schema.Finding, error) {
+func (s *Store) findings(ctx context.Context, sha, scanID, path string) ([]schema.Finding, error) {
 	q := `SELECT finding_json FROM findings WHERE file_sha256 = ?`
 	args := []any{sha}
 	if scanID != "" {
 		q += ` AND scan_id = ?`
 		args = append(args, scanID)
+	}
+	if path != "" {
+		q += ` AND file_path = ?`
+		args = append(args, path)
 	}
 	q += ` ORDER BY detected_at DESC`
 

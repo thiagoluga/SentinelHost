@@ -225,7 +225,7 @@ func (s *Server) handleVerdictDetail(w http.ResponseWriter, req *http.Request) {
 	// re-detects the same file all day — the panel showed one wp-checksums vote above
 	// three identical wp-checksums evidence blocks, contradicting the votes printed
 	// directly above it.
-	findings, _ := s.store.FindingsForVerdict(req.Context(), v.FileSHA256, v.ScanID)
+	findings, _ := s.store.FindingsForVerdict(req.Context(), v.FileSHA256, v.ScanID, v.FilePath)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"verdict":  v,
 		"findings": findings,

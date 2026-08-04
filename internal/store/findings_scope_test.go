@@ -68,7 +68,7 @@ func TestEvidenceComesFromTheCycleThatDecided(t *testing.T) {
 	}
 
 	// What it asks for now: one cycle's worth.
-	one, err := st.FindingsForVerdict(ctx, fileSHA, "s_1")
+	one, err := st.FindingsForVerdict(ctx, fileSHA, "s_1", "")
 	if err != nil {
 		t.Fatalf("FindingsForVerdict: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestACycleWithNoEvidenceBorrowsNone(t *testing.T) {
 	fileSHA := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	seedFinding(t, st, "s_1", "amwscan", "Function", fileSHA, time.Unix(1785000000, 0).UTC())
 
-	got, err := st.FindingsForVerdict(ctx, fileSHA, "s_2")
+	got, err := st.FindingsForVerdict(ctx, fileSHA, "s_2", "")
 	if err != nil {
 		t.Fatalf("FindingsForVerdict: %v", err)
 	}
