@@ -3,6 +3,7 @@ package pmf
 import (
 	"context"
 	"fmt"
+	"github.com/thiagoluga/SentinelHost/internal/adapter"
 	"io"
 	"net/http"
 	"os"
@@ -20,7 +21,22 @@ const maxRulesBytes = 16 << 20
 // connection dropped mid-way — and truncated rules make yara fail on every
 // following cycle, turning a momentary network glitch into a permanently dead
 // engine.
-func downloadFile(ctx context.Context, url, dest string) error {
+// downloadVerified is the only way this package fetches anything.
+//
+// There is no unverified variant to reach for. A helper that skips the digest is a helper
+// somebody calls.
+func downloadVerified(ctx context.Context, pin adapter.Pinned, dest string) error {
+	return downloadPinned(ctx, pin, dest, true)
+}
+
+// downloadPinned downloads and refuses anything whose digest is not the pinned one.
+//
+// The digest is computed while the bytes stream past, and the file reaches its final name
+// only after it matches. Checking afterwards by re-reading the path would be a race
+// anything sharing the temporary directory could win, and on shared hosting that
+// directory is not private.
+func downloadPinned(ctx context.Context, pin adapter.Pinned, dest string, verify bool) error {
+	url := pin.URL
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("building the download: %w", err)
@@ -44,7 +60,12 @@ func downloadFile(ctx context.Context, url, dest string) error {
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }()
 
-	n, err := io.Copy(tmp, io.LimitReader(resp.Body, maxRulesBytes))
+	h, sum := adapter.Hasher()
+	var w io.Writer = tmp
+	if verify {
+		w = io.MultiWriter(tmp, h)
+	}
+	n, err := io.Copy(w, io.LimitReader(resp.Body, maxRulesBytes))
 	if err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("writing the download: %w", err)
@@ -54,6 +75,13 @@ func downloadFile(ctx context.Context, url, dest string) error {
 	}
 	if n == 0 {
 		return fmt.Errorf("the download of %s came back empty", url)
+	}
+	if verify {
+		// Before the rename, so a rejected file never exists under the name the engine
+		// loads. The temporary file is removed by the deferred cleanup either way.
+		if err := pin.Verify(sum()); err != nil {
+			return err
+		}
 	}
 	if err := os.Chmod(tmpName, 0o600); err != nil {
 		return fmt.Errorf("adjusting permissions: %w", err)

@@ -31,13 +31,21 @@ import (
 // Slug of the engine.
 const Slug = "amwscan"
 
-// PharURL is where AMWScan's PHP executable is downloaded from.
+// Phar is pinned: an immutable commit, and the digest of the bytes there.
 //
-// It points at dist/ in the repository rather than at a release asset: the
-// project publishes releases WITHOUT assets (v0.15.2 has none), and
-// .../releases/latest/download/scanner.phar answers 404. dist/scanner on the
-// main branch is the only stable path.
-const PharURL = "https://raw.githubusercontent.com/marcocesarato/PHP-Antimalware-Scanner/master/dist/scanner"
+// This was `.../master/dist/scanner`, and the file is a PHP program this tool then
+// executes. Downloading an executable from the end of somebody else's branch means
+// whoever can push to that branch runs code on every account that installs SentinelHost.
+// The project publishes releases without assets, so a commit is the only immutable
+// address available — which makes the digest the part that actually protects anything.
+var Phar = adapter.Pinned{
+	Name:   "the AMWScan scanner",
+	URL:    "https://raw.githubusercontent.com/marcocesarato/PHP-Antimalware-Scanner/32aac3dae97b58210541e6c765507155f5e490be/dist/scanner",
+	SHA256: "b435438d431da3ff5f6fa4d360e523ca71c98647d021cd299962a278b351dab8",
+}
+
+// PharURL keeps the old name for callers that only need the address.
+const PharURL = "https://raw.githubusercontent.com/marcocesarato/PHP-Antimalware-Scanner/32aac3dae97b58210541e6c765507155f5e490be/dist/scanner"
 
 // MinPHPVersion required by the engine.
 const MinPHPVersion = "7.1"
@@ -249,7 +257,11 @@ func (a *Adapter) Install(ctx context.Context, env adapter.Environment) error {
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }()
 
-	n, err := io.Copy(tmp, io.LimitReader(resp.Body, 64<<20))
+	// The digest is computed as the bytes stream past, so nothing has to trust that the
+	// file on disk is still the file that arrived. Verified before the rename, so a
+	// rejected download never exists under the name this tool executes.
+	h, sum := adapter.Hasher()
+	n, err := io.Copy(io.MultiWriter(tmp, h), io.LimitReader(resp.Body, 64<<20))
 	if err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("writing AMWScan: %w", err)
@@ -259,6 +271,15 @@ func (a *Adapter) Install(ctx context.Context, env adapter.Environment) error {
 	}
 	if n < 100<<10 {
 		return fmt.Errorf("the download came back with only %d bytes: that does not look like the scanner", n)
+	}
+	pin := Phar
+	if a.pharURL != PharURL {
+		// Pointed elsewhere by a test or a fork. Still verified: an override without a
+		// digest fails, rather than becoming a way past the check.
+		pin = adapter.Pinned{Name: "the AMWScan scanner", URL: a.pharURL}
+	}
+	if err := pin.Verify(sum()); err != nil {
+		return err
 	}
 	if err := os.Chmod(tmpName, 0o700); err != nil {
 		return fmt.Errorf("adjusting permissions: %w", err)

@@ -32,17 +32,38 @@ import (
 // Slug of the engine.
 const Slug = "php-malware-finder"
 
-// RulesURL is where the YARA rules are downloaded from at install time.
+// Rules and Whitelist are pinned: an immutable commit, and the digest of the bytes there.
 //
-// The path is data/php.yar: the repository was rewritten in Go and the
-// php-malware-finder/ directory no longer exists on the main branch (the old
-// path answers 404).
-const RulesURL = "https://raw.githubusercontent.com/jvoisin/php-malware-finder/master/data/php.yar"
+// These were `.../master/data/php.yar`. A YARA ruleset is not inert data — it decides
+// which of the user's files are quarantined. A rule matching `wp-config.php` needs no code
+// execution to destroy a site: SentinelHost would do it, on schedule, believing it was
+// working correctly. Pulling that from the end of a branch means whoever can push to that
+// branch chooses what this tool destroys.
+//
+// Updating a pin is a commit here, reviewed, and reaches users through a release they
+// chose to install. See adapter.Pinned.
+var (
+	Rules = adapter.Pinned{
+		Name:   "the php-malware-finder YARA rules",
+		URL:    "https://raw.githubusercontent.com/jvoisin/php-malware-finder/aca14bfc3b2fa40a470a4f0fd8dcc1e0856f9c1c/data/php.yar",
+		SHA256: "ec0f90f51f66ce198696ff5b19982a8e1b86d34e0e9ecf30c6ac8c6b9024332a",
+	}
 
-// WhitelistURL ships alongside the rules. php-malware-finder uses its own
-// whitelist to avoid flagging known-legitimate code; without it the engine
-// produces considerably more noise.
-const WhitelistURL = "https://raw.githubusercontent.com/jvoisin/php-malware-finder/master/data/whitelist.yar"
+	// The whitelist ships alongside the rules and php-malware-finder uses it to avoid
+	// flagging known-legitimate code. Without it the engine is considerably noisier, so it
+	// is pinned to the same commit rather than fetched loose.
+	Whitelist = adapter.Pinned{
+		Name:   "the php-malware-finder whitelist",
+		URL:    "https://raw.githubusercontent.com/jvoisin/php-malware-finder/aca14bfc3b2fa40a470a4f0fd8dcc1e0856f9c1c/data/whitelist.yar",
+		SHA256: "5ff3982fdfcbbd6165fe188c6b0d6456878a87400a30aa9941398c2073142f85",
+	}
+)
+
+// RulesURL and WhitelistURL keep the old names for callers that only need the address.
+const (
+	RulesURL     = "https://raw.githubusercontent.com/jvoisin/php-malware-finder/aca14bfc3b2fa40a470a4f0fd8dcc1e0856f9c1c/data/php.yar"
+	WhitelistURL = "https://raw.githubusercontent.com/jvoisin/php-malware-finder/aca14bfc3b2fa40a470a4f0fd8dcc1e0856f9c1c/data/whitelist.yar"
+)
 
 // FileStat is the metadata computed by the orchestrator.
 type FileStat struct {
@@ -57,12 +78,15 @@ type Adapter struct {
 	rulesURL string
 	stat     func(string) (FileStat, bool)
 	// download is injectable in tests.
-	download func(ctx context.Context, url, dest string) error
+	// download takes the pin, not a bare URL. A signature that carries only the address
+	// makes it possible to fetch something without verifying it, and the one call site
+	// that did exactly that is why this exists.
+	download func(ctx context.Context, pin adapter.Pinned, dest string) error
 }
 
 // New creates the adapter.
 func New() *Adapter {
-	return &Adapter{rulesURL: RulesURL, stat: statFile, download: downloadFile}
+	return &Adapter{rulesURL: RulesURL, stat: statFile, download: downloadVerified}
 }
 
 // WithStat swaps the metadata function. Tests only.
@@ -146,7 +170,14 @@ func (a *Adapter) Install(ctx context.Context, env adapter.Environment) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 		return fmt.Errorf("creating the rules directory: %w", err)
 	}
-	return a.download(ctx, a.rulesURL, dest)
+	pin := Rules
+	if a.rulesURL != RulesURL {
+		// A test or a fork pointed this somewhere else. It is still downloaded, and it is
+		// still refused unless a digest was supplied with it — an unpinned override is a
+		// mistake worth failing on, not a way around the check.
+		pin = adapter.Pinned{Name: "the YARA rules", URL: a.rulesURL}
+	}
+	return a.download(ctx, pin, dest)
 }
 
 // UpdateSignatures downloads the rules again.
