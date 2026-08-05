@@ -42,6 +42,12 @@ var (
 	ErrNotInVault = errors.New("the item is not in the vault")
 	// ErrRestoreTargetExists means a file already exists at the original path.
 	ErrRestoreTargetExists = errors.New("a file already exists at the original path")
+	// ErrNotAPlainFile means the path is a link, or something else that os.Remove would
+	// not neutralize. Its own error because the caller must not retry it as a transient
+	// failure: the answer is to look at what is actually there.
+	ErrNotAPlainFile = errors.New("the path is not a plain file, so removing it would not remove the content")
+	// ErrOtherNames means the content is reachable under more than one name.
+	ErrOtherNames = errors.New("the file has other names, so removing this one leaves the content in place")
 	// ErrVaultCorrupted means the copy in the vault does not match the recorded
 	// hash.
 	ErrVaultCorrupted = errors.New("the copy in the vault does not match the recorded hash")
@@ -92,6 +98,27 @@ func (v *Vault) Quarantine(ctx context.Context, verdictID, path, expectedSHA str
 	info, err := os.Stat(path)
 	if err != nil {
 		return item, fmt.Errorf("reading the file's metadata: %w", err)
+	}
+
+	// Would removing this name actually remove the content?
+	//
+	// os.Remove unlinks a name. With a second hard link, or with a symbolic link whose
+	// target holds the same bytes, the copy succeeds, the removal succeeds, and the
+	// payload stays exactly where it was — while this reports a quarantine. That is the
+	// failure this project exists to avoid, performed by the part of it that touches the
+	// user's files.
+	//
+	// Refused rather than done-and-warned. A file the user believes is gone is worse than
+	// a file they were told to look at.
+	others, err := otherNamesFor(path)
+	if err != nil {
+		return item, err
+	}
+	if others > 0 {
+		return item, fmt.Errorf("%w: %s has %d other name(s) (hard links). Quarantining "+
+			"this one would copy it to the vault and unlink this path, leaving the same "+
+			"content executable under its other names. Find them with: find %s -samefile %s",
+			ErrOtherNames, path, others, filepath.Dir(path), path)
 	}
 
 	ref, err := newRef(v.now())
