@@ -50,15 +50,28 @@ not something to leave on a live site.
    └── data/                 0700  (database, baseline, quarantine vault)
    ```
 
-2. Copy `index.php`, `.htaccess` and **`.sentinelhost-component`** into a directory of
-   your document root, for example `public_html/sentinel/`.
+2. Copy `index.php` and `.htaccess` into a directory of your document root, for example
+   `public_html/sentinel/`.
 
-   That third file matters more than it looks. The bridge has to live inside the document
-   root, and it calls `exec()` because starting the panel is its whole job — which is
-   exactly what a PHP malware scanner is built to notice. Without the marker, AMWScan
-   flags the bridge on every cycle, forever, and the tool spends its credibility reporting
-   itself. The marker is what the scanner looks for, rather than the directory's name:
-   a scanner that trusted names would be told what to ignore by whoever it was scanning.
+   Then **add that directory to `limits.exclude`** in your `config.toml`:
+
+   ```toml
+   [limits]
+   exclude = ["/home/YOURUSER/public_html/sentinel/**"]
+   ```
+
+   The bridge has to live inside the document root, and it calls `exec()` because starting
+   the panel is its whole job — which is exactly what a PHP malware scanner is built to
+   notice. Without that line, AMWScan flags the bridge on every cycle.
+
+   An earlier version of this recognised a marker file instead, so no configuration was
+   needed. That was removed: writing a file inside the document root is the one thing an
+   attacker who has uploaded a webshell has certainly already managed, and the marker let
+   them switch off scanning for a directory with a single `touch`. The exclusion list
+   lives in a file only you can write, which is the whole difference.
+
+   SentinelHost now **reports** any `.sentinelhost-component` it finds, because nothing
+   installs that file any more and its only documented effect was to hide a directory.
 
 3. Open `index.php` and **set `$home` to your account's home directory** — the line is
    near the top and ships as `/home/YOURUSER`. It is spelled out rather than computed

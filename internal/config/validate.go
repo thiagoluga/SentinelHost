@@ -92,6 +92,7 @@ func (c *Config) Validate() ValidationResult {
 	c.validateVerdict(&r)
 	c.validateQuarantine(&r)
 	c.validateEngines(&r)
+	c.validateMarkers(&r)
 	c.validateAlerts(&r)
 	c.validateWeb(&r)
 
@@ -251,6 +252,29 @@ func usesSMTP(e EmailConfig) bool {
 		return false
 	default: // "" and "auto"
 		return e.Host != ""
+	}
+}
+
+// validateMarkers reports anything asking not to be scanned.
+//
+// A previous version of this tool honoured `.sentinelhost-component`: any directory
+// containing it was dropped from the scan. That is trivially forgeable — writing a file
+// inside the document root is the one thing an attacker who has uploaded a webshell has
+// certainly already managed — so it is now reported instead of obeyed.
+//
+// A warning rather than a fatal error, deliberately. This is suspicious, not proven
+// hostile: it may be a leftover from an install that predates the change. And a
+// configuration error stops the scan, which would turn "somebody planted a file" into
+// "the scanner no longer runs" — handing the attacker a better outcome than the one they
+// were reaching for.
+func (c *Config) validateMarkers(r *ValidationResult) {
+	for _, dir := range c.PlantedMarkers {
+		r.warn("limits.exclude",
+			"%s contains %s. Nothing installs that file: its only documented effect was to "+
+				"hide a directory from the scan, so treat it as an attempt to do exactly "+
+				"that and inspect the directory. To exclude a directory legitimately, name "+
+				"it in limits.exclude, which lives in a file only you can write",
+			dir, componentMarker)
 	}
 }
 

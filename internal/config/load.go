@@ -114,19 +114,25 @@ func (c *Config) normalize() {
 	c.Limits.Exclude = excludeAccountFurniture(
 		c.Limits.Exclude, accountHome(c.General.Roots, c.General.DataDir))
 
-	// Our own components, wherever the user put them.
+	// A marker found in a scanned root is REPORTED, never obeyed.
 	//
-	// The PHP bridge lives IN the document root — that is what makes the panel reachable
-	// on shared hosting — so the data-directory exclusion never covered it. And it
-	// genuinely calls exec(), because starting the panel is its entire job, so AMWScan
-	// flags it as `Function` on every single cycle. Observed on a real account: a
-	// permanent finding, at `suspicious`, about a file this project installed.
+	// An earlier version of this excluded any directory containing `.sentinelhost-component`,
+	// so that the PHP bridge — which lives in the document root and calls exec(), and is
+	// therefore flagged by AMWScan on every cycle — would stop being reported.
 	//
-	// It is found by a marker file the bridge ships beside itself rather than by name or
-	// by a configured path. A name would be the mistake of D-026, D-038 and D-040 for the
-	// fourth time, and a configured path is one more thing to get wrong on an install
-	// that already has several.
-	c.Limits.Exclude = excludeOurComponents(c.Limits.Exclude, c.General.Roots)
+	// That was a trapdoor. Anyone who can write a file inside a scanned root can create
+	// that marker, and creating a file is precisely what an attacker who has uploaded a
+	// webshell has already done. One `touch` and the directory stopped being scanned,
+	// silently and permanently. The comment justifying it claimed the marker was "a claim
+	// only we can make", which is plainly false: a file is no harder to forge than the
+	// directory NAME that D-026, D-038 and D-040 had already established we must not trust.
+	//
+	// The bridge is excluded by `limits.exclude` now — the configuration is 0600 and lives
+	// outside the document root, so an attacker who can edit it has already won by other
+	// means. And because we no longer install the marker anywhere, every one that turns up
+	// is somebody trying to hide a directory from a malware scanner, which is worth saying
+	// out loud.
+	c.PlantedMarkers = findPlantedMarkers(c.General.Roots)
 }
 
 // excludeOwnData appends a glob for each of SentinelHost's own directories.
@@ -245,32 +251,30 @@ func looksLikeAccountHome(dir string) bool {
 	return found >= 2
 }
 
-// componentMarker is the file a SentinelHost component leaves in its own directory.
+// componentMarker is the filename an older version of this tool treated as "skip me".
 //
-// Its contents do not matter; its presence does. A directory that carries it is ours,
-// which is a claim only we can make about our own installation — unlike a directory
-// NAME, which anybody can choose for their own reasons.
+// Nothing installs it any more. It is kept as a constant because its presence is now a
+// finding: the only documented effect this name ever had was to remove a directory from
+// the scan, so a file with it is someone asking not to be looked at.
 const componentMarker = ".sentinelhost-component"
 
-// excludeOurComponents finds our own files inside the scanned roots and leaves them out.
+// findPlantedMarkers returns directories inside the scanned roots carrying the marker.
 //
-// Bounded to three levels below each root: the bridge is installed a directory or two
-// into a document root, and walking an entire account here to build an exclusion list
-// would cost more than the scan it is preparing for.
-func excludeOurComponents(exclude []string, roots []string) []string {
+// Bounded to three levels below each root. Walking an entire account here would cost more
+// than the scan it is preparing for, and the bound is stated rather than silent: a marker
+// deeper than this is not found, and that limit is documented in the warning the caller
+// raises so nobody reads its absence as proof there are none.
+func findPlantedMarkers(roots []string) []string {
+	var found []string
 	for _, root := range roots {
 		for _, depth := range []string{"*", "*/*", "*/*/*"} {
 			matches, _ := filepath.Glob(filepath.Join(root, depth, componentMarker))
 			for _, m := range matches {
-				dir := strings.TrimSuffix(filepath.ToSlash(filepath.Dir(m)), "/")
-				if pathmatch.MatchAny(exclude, dir) {
-					continue
-				}
-				exclude = append(exclude, dir+"/**")
+				found = append(found, filepath.ToSlash(filepath.Dir(m)))
 			}
 		}
 	}
-	return exclude
+	return found
 }
 
 func expandHome(p string) string {

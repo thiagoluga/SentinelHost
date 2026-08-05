@@ -24,6 +24,10 @@ type Config struct {
 	// path records where this Config was read from, so Save() can return to the
 	// same place without the caller having to remember.
 	path string `toml:"-" json:"-"`
+	// PlantedMarkers are directories inside the scanned roots carrying the marker file an
+	// older version used to treat as "skip me". Never read from the TOML: it is discovered
+	// on the filesystem at load time, and it is a finding, not a setting.
+	PlantedMarkers []string `toml:"-" json:"-"`
 }
 
 // General gathers what defines the installation.
