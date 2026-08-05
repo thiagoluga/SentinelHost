@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/thiagoluga/SentinelHost/internal/config"
@@ -210,46 +211,75 @@ func looksLikeHomeFromOutside(dir string) bool {
 	return found >= 2
 }
 
-// The tool must not spend its credibility reporting itself.
+// A marker anyone can write is not a permission slip.
 //
-// The PHP bridge lives IN the document root — that is what makes the panel reachable on
-// shared hosting — so the data-directory exclusion never covered it. And it genuinely
-// calls exec(), because starting the panel is its whole job, so AMWScan flags it as
-// `Function` on every cycle. Observed on a real account: a permanent `suspicious` finding
-// about a file this project installed.
-func TestOurOwnComponentsAreNotScanned(t *testing.T) {
+// This used to exclude any directory containing `.sentinelhost-component`, so that the
+// PHP bridge would stop being flagged for calling exec(). Writing a file inside the
+// document root is the one thing an attacker who has uploaded a webshell has certainly
+// already managed, so one `touch` removed a directory from the scan — silently, and for
+// good. The justification written beside it claimed the marker was "a claim only we can
+// make", which is false in the most ordinary way: a file is no harder to create than the
+// directory NAME that D-026, D-038 and D-040 had already established we must not trust.
+func TestAPlantedMarkerDoesNotExcludeAnything(t *testing.T) {
 	root := t.TempDir()
-	bridge := filepath.Join(root, "sentinel")
-	if err := os.MkdirAll(bridge, 0o755); err != nil {
+	hideout := filepath.Join(root, "uploads")
+	if err := os.MkdirAll(hideout, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(bridge, ".sentinelhost-component"), []byte("ours\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(hideout, ".sentinelhost-component"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	cfg := writeConfig(t, "[general]\nroots = ["+tomlPath(root)+"]\n")
 
-	if !pathmatch.MatchAny(cfg.Limits.Exclude, filepath.Join(bridge, "index.php")) {
-		t.Errorf("the bridge is scanned, so it is flagged on every cycle for calling exec() "+
-			"— which is its entire purpose.\nexclusions: %v", cfg.Limits.Exclude)
+	if pathmatch.MatchAny(cfg.Limits.Exclude, filepath.Join(hideout, "shell.php")) {
+		t.Error("a directory was dropped from the scan because someone wrote a file in it. " +
+			"That is one touch away for anybody who can already upload a webshell")
 	}
 }
 
-// By the marker, never by the name. A scanner that trusted directory names would be told
-// what to ignore by whoever it was scanning — and this is the fourth time in this project
-// that a name has been mistaken for a path (D-026, D-038, D-040).
-func TestADirectoryNamedLikeOursIsStillScanned(t *testing.T) {
+// And it is reported, because the only documented effect that filename ever had was to
+// hide a directory from a malware scanner. Finding one is finding somebody trying.
+func TestAPlantedMarkerIsReported(t *testing.T) {
 	root := t.TempDir()
-	impostor := filepath.Join(root, "sentinel")
-	if err := os.MkdirAll(impostor, 0o755); err != nil {
+	hideout := filepath.Join(root, "uploads")
+	if err := os.MkdirAll(hideout, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// No marker file: it is just a directory somebody named `sentinel`.
+	if err := os.WriteFile(filepath.Join(hideout, ".sentinelhost-component"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	cfg := writeConfig(t, "[general]\nroots = ["+tomlPath(root)+"]\n")
 
-	if pathmatch.MatchAny(cfg.Limits.Exclude, filepath.Join(impostor, "shell.php")) {
-		t.Error("a directory was excluded for being called `sentinel`. An attacker who read " +
-			"this code would put their payload in one")
+	if len(cfg.PlantedMarkers) == 0 {
+		t.Fatal("the marker was found and said nothing; silence is what made it useful to " +
+			"whoever planted it")
+	}
+	var warned bool
+	for _, p := range cfg.Validate().Warnings() {
+		if strings.Contains(p.Message, ".sentinelhost-component") {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Error("no warning mentions the marker, so nobody reading the panel learns about it")
+	}
+}
+
+// It must stay a warning. A fatal error stops the scan, which would let anyone who can
+// write one file turn the scanner off completely — a better outcome for them than the
+// exclusion they were reaching for.
+func TestAPlantedMarkerDoesNotStopTheScan(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".sentinelhost-component"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := writeConfig(t, "[general]\nroots = ["+tomlPath(root)+"]\n")
+	for _, p := range cfg.Validate().Errors() {
+		if strings.Contains(p.Message, ".sentinelhost-component") {
+			t.Error("a planted marker made the configuration invalid, so writing one file " +
+				"switches the scanner off")
+		}
 	}
 }

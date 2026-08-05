@@ -1755,3 +1755,51 @@ The lesson is not that the reasoning was careless — it fit every fact availabl
 time. It is that the measurement which would have tested it was already written, already
 queued, and was dropped three times in favour of shipping. **A pending measurement is not
 a formality to get to later; it is the part that decides whether the explanation is true.**
+
+## D-050 — a marker anyone can write is not a permission slip
+
+**Context**: a review of the code written in this session, looking for anything that could
+hand an attacker the account. One finding, and it was introduced by D-044.
+
+D-044 excluded from the scan any directory containing `.sentinelhost-component`, so that
+the PHP bridge — which lives in the document root and calls `exec()`, and is therefore
+flagged by AMWScan on every cycle — would stop being reported. The justification written
+beside it:
+
+> Its presence is what tells the scanner to leave this directory alone. Not the
+> directory's name — anybody can call a directory `sentinel` […] a claim only we can make
+> about our own installation.
+
+**That is false in the most ordinary way.** A file is no harder to create than a directory
+name. Worse, creating a file inside the document root is *the one thing an attacker who
+has uploaded a webshell has certainly already managed* — it is the premise of the whole
+scenario this tool exists for. One `touch .sentinelhost-component` beside the payload and
+the directory stopped being scanned, **silently and permanently**.
+
+Two of this project's own rules were broken to build it. A name is not a path (D-026,
+D-038, D-040) — restated as "a file is not a proof", which is the same error one level
+along. And anything skipped is counted and reported; this was neither.
+
+**Decision**: the marker is reported, never obeyed.
+
+- **Nothing installs it any more.** The bridge is excluded through `limits.exclude`,
+  which lives in a 0600 file outside the document root. An attacker who can edit that has
+  already won by other means, so it is the only anchor worth having.
+- **Every marker found is a warning naming the directory**, because the only documented
+  effect that filename ever had was to hide a directory from a malware scanner. Finding
+  one is finding somebody trying.
+- **A warning, not a fatal error.** A configuration error stops the scan, which would let
+  anyone who can write one file switch the scanner off entirely — a better outcome for
+  them than the exclusion they were reaching for.
+
+**What the review cleared**: the `sendmail` transport executes via `argv` with no shell,
+from a fixed list of absolute paths or a configured one, never through `PATH`; message
+headers are refused if they contain CR, LF or NUL, so an attacker-chosen filename in a
+subject cannot forge a recipient; the panel's hash routing validates the tab name against
+a known set before it reaches a selector; and the store's queries bind parameters, with
+the only interpolation being an integer `LIMIT`.
+
+The lesson is narrower than "review your code". Both D-044 and this entry were written
+carefully, and D-044 argued *explicitly* against trusting a name — while trusting
+something equally forgeable. **A convincing argument for why one thing cannot be forged is
+not an argument about the thing you replaced it with.**
