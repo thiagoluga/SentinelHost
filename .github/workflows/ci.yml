@@ -48,6 +48,24 @@ jobs:
             php "$t"
           done
 
+  # The one check that cannot be done offline.
+  #
+  # Everything else about a catalogue entry is validated from the manifest alone, which
+  # means a reviewer merging a submission would be trusting one field they cannot see: the
+  # digest. This downloads each pinned URL and compares. It is also how a pin that has
+  # stopped resolving gets noticed here rather than on somebody's account.
+  catalog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Every pinned digest matches what is actually there
+        env:
+          SENTINELHOST_ONLINE: "1"
+        run: go test ./internal/catalog/ -count=1 -run TestEveryPinnedDigestMatches -v
+
   test:
     runs-on: ubuntu-latest
     steps:

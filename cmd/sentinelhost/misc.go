@@ -20,8 +20,16 @@ func cmdEngines(ctx context.Context, args []string) error {
 	fs, cfgPath := flagSet("engines")
 	install := fs.String("install", "", "install an engine in the user's space (slug)")
 	update := fs.String("update", "", "update an engine's signatures (slug, or 'all')")
+	available := fs.Bool("available", false, "list the rulesets this build can install")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+
+	// Answered before the configuration is opened: what this build can install does not
+	// depend on how this account is set up, and someone deciding whether to install
+	// something should not have to have a working config first.
+	if *available {
+		return printCatalogue(os.Stdout)
 	}
 
 	a, err := openApp(ctx, *cfgPath)
