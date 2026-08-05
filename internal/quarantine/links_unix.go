@@ -51,8 +51,16 @@ func otherNamesFor(path string) (int, error) {
 		// number, as the signal.
 		return 0, fmt.Errorf("could not read the link count of %s on this platform", path)
 	}
-	if st.Nlink == 0 {
+	if st.Nlink <= 1 {
 		return 0, nil
 	}
-	return int(st.Nlink) - 1, nil
+	// Nlink is unsigned and platform-sized. Clamping rather than converting: the caller
+	// only branches on "more than zero", and a wrap on a 32-bit build could turn a file
+	// with other names into one that looks safe to unlink — the exact failure this
+	// function exists to prevent, produced by the arithmetic meant to detect it.
+	const reportCap = 1 << 20
+	if others := uint64(st.Nlink) - 1; others < reportCap {
+		return int(others), nil
+	}
+	return reportCap, nil
 }

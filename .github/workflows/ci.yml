@@ -79,6 +79,15 @@ jobs:
         run: go test ./... -count=1
       - name: Tests with the race detector
         run: go test ./... -race -count=1 -short
+      # These skip on a Windows workstation, so this is the only place they run. Named
+      # explicitly and verbosely: a skipped test and a passing one are the same line in
+      # `go test` output without -v, and this repository has twice been caught by a green
+      # suite on Windows saying nothing about POSIX behaviour.
+      - name: The POSIX-only quarantine checks actually ran
+        run: |
+          go test ./internal/quarantine/ -count=1 -v             -run 'HardLinked|Symlink|PlainFileIsStill' | tee /tmp/posix.log
+          grep -q -- '--- PASS: TestAHardLinkedFileIsNotQuarantinedSilently' /tmp/posix.log
+          grep -q -- '--- PASS: TestASymlinkIsRefusedRatherThanUnlinked' /tmp/posix.log
 
   build:
     runs-on: ubuntu-latest
