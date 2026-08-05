@@ -1,0 +1,26 @@
+# Reviewed against the checklist in catalog/README.md.
+#
+# The one that matters: these rules were read for anything matching a file every WordPress
+# site has. `grep -ci 'wp-config|wp-load|wp-settings'` returns 0, and the rules are
+# structured around a payload plus an input vector rather than around filenames — a rule
+# that fired on wp-config.php would make SentinelHost quarantine every site that installed
+# this, which is a far better attack than writing a webshell.
+#
+# LICENCE: CC-BY-NC-4.0. Non-commercial. A hosting company installing this across customer
+# accounts would be violating it, which is why the panel shows the licence before
+# installing rather than filing it as metadata.
+slug     = "signature-base-webshells"
+name     = "signature-base webshell rules"
+homepage = "https://github.com/Neo23x0/signature-base"
+license  = "CC-BY-NC-4.0"
+kind     = "yara-rules"
+
+url    = "https://raw.githubusercontent.com/Neo23x0/signature-base/2f2378d5ff5290a8d4d27a04de9f4b258f76fe0f/yara/gen_webshells.yar"
+sha256 = "6876bdb29fe9cedc198d64b7e73d2d040c10918f47d40090b5d2ce1bf8c429d2"
+
+# Below the built-in engines, deliberately. Nothing submitted here should be able to reach
+# the confirmed threshold on its own.
+weight     = 0.5
+confidence = "heuristic"
+
+summary = "Webshell detection by Arnim Rupp, from the signature-base collection. Matches on a payload plus an input vector rather than on filenames."
