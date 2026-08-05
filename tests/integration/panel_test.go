@@ -641,3 +641,28 @@ func TestACrossSitePageCannotActEvenWithAValidSession(t *testing.T) {
 		t.Error("the panel's own page was refused: the check blocks legitimate use")
 	}
 }
+
+// The token must not outlive its purpose.
+//
+// Left on disk it is a second credential nobody is watching — and one that would let
+// whoever can read it claim the panel again if the database were ever removed, which a
+// webshell running as the account user can do.
+func TestTheSetupTokenIsGoneOnceThePasswordExists(t *testing.T) {
+	p := setupPanel(t)
+	tokenPath := filepath.Join(p.cfg.General.DataDir, "setup-token")
+
+	if _, err := os.Stat(tokenPath); err != nil {
+		t.Fatalf("no token before setup, so this test proves nothing: %v", err)
+	}
+
+	st, _ := p.req(t, "POST", "/api/setup", map[string]any{
+		"password": "strong-test-password", "setup_token": p.setupToken,
+	})
+	if st != http.StatusOK {
+		t.Fatalf("setup: %d", st)
+	}
+
+	if _, err := os.Stat(tokenPath); !os.IsNotExist(err) {
+		t.Errorf("the setup token is still on disk after the password was set (%v)", err)
+	}
+}

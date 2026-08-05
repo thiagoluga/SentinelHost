@@ -67,6 +67,14 @@ func (s *Server) handleSetup(w http.ResponseWriter, req *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "%v", err)
 		return
 	}
+
+	// The token has done its job. Leaving it on disk would keep a second credential alive
+	// for a panel that now has a password — one nobody is watching, and one that would let
+	// whoever reads it claim the panel again if the database were ever removed.
+	s.cfgMu.RLock()
+	dataDir := s.cfg.General.DataDir
+	s.cfgMu.RUnlock()
+	clearSetupToken(dataDir)
 	_ = s.store.Log(req.Context(), store.Event{
 		Level: "info", Category: store.CatAuth,
 		Message: "the panel password was set on first access",
