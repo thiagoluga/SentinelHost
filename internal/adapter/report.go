@@ -17,6 +17,22 @@ import "github.com/thiagoluga/SentinelHost/internal/schema"
 // honest one, because it says what the engine actually looked at rather than what it was
 // pointed at.
 func NewScanReport(engineSlug string, raw RawOutput) schema.ScanReport {
+	// Paths the engine could not be asked about are counted here, once, for every
+	// adapter — and subtracted from FilesScanned, because they were not.
+	//
+	// FilesScanned defaulting to PathsRequested is the assumption that everything asked
+	// for was looked at. A path holding a newline breaks that: it cannot be written into
+	// a one-path-per-line scope file, so it is refused before the engine starts. Leaving
+	// the two equal would report full coverage over a file nobody opened.
+	var skipped map[string]int
+	scanned := raw.PathsRequested
+	if raw.UnscannablePaths > 0 {
+		skipped = map[string]int{UnscannablePathName: raw.UnscannablePaths}
+		if scanned >= raw.UnscannablePaths {
+			scanned -= raw.UnscannablePaths
+		}
+	}
+
 	return schema.ScanReport{
 		SchemaVersion: schema.Version,
 		ScanID:        raw.ScanID,
@@ -27,8 +43,9 @@ func NewScanReport(engineSlug string, raw RawOutput) schema.ScanReport {
 		Status:        schema.StatusCompleted,
 		Scope: schema.Scope{
 			Root: raw.Root, Mode: raw.Mode,
-			FilesConsidered: raw.PathsRequested,
-			FilesScanned:    raw.PathsRequested,
+			FilesConsidered:     raw.PathsRequested,
+			FilesScanned:        scanned,
+			SkippedReasonCounts: skipped,
 		},
 		Findings: []schema.Finding{},
 		RawRef:   raw.RawRef,

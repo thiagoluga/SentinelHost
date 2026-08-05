@@ -82,7 +82,11 @@ func openApp(ctx context.Context, configPath string) (*app, error) {
 		cfg:      cfg,
 		store:    st,
 		registry: newRegistry(),
-		vault:    quarantine.New(cfg.QuarantineDir(), cfg.Quarantine, st),
+		// Bounded to the configured roots: a path that arrived from engine output rather
+		// than from the walk is a parser bug or a forged report, and either way it is not
+		// something to delete.
+		vault: quarantine.New(cfg.QuarantineDir(), cfg.Quarantine, st).
+			WithRoots(cfg.General.Roots),
 	}, nil
 }
 

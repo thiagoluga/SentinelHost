@@ -221,11 +221,15 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 	// The target list goes through --scan-list. There is NO "@file" syntax in
 	// yara — that assumption was in the code and only fell when the real engine
 	// was run in a Linux container.
-	listFile, cleanup, err := adapter.WriteTargetList(env.DataDir, Slug, req.Paths)
+	listFile, cleanup, refused, err := adapter.WriteTargetList(env.DataDir, Slug, req.Paths)
 	if err != nil {
 		return adapter.RawOutput{Engine: Slug, Status: schema.StatusFailed}, err
 	}
 	defer cleanup()
+	// Counted, never dropped quietly. A path holding a newline cannot be expressed in a
+	// one-path-per-line list, and a file nobody looked at must not be indistinguishable
+	// from one that was looked at and found clean.
+	unscannable := len(refused)
 	args = append(args, "--scan-list")
 
 	args = append(args, env.ExtraArgs...)
@@ -242,6 +246,7 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 	})
 
 	out := adapter.FromExecResult(req, Slug, res)
+	out.UnscannablePaths = unscannable
 	if res.Abstains() {
 		return out, res.Err
 	}

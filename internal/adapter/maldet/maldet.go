@@ -314,9 +314,11 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 	// remove; the other two branches leave nothing behind, and a single deferred call
 	// keeps the removal in one place rather than on every return path.
 	cleanup := func() { /* nothing was written yet */ }
+	unscannable := 0
 	switch {
 	case len(req.Paths) > 0:
-		listFile, done, err := adapter.WriteTargetList(env.DataDir, Slug, req.Paths)
+		listFile, done, refused, err := adapter.WriteTargetList(env.DataDir, Slug, req.Paths)
+		unscannable = len(refused)
 		if err != nil {
 			out.Status = schema.StatusFailed
 			out.FinishedAt = time.Now()
@@ -348,6 +350,9 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 		Timeout: req.Timeout,
 	})
 	out.RawRef = scan.RawRef
+	// Counted, not dropped: a path holding a newline cannot be written into maldet's
+	// one-path-per-line file list, so it was refused before the engine started.
+	out.UnscannablePaths = unscannable
 
 	if scan.Abstains() {
 		out.Status = scan.Status

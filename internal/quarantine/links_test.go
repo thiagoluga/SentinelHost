@@ -121,3 +121,38 @@ func TestAPlainFileIsStillQuarantined(t *testing.T) {
 		t.Errorf("the vault copy is missing: %v", err)
 	}
 }
+
+// A path that did not come from the walk must not be acted on.
+//
+// Engine output is text. A forged `File:` header in an AMWScan report, or a mis-parse,
+// produces a path that reaches the vault — and the vault deletes things. Nothing between
+// the parser and os.Remove asserted the path was one this tool had walked.
+func TestAPathOutsideTheRootsIsRefused(t *testing.T) {
+	e := setup(t)
+	v := e.vault.WithRoots([]string{e.site})
+
+	outside := filepath.Join(t.TempDir(), "not-ours.php")
+	if err := os.WriteFile(outside, []byte(payload), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := v.Quarantine(context.Background(), "v_1", outside, "")
+	if err == nil {
+		t.Fatal("a file outside every configured root was quarantined")
+	}
+	if !errors.Is(err, quarantine.ErrOutsideRoots) {
+		t.Errorf("refused, but not for being outside the roots: %v", err)
+	}
+	if _, err := os.Stat(outside); err != nil {
+		t.Errorf("it was removed anyway: %v", err)
+	}
+
+	// Inside still works, or containment has switched quarantine off.
+	inside := filepath.Join(e.site, "flagged.php")
+	if err := os.WriteFile(inside, []byte(payload), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := v.Quarantine(context.Background(), "v_2", inside, ""); err != nil {
+		t.Fatalf("a file inside the root was refused: %v", err)
+	}
+}

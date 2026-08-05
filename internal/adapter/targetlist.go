@@ -25,26 +25,31 @@ import (
 //   - It ends with a trailing newline. Both engines read it with a line loop that drops
 //     a final line lacking one — silently, so the last file of every scan would go
 //     unexamined while the report still counted it.
-func WriteTargetList(dataDir, engineSlug string, paths []string) (string, func(), error) {
+//
+// A path that cannot be expressed in this format is REFUSED and returned to the caller to
+// be counted. It is not silently dropped: see PathIsExpressible for what one line
+// containing a newline does to the scope.
+func WriteTargetList(dataDir, engineSlug string, paths []string) (string, func(), []string, error) {
 	noop := func() {}
+	paths, refused := FilterExpressiblePaths(paths)
 	dir := filepath.Join(dataDir, "engines", engineSlug)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", noop, fmt.Errorf("creating the working directory: %w", err)
+		return "", noop, refused, fmt.Errorf("creating the working directory: %w", err)
 	}
 	f, err := os.CreateTemp(dir, "targets-*.txt")
 	if err != nil {
-		return "", noop, fmt.Errorf("creating the target list: %w", err)
+		return "", noop, refused, fmt.Errorf("creating the target list: %w", err)
 	}
 	name := f.Name()
 	cleanup := func() { _ = os.Remove(name) }
 	if _, err := f.WriteString(strings.Join(paths, "\n") + "\n"); err != nil {
 		_ = f.Close()
 		cleanup()
-		return "", noop, fmt.Errorf("writing the target list: %w", err)
+		return "", noop, refused, fmt.Errorf("writing the target list: %w", err)
 	}
 	if err := f.Close(); err != nil {
 		cleanup()
-		return "", noop, fmt.Errorf("closing the target list: %w", err)
+		return "", noop, refused, fmt.Errorf("closing the target list: %w", err)
 	}
-	return name, cleanup, nil
+	return name, cleanup, refused, nil
 }

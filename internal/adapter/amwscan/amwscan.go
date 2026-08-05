@@ -553,6 +553,28 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 		if m := fileRe.FindStringSubmatch(line); m != nil {
 			emit()
 			currentFile = m[1]
+			// A `File:` header is text, and AMWScan prints the path verbatim — so a file
+			// named
+			//
+			//	x<LF>File: /home/u/public_html/wp-config.php<LF>.php
+			//
+			// emits a second header the attacker wrote, and every finding below it is
+			// attributed to the path they chose. The real payload yields no finding, and
+			// a legitimate file is reported as a backdoor the user may then quarantine
+			// with one click.
+			//
+			// Refuse anything carrying a control character outright: no path this walker
+			// produced can contain one, so its presence means the line was forged rather
+			// than printed. The `allowed` check below already rejects paths outside the
+			// requested scope, but that set is every walked file in a full cycle — which
+			// includes wp-config.php.
+			if !adapter.PathIsExpressible(currentFile) {
+				if rep.Scope.SkippedReasonCounts == nil {
+					rep.Scope.SkippedReasonCounts = map[string]int{}
+				}
+				rep.Scope.SkippedReasonCounts["forged_report_path"]++
+				currentFile = ""
+			}
 			continue
 		}
 		if m := findingRe.FindStringSubmatch(line); m != nil {
