@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/thiagoluga/SentinelHost/internal/adapter"
 	"io"
 	"os"
 	"path/filepath"
@@ -42,6 +43,8 @@ var (
 	ErrNotInVault = errors.New("the item is not in the vault")
 	// ErrRestoreTargetExists means a file already exists at the original path.
 	ErrRestoreTargetExists = errors.New("a file already exists at the original path")
+	// ErrOutsideRoots means the path is not under anything this tool was asked to scan.
+	ErrOutsideRoots = errors.New("the path is outside every configured root")
 	// ErrNotAPlainFile means the path is a link, or something else that os.Remove would
 	// not neutralize. Its own error because the caller must not retry it as a transient
 	// failure: the answer is to look at what is actually there.
@@ -60,6 +63,19 @@ type Vault struct {
 	store *store.Store
 	// now is injectable in the retention tests.
 	now func() time.Time
+	// roots bounds what may be acted on. Empty means unbounded, which is what every
+	// existing caller gets until it says otherwise — a containment check that silently
+	// blocked legitimate quarantines would be worse than the hole it closes.
+	roots []string
+}
+
+// WithRoots bounds the vault to the configured scan roots.
+//
+// Separate from New so that adding containment does not change the meaning of every
+// existing construction site. A vault with no roots behaves exactly as before.
+func (v *Vault) WithRoots(roots []string) *Vault {
+	v.roots = append([]string(nil), roots...)
+	return v
 }
 
 // New creates the vault.
@@ -98,6 +114,26 @@ func (v *Vault) Quarantine(ctx context.Context, verdictID, path, expectedSHA str
 	info, err := os.Stat(path)
 	if err != nil {
 		return item, fmt.Errorf("reading the file's metadata: %w", err)
+	}
+
+	// Is this a path we could have been asked about at all?
+	//
+	// A path parsed out of engine text reaches here: it becomes a verdict, and a verdict
+	// can be quarantined. Nothing between the parser and os.Remove asserted the path was
+	// one this tool had walked — so a forged `File:` header in an engine report, or a
+	// mis-parse, could name any file on the account.
+	//
+	// A control character is proof of forgery rather than of a strange filename: no path
+	// the walker produces can contain one, because such a path cannot be written into an
+	// engine's scope file in the first place.
+	if !adapter.PathIsExpressible(path) {
+		return item, fmt.Errorf("%w: %q contains a control character. No path this scanner "+
+			"walked can, so this one was not produced by a scan of yours", ErrNotAPlainFile, path)
+	}
+	if len(v.roots) > 0 && !adapter.PathIsWithinAny(path, v.roots) {
+		return item, fmt.Errorf("%w: %s is outside every configured root. A path that "+
+			"arrived from engine output rather than from the walk is a parser bug or a "+
+			"forged report, and either way it is not something to delete", ErrOutsideRoots, path)
 	}
 
 	// Would removing this name actually remove the content?

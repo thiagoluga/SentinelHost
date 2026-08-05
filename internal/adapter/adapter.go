@@ -155,6 +155,14 @@ type RawOutput struct {
 	RawRef string
 	// PathsRequested is how many paths the orchestrator asked to be scanned.
 	PathsRequested int
+	// UnscannablePaths counts paths the engine could not be asked about at all.
+	//
+	// A path holding a newline cannot be expressed in a one-path-per-line scope file, so
+	// it is refused before the engine runs. It travels here so Parse can fold it into
+	// SkippedReasonCounts: the file was not scanned, and that has to reach the report
+	// rather than being lost between Scan and Parse.
+	UnscannablePaths int
+
 	// Truncated indicates the capture hit its ceiling.
 	Truncated bool
 
