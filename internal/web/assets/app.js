@@ -137,8 +137,12 @@ function showGate(firstAccess = false) {
 function showApp() {
   $('#gate').hidden = true;
   $('#app').hidden = false;
-  const active = $('.tab.active');
-  loadTab(active ? active.id.replace(/^tab-/, '') : 'dash');
+
+  // The URL decides, then whatever the markup marked active, then the overview. The last
+  // fallback matters: a hash naming a tab that no longer exists must not leave the panel
+  // with nothing selected.
+  const marked = $('.tab.active');
+  showTab(tabFromHash() || (marked ? marked.id.replace(/^tab-/, '') : 'dash') || 'dash');
 }
 
 $('#gate-form').addEventListener('submit', async (ev) => {
@@ -171,15 +175,61 @@ $('#btn-logout').addEventListener('click', async () => {
 
 // ------------------------------------------------------------------ navigation
 
+/**
+ * Which tab is open lives in the URL.
+ *
+ * Reloading a panel and landing back on the overview is a small thing that happens
+ * constantly: this one runs behind a bridge that restarts the backend, so a reload is
+ * routine rather than rare. It also makes a tab linkable — "look at the findings" can be
+ * a URL rather than an instruction.
+ *
+ * The hash, not a query string. It never reaches the server, so it costs nothing on an
+ * account with a ceiling on requests, and it survives the bridge without the bridge
+ * having to forward anything. Back and forward work for free, because changing the hash
+ * is a history entry and `hashchange` is what reacts to it.
+ */
+function tabFromHash() {
+  // Anything not in TAB_LOADERS is not a tab, whatever the URL says.
+  //
+  // This value comes from the address bar, so it is attacker-chosen: a link someone else
+  // wrote opens this panel. It is validated against the known set BEFORE it is used to
+  // build a selector — `#tab-` plus arbitrary text is a selector injection at best and a
+  // thrown exception that blanks the panel at worst.
+  const name = decodeURIComponent((location.hash || '').replace(/^#/, ''));
+  return Object.prototype.hasOwnProperty.call(TAB_LOADERS, name) ? name : '';
+}
+
+/** Show a tab. The name must already have been validated. */
+function showTab(tab) {
+  const pane = $('#tab-' + tab);
+  if (!pane) return;
+
+  $$('.nav-btn').forEach((x) => x.classList.toggle('active', x.dataset.tab === tab));
+  $$('.tab').forEach((x) => x.classList.remove('active'));
+  pane.classList.add('active');
+
+  // Fetched when it is first opened, not before. See TAB_LOADERS.
+  loadTab(tab);
+}
+
 $$('.nav-btn').forEach((b) => {
   b.addEventListener('click', () => {
-    $$('.nav-btn').forEach((x) => x.classList.remove('active'));
-    $$('.tab').forEach((x) => x.classList.remove('active'));
-    // Fetched when it is first opened, not before. See TAB_LOADERS.
-    loadTab(b.dataset.tab);
-    b.classList.add('active');
-    $('#tab-' + b.dataset.tab).classList.add('active');
+    // Set the hash and let the one listener below do the work, rather than switching here
+    // and updating the URL as well. Two paths that both change tabs drift apart — one of
+    // them ends up missing a step, and it is always the one nobody clicks.
+    if (tabFromHash() === b.dataset.tab) {
+      showTab(b.dataset.tab); // same tab: no hashchange will fire, so act directly
+      return;
+    }
+    location.hash = b.dataset.tab;
   });
+});
+
+window.addEventListener('hashchange', () => {
+  const tab = tabFromHash();
+  // An unknown hash leaves the panel where it is instead of blanking it. Someone editing
+  // the URL by hand should not be able to produce an empty page.
+  if (tab) showTab(tab);
 });
 
 // -------------------------------------------------------------------- overview

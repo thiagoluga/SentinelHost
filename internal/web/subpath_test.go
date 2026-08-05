@@ -246,8 +246,63 @@ func TestThePanelDoesNotLoadEveryTabAtStartup(t *testing.T) {
 // Opening a tab has to fetch it. A lazy panel that never loads is worse than an eager one.
 func TestOpeningATabLoadsIt(t *testing.T) {
 	js := readAsset(t, "app.js")
-	if !strings.Contains(js, "loadTab(b.dataset.tab)") {
-		t.Error("switching tabs does not load the tab, so every pane after the first is blank")
+	// Every route into a tab goes through showTab, and showTab loads it. Asserting on the
+	// pair rather than on one call site is the point: this test previously matched
+	// `loadTab(b.dataset.tab)` and broke the moment the click handler stopped being the
+	// only way to open a tab, while the behaviour it names was intact.
+	//
+	// It is still a string match, and a string match cannot tell that a pane filled. What
+	// can is a browser: clicking through every tab, reloading on one, and reading back
+	// which pane is active. That was done for the hash routing below.
+	if !strings.Contains(js, "function showTab(") {
+		t.Fatal("there is no single place that opens a tab, so the ways of opening one can " +
+			"drift apart")
+	}
+	body := js[strings.Index(js, "function showTab("):]
+	if end := strings.Index(body, "\n}"); end > 0 {
+		body = body[:end]
+	}
+	if !strings.Contains(body, "loadTab(") {
+		t.Error("showTab does not load the tab, so every pane after the first is blank")
+	}
+}
+
+// The open tab belongs in the URL: a reload has to land where the user was, and a tab
+// should be linkable.
+//
+// This panel runs behind a bridge that restarts the backend, so reloading is routine
+// rather than rare, and losing your place every time is a small cost paid constantly.
+func TestTheOpenTabIsInTheURL(t *testing.T) {
+	js := readAsset(t, "app.js")
+
+	if !strings.Contains(js, "hashchange") {
+		t.Error("nothing reacts to the URL changing, so back and forward do not move between tabs")
+	}
+	if !strings.Contains(js, "tabFromHash()") {
+		t.Error("the URL is never read, so a reload cannot restore the tab that was open")
+	}
+}
+
+// The hash comes from the address bar, which means whoever sends a link chooses it. It is
+// concatenated into "#tab-" + name to find the pane, so an unvalidated value is a selector
+// built from attacker text — a thrown exception that blanks the panel, at best.
+func TestTheTabNameFromTheURLIsValidatedBeforeUse(t *testing.T) {
+	js := readAsset(t, "app.js")
+	i := strings.Index(js, "function tabFromHash(")
+	if i < 0 {
+		t.Fatal("no tabFromHash to validate anything")
+	}
+	body := js[i:]
+	if end := strings.Index(body, "\n}"); end > 0 {
+		body = body[:end]
+	}
+	// It must be checked against the known set, not merely trimmed or escaped.
+	if !strings.Contains(body, "TAB_LOADERS") {
+		t.Error("the tab name from the URL is not checked against the known tabs before it " +
+			"is used to build a selector")
+	}
+	if !strings.Contains(body, "hasOwnProperty") && !strings.Contains(body, " in TAB_LOADERS") {
+		t.Error("the check does not look like a membership test")
 	}
 }
 
