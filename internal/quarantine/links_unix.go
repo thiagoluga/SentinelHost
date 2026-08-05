@@ -59,8 +59,9 @@ func otherNamesFor(path string) (int, error) {
 	// with other names into one that looks safe to unlink — the exact failure this
 	// function exists to prevent, produced by the arithmetic meant to detect it.
 	const reportCap = 1 << 20
-	if others := uint64(st.Nlink) - 1; others < reportCap {
-		return int(others), nil
+	others := st.Nlink - 1 // native unsigned type; Nlink > 1 was established above
+	if others > reportCap {
+		return reportCap, nil
 	}
-	return reportCap, nil
+	return int(others), nil
 }
