@@ -180,6 +180,17 @@ func (s *Server) protect(h http.HandlerFunc) http.Handler {
 			})
 			return
 		}
+		// A valid cookie says WHO is asking. It does not say what page asked, and on this
+		// deployment those are different questions: the panel lives inside the document
+		// root of the site it protects, so a compromised subdomain is same-site and keeps
+		// the cookie.
+		if err := s.requireSameOrigin(req); err != nil {
+			writeJSON(w, http.StatusForbidden, map[string]any{
+				"error": "this request came from another page. State-changing requests to " +
+					"the panel have to originate from the panel itself",
+			})
+			return
+		}
 		h(w, req)
 	}))
 }
@@ -236,5 +247,9 @@ func isSecureRequest(req *http.Request) bool {
 	}
 	// The hosting's proxy terminating TLS. We only trust this when the panel is not
 	// on localhost, because on localhost there is no proxy at all.
-	return strings.EqualFold(req.Header.Get("X-Forwarded-Proto"), "https")
+	// The LAST value, not the first. The bridge forwards the client's own headers and
+	// then appends its computed ones, so a caller who sends X-Forwarded-Proto: http has
+	// their value arrive first — and Header.Get returns the first. That let the caller
+	// decide whether their own session cookie got the Secure flag.
+	return strings.EqualFold(lastHeaderValue(req, "X-Forwarded-Proto"), "https")
 }

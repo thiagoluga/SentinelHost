@@ -180,6 +180,16 @@ function forwardedHeaders(): array
         'transfer-encoding' => true, 'upgrade' => true, 'te' => true,
         'trailer' => true, 'proxy-authorization' => true, 'proxy-authenticate' => true,
         'content-length' => true, 'accept-encoding' => true,
+        // The client does not get to say what the scheme was, or who it was.
+        //
+        // These were forwarded and then the bridge appended its own — so both arrived,
+        // the client's first, and Go's Header.Get returns the first. A caller sending
+        // `X-Forwarded-Proto: http` to an HTTPS site made the panel drop the Secure flag
+        // from its own session cookie. The comment below claims these are "set from what
+        // actually happened"; they were being ADDED TO.
+        'x-forwarded-proto' => true, 'x-forwarded-for' => true,
+        'x-forwarded-host' => true, 'x-forwarded-port' => true,
+        'x-real-ip' => true, 'forwarded' => true,
     ];
 
     $out = [];

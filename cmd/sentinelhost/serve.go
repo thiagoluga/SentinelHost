@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/thiagoluga/SentinelHost/internal/store"
 	"os"
 	"strings"
 
@@ -59,7 +60,37 @@ OPTIONS
 				"Make sure the port is protected, or prefer an SSH tunnel:\n"+
 				"  ssh -L 8787:127.0.0.1:8787 user@server\n\n")
 	}
+	// First access needs a token, and this is where the owner gets it.
+	//
+	// Being first to reach the URL is not a credential. The panel sits at a guessable
+	// path and whoever claimed it was handed a session — and with it the ability to point
+	// an engine's binary at an uploaded file and run it as this account. Reading this
+	// token requires access to the account's own filesystem, which is what separates the
+	// person installing the panel from a visitor.
+	if !a.passwordAlreadySet(ctx) {
+		token, err := web.SetupToken(a.cfg.General.DataDir)
+		if err != nil {
+			return fmt.Errorf("preparing first access: %w", err)
+		}
+		fmt.Printf("\nFirst access. Paste this on the setup screen:\n\n    %s\n\n"+
+			"It is also in %s inside the data directory, readable only by this account.\n"+
+			"It stops working the moment the password is set.\n\n",
+			token, "setup-token")
+	}
+
 	fmt.Println("Ctrl-C to stop.")
 
 	return srv.ListenAndServe(ctx)
+}
+
+// passwordAlreadySet reports whether the panel has an owner.
+//
+// Fails CLOSED: an unreadable store answers "yes", so a database problem prints no token
+// rather than advertising a fresh one for a panel that already belongs to somebody.
+func (a *app) passwordAlreadySet(ctx context.Context) bool {
+	h, err := a.store.GetSetting(ctx, store.KeyPanelPasswordHash)
+	if err != nil {
+		return true
+	}
+	return h != ""
 }

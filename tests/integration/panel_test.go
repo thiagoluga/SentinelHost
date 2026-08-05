@@ -39,6 +39,11 @@ type panel struct {
 	store  *store.Store
 	site   string
 	cfgDir string
+	// setupToken is what the owner reads off the console on first start. First access
+	// needs it, because being first to reach the URL is not a credential: the panel sits
+	// at a guessable path, and whoever claimed it could point an engine at an uploaded
+	// file and run it as the account.
+	setupToken string
 }
 
 func setupPanel(t *testing.T) *panel {
@@ -77,9 +82,15 @@ func setupPanel(t *testing.T) *panel {
 
 	// A client with a cookie jar: the panel authenticates with a session cookie.
 	jar := &simpleJar{cookies: map[string]*http.Cookie{}}
+	// The token a real owner reads off the console when the panel starts unclaimed.
+	token, err := web.SetupToken(cfg.General.DataDir)
+	if err != nil {
+		t.Fatalf("SetupToken: %v", err)
+	}
+
 	return &panel{
 		srv: srv, http: &http.Client{Jar: jar, Timeout: 30 * time.Second},
-		cfg: cfg, store: st, site: site, cfgDir: base,
+		cfg: cfg, store: st, site: site, cfgDir: base, setupToken: token,
 	}
 }
 
@@ -149,7 +160,7 @@ func TestSC004TheCompletePanelFlow(t *testing.T) {
 	}
 
 	// 2. First access: set the password.
-	st, body := p.req(t, "POST", "/api/setup", map[string]any{"password": "short"})
+	st, body := p.req(t, "POST", "/api/setup", map[string]any{"password": "short", "setup_token": p.setupToken})
 	if st != http.StatusBadRequest {
 		t.Fatalf("a short password should be refused, got %d", st)
 	}
@@ -157,7 +168,7 @@ func TestSC004TheCompletePanelFlow(t *testing.T) {
 		t.Errorf("the message should explain the minimum, got %q", msg)
 	}
 
-	st, _ = p.req(t, "POST", "/api/setup", map[string]any{"password": "strong-test-password"})
+	st, _ = p.req(t, "POST", "/api/setup", map[string]any{"password": "strong-test-password", "setup_token": p.setupToken})
 	if st != http.StatusOK {
 		t.Fatalf("setup: %d", st)
 	}
@@ -177,7 +188,7 @@ func TestSC004TheCompletePanelFlow(t *testing.T) {
 
 	// 4. A second setup is refused: otherwise anyone who reached the port could
 	//    reset the password.
-	st, _ = p.req(t, "POST", "/api/setup", map[string]any{"password": "some-other-password"})
+	st, _ = p.req(t, "POST", "/api/setup", map[string]any{"password": "some-other-password", "setup_token": p.setupToken})
 	if st != http.StatusConflict {
 		t.Fatalf("resetting the password through /api/setup should be refused, got %d", st)
 	}
@@ -348,7 +359,7 @@ func TestThePanelRequiresATextualConfirmationToPurge(t *testing.T) {
 func TestThePanelLimitsLoginAttempts(t *testing.T) {
 	// With no limit, a panel exposed by accident becomes a brute-force target.
 	p := setupPanel(t)
-	st, _ := p.req(t, "POST", "/api/setup", map[string]any{"password": "strong-test-password"})
+	st, _ := p.req(t, "POST", "/api/setup", map[string]any{"password": "strong-test-password", "setup_token": p.setupToken})
 	if st != http.StatusOK {
 		t.Fatalf("setup: %d", st)
 	}
@@ -488,7 +499,7 @@ func TestThePanelRefusesAnInvalidConfiguration(t *testing.T) {
 
 func authenticate(t *testing.T, p *panel) {
 	t.Helper()
-	st, _ := p.req(t, "POST", "/api/setup", map[string]any{"password": "strong-test-password"})
+	st, _ := p.req(t, "POST", "/api/setup", map[string]any{"password": "strong-test-password", "setup_token": p.setupToken})
 	if st != http.StatusOK {
 		t.Fatalf("setup: %d", st)
 	}
@@ -531,4 +542,127 @@ func mustJSON(t *testing.T, v any) string {
 		t.Fatalf("marshal: %v", err)
 	}
 	return string(b)
+}
+
+// Being first to reach the URL is not a credential.
+//
+// /api/setup was guarded only by "has a password been set yet". The panel sits at a
+// guessable path — /sentinel/ is the documented example — and the .htaccess IP restriction
+// ships commented out, so whoever issued the request first became the administrator and
+// was handed a session on the spot. What that wins is not merely the panel: an
+// administrator can point an engine's binary path at a file they uploaded and trigger a
+// scan, which runs it as the hosting account.
+//
+// The window reopens if the database is ever deleted, and a webshell running as the
+// account user can delete it.
+func TestFirstAccessNeedsTheTokenOnlyTheAccountCanRead(t *testing.T) {
+	p := setupPanel(t)
+
+	st, body := p.req(t, "POST", "/api/setup", map[string]any{
+		"password": "attacker-chosen-password",
+	})
+	if st == http.StatusOK {
+		t.Fatal("a caller with no token claimed the panel, and with it the ability to run " +
+			"an uploaded file as this account")
+	}
+	if st != http.StatusForbidden {
+		t.Errorf("refused with %d; expected 403", st)
+	}
+	if !strings.Contains(fmt.Sprint(body), "setup token") {
+		t.Errorf("the refusal does not say what is missing: %v", body)
+	}
+
+	// A wrong token is no better than none.
+	st, _ = p.req(t, "POST", "/api/setup", map[string]any{
+		"password": "attacker-chosen-password", "setup_token": "not-the-token",
+	})
+	if st == http.StatusOK {
+		t.Fatal("a guessed token was accepted")
+	}
+
+	// And the real one works, or first access is impossible.
+	st, _ = p.req(t, "POST", "/api/setup", map[string]any{
+		"password": "strong-test-password", "setup_token": p.setupToken,
+	})
+	if st != http.StatusOK {
+		t.Fatalf("the owner could not claim the panel with the printed token: %d", st)
+	}
+}
+
+// A page on another origin must not be able to act, even holding a valid session.
+//
+// SameSite=Strict was the only defence, and it is a SITE control: the documented install
+// puts the panel inside the document root of the site it protects, so every subdomain of
+// the account is same-site and keeps the cookie. The premise for running a malware scanner
+// is that something on this account is already compromised.
+func TestACrossSitePageCannotActEvenWithAValidSession(t *testing.T) {
+	p := setupPanel(t)
+	st, _ := p.req(t, "POST", "/api/setup", map[string]any{
+		"password": "strong-test-password", "setup_token": p.setupToken,
+	})
+	if st != http.StatusOK {
+		t.Fatalf("setup: %d", st)
+	}
+
+	// The same session, from a page on a compromised subdomain.
+	req, err := http.NewRequest("POST", p.srv.URL+"/api/scan", strings.NewReader(`{"full":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Sec-Fetch-Site", "same-site")
+	for _, c := range p.http.Jar.Cookies(req.URL) {
+		req.AddCookie(c)
+	}
+	resp, err := p.http.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("a cross-site page triggered a scan with the owner's session: %d",
+			resp.StatusCode)
+	}
+
+	// The panel's own page still works, or the check has switched the panel off.
+	req2, _ := http.NewRequest("POST", p.srv.URL+"/api/scan", strings.NewReader(`{}`))
+	req2.Header.Set("Content-Type", "application/json")
+	req2.Header.Set("Sec-Fetch-Site", "same-origin")
+	for _, c := range p.http.Jar.Cookies(req2.URL) {
+		req2.AddCookie(c)
+	}
+	resp2, err := p.http.Do(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp2.Body.Close() }()
+	if resp2.StatusCode == http.StatusForbidden {
+		t.Error("the panel's own page was refused: the check blocks legitimate use")
+	}
+}
+
+// The token must not outlive its purpose.
+//
+// Left on disk it is a second credential nobody is watching — and one that would let
+// whoever can read it claim the panel again if the database were ever removed, which a
+// webshell running as the account user can do.
+func TestTheSetupTokenIsGoneOnceThePasswordExists(t *testing.T) {
+	p := setupPanel(t)
+	tokenPath := filepath.Join(p.cfg.General.DataDir, "setup-token")
+
+	if _, err := os.Stat(tokenPath); err != nil {
+		t.Fatalf("no token before setup, so this test proves nothing: %v", err)
+	}
+
+	st, _ := p.req(t, "POST", "/api/setup", map[string]any{
+		"password": "strong-test-password", "setup_token": p.setupToken,
+	})
+	if st != http.StatusOK {
+		t.Fatalf("setup: %d", st)
+	}
+
+	if _, err := os.Stat(tokenPath); !os.IsNotExist(err) {
+		t.Errorf("the setup token is still on disk after the password was set (%v)", err)
+	}
 }

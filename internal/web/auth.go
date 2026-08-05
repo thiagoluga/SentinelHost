@@ -171,7 +171,14 @@ func (s *Server) authenticated(req *http.Request) bool {
 // passwordSet answers whether a password has already been set.
 func (s *Server) passwordSet(ctx context.Context) bool {
 	h, err := s.store.GetSetting(ctx, store.KeyPanelPasswordHash)
-	return err == nil && h != ""
+	if err != nil {
+		// Fail CLOSED. This value gates /api/setup, so answering "no password is set"
+		// because the database could not be read would reopen first access on a panel
+		// that already has an owner. GetSetting maps a missing row to ("", nil), so a
+		// real error here means the store is broken, not that the panel is new.
+		return true
+	}
+	return h != ""
 }
 
 // setCookie writes the session cookie.
