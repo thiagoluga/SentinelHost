@@ -104,7 +104,7 @@ func (r *Runner) persist(ctx context.Context, reports []schema.ScanReport, verdi
 		for _, f := range rep.Findings {
 			if f.ID == "" {
 				// The orchestrator generates the ids, never the adapter (schema 1.1).
-				f.ID = verdict.FindingID(rep.ScanID, f.Engine, f.Rule, f.File.SHA256)
+				f.ID = verdict.FindingID(rep.ScanID, f.Engine, f.Rule, f.File.SHA256, f.File.Path)
 			}
 			if err := r.store.SaveFinding(ctx, f); err != nil {
 				failures = append(failures, err)

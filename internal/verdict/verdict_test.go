@@ -23,7 +23,7 @@ func engine() *verdict.Engine {
 func finding(eng, rule, sha, path string, conf schema.Confidence) schema.Finding {
 	return schema.Finding{
 		SchemaVersion: schema.Version,
-		ID:            verdict.FindingID("s_1", eng, rule, sha),
+		ID:            verdict.FindingID("s_1", eng, rule, sha, path),
 		Engine:        eng,
 		Rule:          rule,
 		File:          schema.FileRef{Path: path, SHA256: sha, SizeBytes: 1024},

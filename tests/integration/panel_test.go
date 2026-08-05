@@ -513,7 +513,7 @@ func createVerdict(t *testing.T, ctx context.Context, st *store.Store, file stri
 	}
 	v := schema.Verdict{
 		SchemaVersion: schema.Version,
-		VerdictID:     verdict.FindingID("s_panel", "test", "rule", sha),
+		VerdictID:     verdict.FindingID("s_panel", "test", "rule", sha, file),
 		FileSHA256:    sha,
 		FilePath:      file,
 		FileSize:      64,

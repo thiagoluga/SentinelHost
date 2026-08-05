@@ -224,12 +224,32 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 	r.act(ctx, opts, &sum)
 
 	// 6. Update the baseline and close.
-	if bl != nil {
+	//
+	// Only if something actually looked at the targets.
+	//
+	// The baseline records what the disk held so the next incremental cycle can skip what
+	// has not changed. It was written before the engines ran and saved unconditionally
+	// afterwards — so a cycle where every engine abstained still marked the files as seen,
+	// and the next cycle classified them Unchanged and never offered them to anybody. A
+	// webshell dropped an hour before a bad cycle would then go unscanned until the next
+	// full run, up to a week later, with every cycle in between reporting completed and
+	// zero findings.
+	//
+	// "Nothing voted" is already the condition that stops this cycle being called
+	// completed; it is the same condition that must stop the baseline advancing.
+	if bl != nil && sum.AnyEngineVoted() {
 		if err := bl.Save(r.cfg.BaselinePath()); err != nil {
 			// An unsaved baseline costs a more expensive cycle later, not the
 			// protection. Record it and move on.
 			r.log(ctx, "warn", store.CatSystem, "could not save the baseline: "+err.Error(), sum.ScanID, nil)
 		}
+	} else if bl != nil {
+		// Said out loud: the next cycle will redo this work, which is the correct
+		// outcome and a surprising one to meet in a log without explanation.
+		r.log(ctx, "warn", store.CatSystem,
+			"no engine voted, so the baseline was not advanced: these files will be "+
+				"offered to the engines again next cycle rather than treated as seen",
+			sum.ScanID, nil)
 	}
 
 	for _, v := range sum.Verdicts {
@@ -284,6 +304,7 @@ func (r *Runner) collectTargets(ctx context.Context, opts Options, sum *Summary)
 	}
 
 	var all []baseline.Entry
+	walked := 0
 	for _, root := range r.cfg.General.Roots {
 		res, err := baseline.Walk(ctx, baseline.WalkOptions{
 			Root:             root,
@@ -307,6 +328,24 @@ func (r *Runner) collectTargets(ctx context.Context, opts Options, sum *Summary)
 		}
 		sum.FilesConsidered += res.Considered
 		all = append(all, res.Entries...)
+		walked++
+	}
+
+	// Every root failed to walk, so this cycle looked at nothing.
+	//
+	// With a single configured root — the ordinary case — an unreadable one left `all`
+	// empty, which made `targets` empty, which made runEngines take its "nothing changed"
+	// branch and synthesise a completed, zero-finding report for every engine. The cycle
+	// then reported `{"status":"completed","files_considered":0,"verdicts":{}}` and exit
+	// 0, which to a webhook, a cron job or a monitor reads as "scanned everything, site is
+	// clean". A typo in general.roots, or public_html losing read permission after a
+	// control-panel change, produces that forever.
+	//
+	// Nothing validates that a root exists — validate.go checks only for empty and "/".
+	if walked == 0 && len(r.cfg.General.Roots) > 0 {
+		return nil, bl, fmt.Errorf("none of the %d configured root(s) could be walked, so "+
+			"nothing was scanned. Check general.roots and its permissions",
+			len(r.cfg.General.Roots))
 	}
 
 	// Hash only what changed in the size+mtime pair: that is what makes the

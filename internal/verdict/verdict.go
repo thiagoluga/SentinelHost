@@ -427,8 +427,17 @@ func verdictID(scanID, sha, path string) string {
 // FindingID generates a finding's id, also deterministically.
 //
 // The orchestrator generates the ids, never the adapter (schema section 1.1).
-func FindingID(scanID, engine, rule, sha string) string {
-	sum := sha256.Sum256([]byte(scanID + ":" + engine + ":" + rule + ":" + sha))
+//
+// The PATH is part of the identity, for the same reason it is part of verdictID: three
+// byte-identical copies of a payload produce three findings, and without the path they
+// produce one id. findings.id is a TEXT PRIMARY KEY written with ON CONFLICT DO NOTHING,
+// so two of the three rows were dropped in silence — and the panel, which fetches evidence
+// by (sha, scan, path), then showed a confirmed verdict with its votes above zero pieces
+// of evidence.
+//
+// verdictID was fixed for this and the fix was not carried down one layer.
+func FindingID(scanID, engine, rule, sha, path string) string {
+	sum := sha256.Sum256([]byte(scanID + ":" + engine + ":" + rule + ":" + sha + ":" + path))
 	return "f_" + hex.EncodeToString(sum[:])[:12]
 }
 

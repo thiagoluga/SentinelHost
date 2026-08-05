@@ -267,7 +267,7 @@ func buildCycle(t *testing.T, m Manifest) ([]schema.ScanReport, map[string]strin
 			}
 			byEngine[eng] = append(byEngine[eng], schema.Finding{
 				SchemaVersion: schema.Version,
-				ID:            verdict.FindingID("s_sc001", eng, s.Category, h),
+				ID:            verdict.FindingID("s_sc001", eng, s.Category, h, "/home/user/public_html/"+s.SimulatedPath),
 				Engine:        eng,
 				Rule:          ruleFor(eng, s),
 				File: schema.FileRef{
@@ -306,7 +306,7 @@ func buildCycle(t *testing.T, m Manifest) ([]schema.ScanReport, map[string]strin
 		for _, eng := range []string{"maldet", "amwscan"} {
 			byEngine[eng] = append(byEngine[eng], schema.Finding{
 				SchemaVersion: schema.Version,
-				ID:            verdict.FindingID("s_sc001", eng, "false_positive", h),
+				ID:            verdict.FindingID("s_sc001", eng, "false_positive", h, "/home/user/public_html/"+c.SimulatedPath),
 				Engine:        eng,
 				Rule:          "FALSE_POSITIVE_ON_OFFICIAL_FILE",
 				File: schema.FileRef{

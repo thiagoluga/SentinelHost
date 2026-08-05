@@ -1,9 +1,11 @@
 package web
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/thiagoluga/SentinelHost/internal/adapter"
@@ -150,12 +152,36 @@ func (s *Server) handleLogout(w http.ResponseWriter, req *http.Request) {
 func (s *Server) handleStatus(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 
-	last, _ := s.store.LastScan(ctx)
-	levels, _ := s.store.CountByLevel(ctx, "")
-	vault, _ := s.store.CountQuarantine(ctx)
-	engines, _ := s.store.ListEngineStates(ctx)
+	// Errors are reported, not rendered as zeros.
+	//
+	// Every one of these was discarded and the handler still answered 200, so a database
+	// the panel could not read produced {confirmed:0, likely:0, suspicious:0},
+	// pending_count 0 and engines {available:0}. That is indistinguishable from a healthy,
+	// clean account — the same lie by omission the scan report goes out of its way to
+	// prevent, on the screen a user checks to decide whether anything is wrong.
+	var failures []string
+	note := func(what string, err error) {
+		// "There is no scan yet" is an answer, not a failure. A fresh install has no last
+		// scan, and reporting that as a broken panel would make the first visit look like
+		// an outage. Only a real read error means the number below would be a zero that
+		// means "unknown".
+		// Both spellings: LastScan returns sql.ErrNoRows raw, the rest wrap ErrNotFound.
+		if err != nil && !errors.Is(err, store.ErrNotFound) && !errors.Is(err, sql.ErrNoRows) {
+			failures = append(failures, what)
+		}
+	}
 
-	pending, _ := s.store.ListVerdicts(ctx, store.VerdictFilter{PendingOnly: true, Limit: 200})
+	last, errLast := s.store.LastScan(ctx)
+	note("the last scan", errLast)
+	levels, errLevels := s.store.CountByLevel(ctx, "")
+	note("the verdict counts", errLevels)
+	vault, errVault := s.store.CountQuarantine(ctx)
+	note("the quarantine", errVault)
+	engines, errEngines := s.store.ListEngineStates(ctx)
+	note("the engines", errEngines)
+
+	pending, errPending := s.store.ListVerdicts(ctx, store.VerdictFilter{PendingOnly: true, Limit: 200})
+	note("the pending findings", errPending)
 
 	cfg := s.config()
 	allowed, reason := cfg.AutomaticActionAllowed(s.now())
@@ -170,6 +196,17 @@ func (s *Server) handleStatus(w http.ResponseWriter, req *http.Request) {
 		} else {
 			unavailable++
 		}
+	}
+
+	// A partial answer says so, in the payload, rather than passing zeros off as facts.
+	if len(failures) > 0 {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error": "the panel could not read " + strings.Join(failures, ", ") +
+				". The numbers below would be zeros that mean 'unknown', not 'none', so " +
+				"they are not being shown",
+			"unavailable": failures,
+		})
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
