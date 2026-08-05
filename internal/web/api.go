@@ -34,10 +34,22 @@ func (s *Server) handleSetup(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var body struct {
-		Password string `json:"password"`
+		Password   string `json:"password"`
+		SetupToken string `json:"setup_token"`
 	}
 	if err := decodeBody(req, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, "%v", err)
+		return
+	}
+
+	// Something only the account holder can read. Being first is not a credential: the
+	// panel sits at a guessable URL, and whoever won that race was handed a session and,
+	// with it, the ability to point an engine at a file they uploaded and run it.
+	if !s.validSetupToken(req.Context(), body.SetupToken) {
+		writeErr(w, http.StatusForbidden,
+			"first access needs the setup token. It is printed when the panel starts and "+
+				"stored in %s inside the data directory, which only this account can read",
+			setupTokenFile)
 		return
 	}
 	if len(body.Password) < 10 {
