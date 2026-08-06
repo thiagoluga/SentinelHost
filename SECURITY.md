@@ -55,8 +55,14 @@ move files. The failure modes worth reporting first:
 
 ## Supported versions
 
-There has been no tagged release yet. Until there is, `main` is the only supported
-version, and it is not recommended for anything you would mind losing.
+The latest `0.x` release is the only supported version. There is no long-term support
+branch and no backporting: with one maintainer, promising either would be a promise
+broken quietly.
+
+`0.x` is deliberate. The tool has been validated against one real cPanel account and a
+Linux container; it has not yet run on a VPS with root, or on a second hosting provider.
+Until it has, treat it as something that finds problems for you to look at rather than
+something to leave unattended over files you cannot replace.
 
 ## What we will do
 
