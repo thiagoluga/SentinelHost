@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -197,5 +198,46 @@ func TestTheDownloadHasACeiling(t *testing.T) {
 	b, err := ReadAll(strings.NewReader("01234"), 5)
 	if err != nil || len(b) != 5 {
 		t.Errorf("a payload at the ceiling was refused: %v", err)
+	}
+}
+
+// The replacement inherits the mode of what it replaces, minus write for anyone else.
+//
+// A constant 0755 would hand every other account on a shared machine read and execute on
+// the tool that guards this one. A constant 0700 would break an install where something
+// else legitimately runs it. And a binary this account executes on a schedule must not be
+// writable by anyone else, whatever the previous mode said.
+func TestTheReplacementInheritsTheModeWithoutGroupOrOtherWrite(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are not honoured here; production is Linux")
+	}
+	sign := withKey(t)
+
+	for _, c := range []struct{ before, want os.FileMode }{
+		{0o700, 0o700}, // the tight case stays tight
+		{0o755, 0o755}, // a working install is not broken
+		{0o777, 0o755}, // group and other write are cleared
+		{0o600, 0o700}, // never installed non-executable
+	} {
+		dir := t.TempDir()
+		target := filepath.Join(dir, "sentinelhost")
+		if err := os.WriteFile(target, []byte("old"), c.before); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(target, c.before); err != nil {
+			t.Fatal(err)
+		}
+
+		payload := []byte("new")
+		if _, err := Install(payload, sign(payload), target); err != nil {
+			t.Fatalf("installing over %04o: %v", c.before, err)
+		}
+		fi, err := os.Stat(target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fi.Mode().Perm(); got != c.want {
+			t.Errorf("replacing a %04o binary produced %04o, wanted %04o", c.before, got, c.want)
+		}
 	}
 }

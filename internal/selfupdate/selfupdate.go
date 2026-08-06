@@ -184,7 +184,24 @@ func Install(payload []byte, signature, targetPath string) (previous string, err
 	if err = tmp.Close(); err != nil {
 		return "", fmt.Errorf("closing the replacement: %w", err)
 	}
-	if err = os.Chmod(tmpName, 0o755); err != nil {
+	// The mode comes from the binary being replaced, not from a constant.
+	//
+	// Hard-coding 0755 would hand every other account on a shared machine read and execute
+	// on the tool that guards this one — and hard-coding 0700 would break an install where
+	// something else legitimately runs it. Inheriting keeps whatever was working and
+	// changes nothing the user did not choose.
+	//
+	// Group and other WRITE are cleared regardless: a binary this account executes on a
+	// schedule must not be writable by anyone else, whatever the previous mode said, and
+	// nothing legitimate depends on it being so.
+	mode := os.FileMode(0o700)
+	if fi, statErr := os.Stat(targetPath); statErr == nil {
+		mode = fi.Mode().Perm() &^ 0o022
+	}
+	// Owner-execute, always: a replacement that cannot run is a scanner that silently
+	// stopped, which is the failure this project exists to prevent.
+	mode |= 0o100
+	if err = os.Chmod(tmpName, mode); err != nil {
 		return "", fmt.Errorf("making the replacement executable: %w", err)
 	}
 
