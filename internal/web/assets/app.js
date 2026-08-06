@@ -1083,17 +1083,43 @@ async function loadUpdate() {
   try {
     s = await api('/api/update');
   } catch {
-    // A failed check is not news. It is reported on the Settings tab, where somebody
-    // looking for it will find it, rather than as a banner nobody can act on.
+    // A failed check is not news. It is reported where somebody looking for it will find
+    // it, rather than as a banner nobody can act on.
     return;
   }
-  if (!s || !s.newer) return;
+  if (!s) return;
 
-  // textContent throughout: these strings come from a release listing, which is not ours.
+  // The running version, always — whether or not there is anything to update to. Somebody
+  // reporting a problem needs to be able to say which version they are on without a shell,
+  // and until now the panel never said.
+  const side = $('#side-version');
+  if (side && s.current) side.textContent = s.current;
+
+  if (!s.newer) return;
+
+  // textContent throughout: every string below comes from a release listing, which is not
+  // ours. The notes especially — they are markdown written by whoever cut the release, and
+  // they are displayed, never interpreted.
   $('#update-title').textContent = `SentinelHost ${s.latest} is available`;
   $('#update-detail').textContent =
     `You are running ${s.current}. The new binary is verified against the signing key ` +
     `built into this one, and the current binary is kept so you can go back.`;
+
+  const box = $('#update-notes-box');
+  if (s.notes && s.notes.trim()) {
+    $('#update-notes').textContent = s.notes.trim();
+    box.hidden = false;
+  } else {
+    box.hidden = true;
+  }
+  const link = $('#update-notes-link');
+  if (s.notes_url) {
+    link.href = s.notes_url;
+    link.hidden = false;
+  } else {
+    link.hidden = true;
+  }
+
   banner.hidden = false;
 }
 

@@ -61,6 +61,14 @@ type Release struct {
 	URL       string
 	Signature string
 	SHA256    string
+
+	// Notes is the release body, and NotesURL the page it came from.
+	//
+	// Carried so the panel can answer "what am I about to install" without the user
+	// leaving for GitHub. It is text written by whoever cut the release — displayed, never
+	// interpreted, and never trusted for anything but reading.
+	Notes    string
+	NotesURL string
 }
 
 // Verify checks a downloaded release against the compiled-in key.

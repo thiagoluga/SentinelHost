@@ -326,3 +326,20 @@ legend{color:var(--muted);font-size:11px;padding:0 4px}
   padding:.4rem .8rem; border-radius:6px; cursor:pointer;
 }
 .update-banner[hidden]{display:none}
+
+/* The banner lays out as: text, actions, then the notes on their own full-width row. */
+.update-banner{align-items:flex-start}
+.update-banner>div:first-child{flex:1 1 18rem}
+.update-actions{display:flex; gap:.5rem; align-items:center}
+.update-notes{flex-basis:100%; margin-top:.35rem}
+.update-notes summary{cursor:pointer; color:var(--muted); font-size:.85rem}
+/* Release notes are text written by whoever cut the release. Rendered in a scrolling box
+ * so a long one cannot push the rest of the page away, and pre-wrap so the line breaks
+ * the author wrote survive without any of it being interpreted as markup. */
+.update-notes pre{
+  margin:.5rem 0; padding:.6rem .75rem; max-height:14rem; overflow:auto;
+  background:var(--bg); border:1px solid var(--line); border-radius:6px;
+  white-space:pre-wrap; word-break:break-word;
+  font-size:.8rem; line-height:1.45; color:var(--fg);
+}
+.update-notes a{font-size:.8rem}

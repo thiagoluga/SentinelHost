@@ -59,8 +59,15 @@
     <strong id="update-title"></strong>
     <p id="update-detail"></p>
   </div>
-  <button id="update-install" class="btn-primary">Install it</button>
-  <button id="update-dismiss" class="btn-quiet">Not now</button>
+  <div class="update-actions">
+    <button id="update-install" class="btn-primary">Install it</button>
+    <button id="update-dismiss" class="btn-quiet">Not now</button>
+  </div>
+  <details id="update-notes-box" class="update-notes" hidden>
+    <summary>What is in it</summary>
+    <pre id="update-notes"></pre>
+    <a id="update-notes-link" href="#" target="_blank" rel="noopener noreferrer">Open the release page</a>
+  </details>
 </div>
 
 <!-- ============ OVERVIEW ============ -->
