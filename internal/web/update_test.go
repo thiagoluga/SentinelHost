@@ -100,3 +100,57 @@ func TestABuildThatCannotVerifySaysSoInsteadOfOfferingAButton(t *testing.T) {
 		t.Errorf("a keyless build answered %d to an install request", w2.Code)
 	}
 }
+
+// The release notes are carried through, and the running version is always reported.
+//
+// Somebody reporting a problem needs to be able to say which version they are on without a
+// shell, and until now the panel never said. The notes answer the question the banner
+// otherwise begs: what am I about to install.
+func TestTheStatusCarriesTheVersionAndTheNotes(t *testing.T) {
+	f := &fakeUpdates{
+		running: "v0.1.1",
+		rel: selfupdate.Release{
+			Version:  "v0.1.2",
+			Notes:    "### Fixed\n- something small",
+			NotesURL: "https://github.com/thiagoluga/SentinelHost/releases/tag/v0.1.2",
+		},
+	}
+	s := &Server{updates: f}
+
+	w := httptest.NewRecorder()
+	s.handleUpdateStatus(w, httptest.NewRequest("GET", "/api/update", nil))
+
+	body := w.Body.String()
+	for _, want := range []string{`"current":"v0.1.1"`, `"latest":"v0.1.2"`, `"newer":true`, "something small", "releases/tag/v0.1.2"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the status does not carry %q: %s", want, body)
+		}
+	}
+}
+
+// Release notes are written by whoever cut the release. The panel displays them; it must
+// never let them become markup — encoding/json escapes HTML by default, and the client
+// assigns them with textContent.
+func TestNotesThatLookLikeMarkupStayText(t *testing.T) {
+	f := &fakeUpdates{
+		running: "v0.1.1",
+		rel: selfupdate.Release{
+			Version: "v0.1.2",
+			Notes:   `<img src=x onerror="alert(1)">`,
+		},
+	}
+	s := &Server{updates: f}
+
+	w := httptest.NewRecorder()
+	s.handleUpdateStatus(w, httptest.NewRequest("GET", "/api/update", nil))
+
+	body := w.Body.String()
+	if strings.Contains(body, "<img") {
+		t.Errorf("a raw tag survived into the response: %s", body)
+	}
+	// encoding/json escapes < > & as \u003c \u003e \u0026 by default, so the tag cannot
+	// close a script block if this JSON is ever embedded in one.
+	if !strings.Contains(body, `\u003cimg`) {
+		t.Errorf("the tag was not escaped as expected: %s", body)
+	}
+}

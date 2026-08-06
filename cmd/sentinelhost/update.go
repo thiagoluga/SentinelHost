@@ -152,6 +152,8 @@ func latestRelease(ctx context.Context) (selfupdate.Release, error) {
 
 	var body struct {
 		TagName string `json:"tag_name"`
+		Body    string `json:"body"`
+		HTMLURL string `json:"html_url"`
 		Assets  []struct {
 			Name string `json:"name"`
 			URL  string `json:"browser_download_url"`
@@ -167,6 +169,8 @@ func latestRelease(ctx context.Context) (selfupdate.Release, error) {
 
 	want := selfupdate.AssetName()
 	rel.Version = body.TagName
+	rel.Notes = body.Body
+	rel.NotesURL = body.HTMLURL
 	for _, a := range body.Assets {
 		switch a.Name {
 		case want:

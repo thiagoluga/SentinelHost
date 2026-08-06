@@ -64,6 +64,10 @@ func (s *Server) handleUpdateStatus(w http.ResponseWriter, req *http.Request) {
 		"current":   s.updates.RunningVersion(),
 		"latest":    rel.Version,
 		"newer":     newer,
+		// What the user is being asked to install. Sent even when it is not newer, so the
+		// panel can show what the current version was released with.
+		"notes":     rel.Notes,
+		"notes_url": rel.NotesURL,
 	}
 	if cmpErr != nil {
 		// A development build, or a version that cannot be read. Say which rather than
@@ -72,7 +76,6 @@ func (s *Server) handleUpdateStatus(w http.ResponseWriter, req *http.Request) {
 		body["error"] = cmpErr.Error()
 	}
 	writeJSON(w, http.StatusOK, body)
-	_ = req
 }
 
 // handleUpdateApply installs the newer release.
