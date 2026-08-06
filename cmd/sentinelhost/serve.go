@@ -50,6 +50,18 @@ OPTIONS
 	runner := cycle.New(a.cfg, a.store, a.registry, a.vault).WithDispatcher(dispatcher)
 	srv := web.New(a.cfg, a.store, a.registry, a.vault, dispatcher, runner)
 
+	// The panel can report a newer release and install it when the user asks. It never
+	// does so on its own: a security tool that replaces itself unattended on shared
+	// hosting behaves the way the things it hunts behave.
+	//
+	// A build with no release key still gets the checker — it answers "cannot check" and
+	// says why, which is more useful than a panel with no opinion at all.
+	if updates, err := newPanelUpdates(ctx); err == nil {
+		srv = srv.WithUpdates(updates)
+	} else {
+		fmt.Fprintf(os.Stderr, "the panel cannot offer updates: %v\n", err)
+	}
+
 	url := "http://" + a.cfg.Web.Listen
 	fmt.Printf("SentinelHost panel at %s\n", url)
 	if !strings.HasPrefix(a.cfg.Web.Listen, "127.0.0.1") && !strings.HasPrefix(a.cfg.Web.Listen, "localhost") {

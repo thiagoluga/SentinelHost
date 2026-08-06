@@ -308,3 +308,21 @@ legend{color:var(--muted);font-size:11px;padding:0 4px}
   white-space:pre-wrap;word-break:break-all;
   max-height:220px;overflow:auto;
 }
+
+/* The update banner.
+ *
+ * Deliberately not styled as an alarm. A newer version is news, not an incident, and a
+ * panel that shouts about a release looks the same as one shouting about a backdoor —
+ * which teaches the user to skim both. */
+.update-banner{
+  display:flex; align-items:center; gap:1rem; flex-wrap:wrap;
+  margin:0 0 1.25rem; padding:.85rem 1rem;
+  border:1px solid var(--line); border-left:3px solid var(--accent);
+  border-radius:8px; background:var(--panel);
+}
+.update-banner p{margin:.2rem 0 0; color:var(--muted); font-size:.85rem}
+.update-banner .btn-quiet{
+  background:none; border:1px solid var(--line); color:var(--muted);
+  padding:.4rem .8rem; border-radius:6px; cursor:pointer;
+}
+.update-banner[hidden]{display:none}
