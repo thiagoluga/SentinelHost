@@ -95,6 +95,32 @@ if [[ "$WP_REAL" = "1" ]]; then
   ok "core tampered for checksum + AMWScan (wp-includes/functions.php → confirmed)"
 fi
 
+# A filename holding a NEWLINE, planted where the engines will actually be asked about it.
+#
+# The scope goes to yara and maldet as one path per line, so `x<LF>.php` becomes two lines
+# and neither exists — every engine reported zero findings on a live webshell, which is the
+# failure this project exists to prevent, produced by one rename().
+#
+# That was fixed and unit-tested, and a unit test proves the orchestrator refuses the path.
+# It does NOT prove what the real engines do with the list, which is the whole reason this
+# script exists (D-022). Planted here so the refusal is exercised against yara and maldet
+# rather than against my model of them.
+#
+# printf, not a shell literal: backslash-n inside quotes is two characters in some
+# shells and a newline in others, and getting that wrong would plant an ordinary filename and prove
+# nothing while looking identical.
+EVASION_DIR="$SITE/wp-content/uploads/evasion"
+mkdir -p "$EVASION_DIR"
+EVASION_NAME="$(printf 'x
+.php')"
+if cp /corpus/synthetic/02-backdoor-eval-post.php "$EVASION_DIR/$EVASION_NAME" 2>/dev/null; then
+  ok "planted a payload whose filename holds a newline"
+  export SH_EVASION_PLANTED=1
+else
+  warn "this filesystem would not accept a newline in a filename; the evasion case is NOT covered"
+  export SH_EVASION_PLANTED=0
+fi
+
 # A REAL plugin from the official directory, to exercise plugin integrity
 # verification against the actual API.
 #
@@ -653,6 +679,30 @@ if [[ "$peak" =~ ^[0-9]+$ ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+section "A filename the engines cannot be asked about"
+
+# The orchestrator must COUNT it, not skip it quietly. A file nobody looked at has to be
+# distinguishable from a file that was looked at and found clean — otherwise the fix
+# replaced one silent coverage hole with another.
+if [[ "${SH_EVASION_PLANTED:-0}" = "1" ]]; then
+  ev_json=$(sentinelhost scan --config "$CONFIG" --full --json 2>/dev/null || true)
+  ev_count=$(printf '%s' "$ev_json" | grep -o '"unscannable_path_name":[0-9]*' | head -1 | cut -d: -f2)
+  if [[ -n "$ev_count" && "$ev_count" -ge 1 ]]; then
+    ok "the unscannable path was counted ($ev_count), not dropped"
+  else
+    fail "a payload whose filename holds a newline was neither scanned nor counted — this is the silent coverage hole the count exists to prevent"
+  fi
+
+  # And it must not have been handed to an engine as two paths.
+  if printf '%s' "$ev_json" | grep -q '"file_path":"[^"]*evasion/x"'; then
+    fail "the split half of the filename reached a finding, so the list was written anyway"
+  else
+    ok "no half-path reached a finding"
+  fi
+else
+  warn "the evasion payload was never planted, so this section proves nothing"
+fi
+
 section "Installer (Principle VII: installation in one command)"
 
 # install.sh is exercised against a "release" served locally. Without this, the only
