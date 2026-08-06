@@ -111,8 +111,7 @@ fi
 # nothing while looking identical.
 EVASION_DIR="$SITE/wp-content/uploads/evasion"
 mkdir -p "$EVASION_DIR"
-EVASION_NAME="$(printf 'x
-.php')"
+EVASION_NAME="$(printf 'x\n.php')"
 if cp /corpus/synthetic/02-backdoor-eval-post.php "$EVASION_DIR/$EVASION_NAME" 2>/dev/null; then
   ok "planted a payload whose filename holds a newline"
   export SH_EVASION_PLANTED=1
