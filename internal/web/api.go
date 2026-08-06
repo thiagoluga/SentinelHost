@@ -667,6 +667,15 @@ func (s *Server) handleCronLine(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) logAction(req *http.Request, msg string, fields map[string]any) {
+	// Logging must never be the thing that takes the panel down.
+	//
+	// This is called on failure paths — including the one that runs when somebody served a
+	// binary the release key did not sign. Panicking there would turn "we refused a forged
+	// update" into "the panel crashed", which is a strictly worse outcome and a confusing
+	// one to debug.
+	if s == nil || s.store == nil {
+		return
+	}
 	if fields == nil {
 		fields = map[string]any{}
 	}

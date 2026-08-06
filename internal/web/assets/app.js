@@ -1005,7 +1005,8 @@ async function testWebhook(id, card) {
 // `the engines` appeared twice, once for the dashboard summary and once for its own tab,
 // so /api/engines was requested twice on every single page view.
 const TAB_LOADERS = {
-  dash:       [['the overview', loadStatus], ['the engines', loadEngineSummary]],
+  dash:       [['the overview', loadStatus], ['the engines', loadEngineSummary],
+               ['the update check', loadUpdate]],
   findings:   [['the findings', loadFindings]],
   quarantine: [['the quarantine', loadQuarantine]],
   engines:    [['the engines', loadEngines]],
@@ -1059,3 +1060,63 @@ async function refreshAfterAction() {
 }
 
 bootstrap();
+
+// ------------------------------------------------------------------ updates
+
+/**
+ * Tell the user a newer version exists. Never install one on our own.
+ *
+ * The whole design of the updater rests on this: a security tool that replaces itself
+ * unattended on shared hosting behaves exactly the way the things it hunts behave, and
+ * from the outside the user cannot tell the difference. So the panel reports, and a person
+ * decides.
+ *
+ * It is also quiet on failure — but not silent. If the release listing cannot be reached,
+ * the banner stays hidden rather than claiming the tool is current: "I could not check" and
+ * "you are up to date" are different sentences, and only one of them is safe to guess.
+ */
+async function loadUpdate() {
+  const banner = $('#update-banner');
+  if (!banner) return;
+
+  let s;
+  try {
+    s = await api('/api/update');
+  } catch {
+    // A failed check is not news. It is reported on the Settings tab, where somebody
+    // looking for it will find it, rather than as a banner nobody can act on.
+    return;
+  }
+  if (!s || !s.newer) return;
+
+  // textContent throughout: these strings come from a release listing, which is not ours.
+  $('#update-title').textContent = `SentinelHost ${s.latest} is available`;
+  $('#update-detail').textContent =
+    `You are running ${s.current}. The new binary is verified against the signing key ` +
+    `built into this one, and the current binary is kept so you can go back.`;
+  banner.hidden = false;
+}
+
+$('#update-dismiss')?.addEventListener('click', () => {
+  // Hidden for this page view only, deliberately not remembered. An update the user
+  // postponed once should still be visible tomorrow — a dismissal that persists is how a
+  // security update gets forgotten permanently.
+  $('#update-banner').hidden = true;
+});
+
+$('#update-install')?.addEventListener('click', async () => {
+  const btn = $('#update-install');
+  btn.disabled = true;
+  btn.textContent = 'Installing…';
+  try {
+    const r = await api('/api/update', { method: 'POST' });
+    $('#update-banner').hidden = true;
+    toast(`Installed ${r.installed}. ${r.note}`);
+  } catch (e) {
+    // The failure text matters here more than anywhere else in the panel: a refused
+    // signature is not a network problem, and the user needs to know which it was.
+    toast(`The update was not installed: ${e.message}`, true);
+    btn.disabled = false;
+    btn.textContent = 'Install it';
+  }
+});

@@ -204,3 +204,37 @@ func download(ctx context.Context, url string) ([]byte, error) {
 	}
 	return selfupdate.ReadAll(resp.Body, maxBinaryBytes)
 }
+
+// panelUpdates lets the web panel check and install releases.
+//
+// The same code path as the CLI, deliberately: two ways to replace the binary would be two
+// places for the verification to drift apart, and one of them would be the one nobody
+// exercises.
+type panelUpdates struct {
+	ctx  context.Context
+	self string
+}
+
+func newPanelUpdates(ctx context.Context) (*panelUpdates, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	return &panelUpdates{ctx: ctx, self: self}, nil
+}
+
+func (p *panelUpdates) RunningVersion() string { return version }
+
+func (p *panelUpdates) Latest() (selfupdate.Release, error) { return latestRelease(p.ctx) }
+
+func (p *panelUpdates) Apply(rel selfupdate.Release) (string, error) {
+	payload, err := download(p.ctx, rel.URL)
+	if err != nil {
+		return "", err
+	}
+	sig, err := download(p.ctx, rel.Signature)
+	if err != nil {
+		return "", fmt.Errorf("fetching the signature: %w", err)
+	}
+	return selfupdate.Install(payload, string(sig), p.self)
+}

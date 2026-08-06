@@ -45,6 +45,12 @@ type Server struct {
 
 	limiter *rateLimiter
 	now     func() time.Time
+
+	// updates is nil when this build cannot verify a release. The panel then says so
+	// rather than offering a button that could install anything.
+	updates      UpdateChecker
+	updateMu     sync.Mutex
+	updateCached updateCache
 }
 
 // config returns the configuration for reading.
@@ -101,6 +107,15 @@ func New(cfg *config.Config, st *store.Store, reg *adapter.Registry, v *quaranti
 	}
 }
 
+// WithUpdates gives the panel a way to check for and install releases.
+//
+// Separate from New so a build with no release key simply never calls it, and the panel
+// reports that it cannot check rather than showing a button backed by nothing.
+func (s *Server) WithUpdates(u UpdateChecker) *Server {
+	s.updates = u
+	return s
+}
+
 // Handler assembles the routes.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -127,6 +142,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/scan", s.protect(s.handleScanNow))
 	mux.Handle("GET /api/events", s.protect(s.handleEvents))
 	mux.Handle("GET /api/cron-line", s.protect(s.handleCronLine))
+	mux.Handle("GET /api/update", s.protect(s.handleUpdateStatus))
+	// Protected like every other state-changing route: a session AND a same-origin
+	// signal. This one replaces the binary that guards the account.
+	mux.Handle("POST /api/update", s.protect(s.handleUpdateApply))
 
 	// Panel assets.
 	sub, err := fs.Sub(assets, "assets")
