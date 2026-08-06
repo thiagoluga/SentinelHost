@@ -73,6 +73,8 @@ func run() int {
 		err = cmdAlert(ctx, args)
 	case "cron-line":
 		err = cmdCronLine(args)
+	case "update":
+		err = cmdUpdate(ctx, args)
 	case "doctor":
 		err = cmdDoctor(ctx, args)
 	case "version", "--version", "-v":
@@ -118,6 +120,7 @@ COMMANDS
   alert         Send a test delivery by e-mail or webhook
   cron-line     Print the cron line ready to paste into cPanel
   doctor        Diagnose the environment and what each engine is missing
+  update        Replace this binary with a newer signed release (--check to only report)
   version       Show the version
 
 GLOBAL OPTIONS

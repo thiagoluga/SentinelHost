@@ -28,6 +28,17 @@ POSIX_ONLY=(
   TestAHardLinkedFileIsNotQuarantinedSilently
   TestASymlinkIsRefusedRatherThanUnlinked
   TestAPathOutsideTheRootsIsRefused
+  TestTheReplacementInheritsTheModeWithoutGroupOrOtherWrite
+)
+
+# Which package each one lives in. A single -run across ./... would work but takes the
+# whole suite's time; naming the package keeps this fast enough to be run often, which is
+# the only reason it gets run at all.
+declare -A POSIX_PKG=(
+  [TestAHardLinkedFileIsNotQuarantinedSilently]=./internal/quarantine/
+  [TestASymlinkIsRefusedRatherThanUnlinked]=./internal/quarantine/
+  [TestAPathOutsideTheRootsIsRefused]=./internal/quarantine/
+  [TestTheReplacementInheritsTheModeWithoutGroupOrOtherWrite]=./internal/selfupdate/
 )
 
 echo "==> building $IMAGE"
@@ -49,7 +60,14 @@ run "go test ./... -count=1"
 
 echo
 echo "==> the tests that skip on a Windows workstation"
-log=$(run "go test ./internal/quarantine/ -count=1 -v -run '$(IFS='|'; echo "${POSIX_ONLY[*]}")'")
+log=""
+for pkg in $(printf '%s\n' "${POSIX_PKG[@]}" | sort -u); do
+  names=""
+  for name in "${POSIX_ONLY[@]}"; do
+    [[ "${POSIX_PKG[$name]}" == "$pkg" ]] && names="${names:+$names|}$name"
+  done
+  log+=$(run "go test $pkg -count=1 -v -run '$names'")$'\n'
+done
 echo "$log" | grep -E '^(---|=== RUN)' || true
 
 failed=0
