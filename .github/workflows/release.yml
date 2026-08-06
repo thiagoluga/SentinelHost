@@ -1,0 +1,170 @@
+# Build, sign and publish a release.
+#
+# The signature is the point. install.sh checks a SHA256SUMS file fetched from the same
+# place as the binary, which catches a corrupted transfer and nothing else — whoever can
+# serve the binary can serve the checksum. `sentinelhost update` therefore verifies an
+# ed25519 signature against a key compiled into the binary already running, so replacing a
+# release means stealing a key that never touches this repository.
+#
+# The private key lives in the repository secret SENTINELHOST_RELEASE_KEY and is never
+# printed, never written to a file that outlives the step, and never used for anything but
+# signing these assets.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.24"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      # A tag that has not passed the gate must not become a release. Re-running the suite
+      # here rather than trusting that the branch was green: the tag may point somewhere
+      # the branch protection never saw.
+      - name: The suite, on the exact commit being released
+        run: |
+          go vet ./...
+          go test ./... -count=1
+
+      - name: Build
+        env:
+          # The PUBLIC key is compiled in. A build with none refuses to self-update rather
+          # than trusting whatever it is handed, so an empty secret produces a release that
+          # cannot update itself — visible, and far better than one that updates blindly.
+          PUBKEY: ${{ vars.SENTINELHOST_RELEASE_PUBKEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PUBKEY}" ]; then
+            echo "::error::SENTINELHOST_RELEASE_PUBKEY is not set. A release built without"
+            echo "::error::it cannot verify its successor, so this refuses to build one."
+            exit 1
+          fi
+          VERSION="${GITHUB_REF_NAME}"
+          COMMIT="$(git rev-parse --short HEAD)"
+          DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          mkdir -p dist
+          for pair in linux/amd64 linux/arm64; do
+            GOOS="${pair%/*}"; GOARCH="${pair#*/}"
+            CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -trimpath \
+              -ldflags "-s -w \
+                -X main.version=${VERSION} \
+                -X main.commit=${COMMIT} \
+                -X main.buildDate=${DATE} \
+                -X github.com/thiagoluga/SentinelHost/internal/selfupdate.PublicKey=${PUBKEY}" \
+              -o "dist/sentinelhost-${GOOS}-${GOARCH}" ./cmd/sentinelhost
+          done
+          cd dist && sha256sum sentinelhost-linux-* > SHA256SUMS
+
+      # Signed with Go rather than a shell tool: the key format has to match exactly what
+      # selfupdate.Verify expects, and a mismatch that only shows up on a user's first
+      # update is the worst possible place to discover it.
+      - name: Sign each asset
+        env:
+          PRIVKEY: ${{ secrets.SENTINELHOST_RELEASE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PRIVKEY}" ]; then
+            echo "::error::SENTINELHOST_RELEASE_KEY is not set; refusing to publish unsigned assets."
+            exit 1
+          fi
+          cat > /tmp/sign.go <<'EOF'
+          package main
+
+          import (
+          	"crypto/ed25519"
+          	"encoding/base64"
+          	"fmt"
+          	"os"
+          )
+
+          func main() {
+          	key, err := base64.StdEncoding.DecodeString(os.Getenv("PRIVKEY"))
+          	if err != nil || len(key) != ed25519.PrivateKeySize {
+          		fmt.Fprintln(os.Stderr, "the release key is not a base64 ed25519 private key")
+          		os.Exit(1)
+          	}
+          	for _, path := range os.Args[1:] {
+          		payload, err := os.ReadFile(path)
+          		if err != nil {
+          			fmt.Fprintln(os.Stderr, err)
+          			os.Exit(1)
+          		}
+          		sig := ed25519.Sign(ed25519.PrivateKey(key), payload)
+          		out := path + ".sig"
+          		if err := os.WriteFile(out, []byte(base64.StdEncoding.EncodeToString(sig)), 0o644); err != nil {
+          			fmt.Fprintln(os.Stderr, err)
+          			os.Exit(1)
+          		}
+          		fmt.Println("signed", out)
+          	}
+          }
+          EOF
+          go run /tmp/sign.go dist/sentinelhost-linux-amd64 dist/sentinelhost-linux-arm64
+
+      # The signature is verified here, against the public key that was compiled in. A
+      # release whose own binary would refuse it must not reach anybody: this is the one
+      # place the mistake is cheap to find.
+      - name: The published binary would accept its own signature
+        env:
+          PUBKEY: ${{ vars.SENTINELHOST_RELEASE_PUBKEY }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/verify.go <<'EOF'
+          package main
+
+          import (
+          	"crypto/ed25519"
+          	"encoding/base64"
+          	"fmt"
+          	"os"
+          	"strings"
+          )
+
+          func main() {
+          	pub, err := base64.StdEncoding.DecodeString(os.Getenv("PUBKEY"))
+          	if err != nil || len(pub) != ed25519.PublicKeySize {
+          		fmt.Fprintln(os.Stderr, "the public key is not a base64 ed25519 public key")
+          		os.Exit(1)
+          	}
+          	for _, path := range os.Args[1:] {
+          		payload, _ := os.ReadFile(path)
+          		raw, err := os.ReadFile(path + ".sig")
+          		if err != nil {
+          			fmt.Fprintln(os.Stderr, err)
+          			os.Exit(1)
+          		}
+          		sig, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(raw)))
+          		if err != nil || !ed25519.Verify(pub, payload, sig) {
+          			fmt.Fprintf(os.Stderr, "%s does NOT verify against the published key\n", path)
+          			os.Exit(1)
+          		}
+          		fmt.Println("verified", path)
+          	}
+          }
+          EOF
+          go run /tmp/verify.go dist/sentinelhost-linux-amd64 dist/sentinelhost-linux-arm64
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file CHANGELOG.md \
+            dist/sentinelhost-linux-amd64 \
+            dist/sentinelhost-linux-amd64.sig \
+            dist/sentinelhost-linux-arm64 \
+            dist/sentinelhost-linux-arm64.sig \
+            dist/SHA256SUMS
