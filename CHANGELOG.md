@@ -7,6 +7,14 @@ Security fixes say what was exploitable and how, rather than "hardened X". A cha
 entry for a security tool that hides the mechanism is asking the reader to take its word,
 and this project's whole argument is that you should not have to.
 
+## v0.1.1
+
+### Fixed
+
+- `update --check` now names the release asset alongside its URL. On an account with no
+  shell, the person reading that line is usually about to download it by hand on another
+  machine, and "which of these files is mine" was the next question every time.
+
 ## v0.1.0
 
 The first release. Everything below is what the tool does on the day it became
