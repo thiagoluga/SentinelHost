@@ -66,6 +66,25 @@ jobs:
           SENTINELHOST_ONLINE: "1"
         run: go test ./internal/catalog/ -count=1 -run TestEveryPinnedDigestMatches -v
 
+  # Nothing was compiling the Windows files.
+  #
+  # links_windows.go, exec_windows.go and owner_windows.go exist so the suite runs on a
+  # maintainer's workstation — production is Linux. But the release builds only for Linux
+  # and CI runs only on ubuntu, so a break in one of those files was invisible to everyone
+  # except whoever happened to run the suite locally. Compiling them costs seconds.
+  windows-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: The Windows-tagged files still compile
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: go build ./... && go vet ./...
+
   test:
     runs-on: ubuntu-latest
     steps:
