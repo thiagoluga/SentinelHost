@@ -13,7 +13,7 @@ LDFLAGS := -s -w \
 # hosting account with no compatible glibc (Principle VII).
 GOBUILD := CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)"
 
-.PHONY: all build test test-short lint fmt vet tidy clean release install-lint doctor
+.PHONY: all build test test-short test-linux lint fmt vet tidy clean release install-lint doctor
 
 all: lint test build
 
@@ -30,6 +30,19 @@ test:
 
 test-short:
 	go test ./... -short -count=1
+
+# The suite on Linux, from a Windows workstation.
+#
+# `make test` on Windows silently skips every test that depends on permissions, hard
+# links, symlinks, or a filename containing a newline — correctly, with a reason, and
+# invisibly: without -v a skip and a pass are the same line. Until now those tests only
+# ever ran in CI, so between a commit and a push there was no way to know.
+#
+# This is not `validate-engines`. That one installs yara, maldet, PHP and a real WordPress
+# to check what the ENGINES do, takes minutes and needs the network. This asks the smaller
+# question — does our own code behave on Linux — and is meant to be run often.
+test-linux:
+	bash docker/run-suite-on-linux.sh
 
 # The slow tests (SC-002: 20k files) stay out of -short.
 test-race:
