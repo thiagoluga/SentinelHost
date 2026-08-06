@@ -6,29 +6,22 @@
 the binary already running**. That is the whole security model, so the key matters more
 than anything else here.
 
-Generate it once, offline:
+Generate it once, on a machine you trust:
 
 ```bash
-go run - <<'EOF'
-package main
-
-import (
-	"crypto/ed25519"
-	"crypto/rand"
-	"encoding/base64"
-	"fmt"
-)
-
-func main() {
-	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
-	fmt.Println("PUBLIC (repository variable SENTINELHOST_RELEASE_PUBKEY):")
-	fmt.Println(base64.StdEncoding.EncodeToString(pub))
-	fmt.Println()
-	fmt.Println("PRIVATE (repository secret SENTINELHOST_RELEASE_KEY):")
-	fmt.Println(base64.StdEncoding.EncodeToString(priv))
-}
-EOF
+go run ./tools/release-key
 ```
+
+It prints both halves and says where each one goes. If you want to check the tool without
+producing a key you then have to dispose of:
+
+```bash
+go run ./tools/release-key --self-test
+```
+
+That generates a throwaway pair, signs with it, verifies, confirms a changed payload is
+refused, and prints only the outcome — no key material reaches the terminal or your
+scrollback.
 
 - The **public** half goes in a repository *variable* named `SENTINELHOST_RELEASE_PUBKEY`.
   It is not secret; it is compiled into every release so each one can verify its successor.
