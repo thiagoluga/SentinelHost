@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: A security vulnerability
+    url: https://github.com/thiagoluga/SentinelHost/security/advisories/new
+    about: >-
+      Report privately. A public issue for a vulnerability here is a working exploit
+      against every installation that has not updated yet — this tool runs with the
+      permissions of the account it protects and can move files.
+  - name: Propose a ruleset for the catalogue
+    url: https://github.com/thiagoluga/SentinelHost/blob/main/catalog/README.md
+    about: Read the contract first, then open a pull request with the manifest.
