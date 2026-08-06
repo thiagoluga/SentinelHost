@@ -1,0 +1,41 @@
+# Run the Go suite on Linux, from wherever you are.
+#
+# This exists because a green suite on a Windows workstation is not evidence about
+# anything POSIX. Tests that depend on permissions, hard links, symlinks, or a filename
+# containing a newline call t.Skip there — deliberately and with a reason, which is the
+# right behaviour and also the problem: a skipped test and a passing one are one line of
+# `go test` output apart, and the difference is invisible unless you look for it.
+#
+# Until now the only place those tests actually ran was CI, so between a commit and a push
+# the maintainer had no way to know. This closes that: `make test-linux` runs the same
+# tests, on the same kernel family as production, before anything leaves the machine.
+#
+# Deliberately NOT the validation image. That one installs yara, maldet, PHP and a real
+# WordPress to check what the ENGINES do (docker/Dockerfile.validation, `make
+# validate-engines`), takes minutes, and needs the network. This one answers a smaller
+# question — does our own code behave on Linux — and has to be fast enough to run often.
+FROM golang:1.24-bookworm
+
+# The suite creates hard links, symlinks, files with newlines in their names, and files
+# with permissions cleared. All of that needs a real Linux filesystem, which is what the
+# container gives us; none of it needs root, and running as root would hide exactly the
+# permission failures Principle III exists to catch — chmod 000 does not stop root from
+# reading, so the unrestorable-vault defect would have passed.
+RUN useradd --create-home --shell /bin/bash suite
+USER suite
+WORKDIR /src
+
+# The module cache lives in the image so repeated runs do not re-download. The source is
+# mounted at run time instead of copied, so editing a file and re-running does not rebuild
+# a layer.
+ENV GOFLAGS=-buildvcs=false
+ENV GOCACHE=/home/suite/.cache/go-build
+ENV GOMODCACHE=/home/suite/.cache/go-mod
+
+# Created here, owned by the user that will write them. A named volume mounted over an
+# empty path arrives owned by root, and the first `go test` then fails on mkdir — which
+# reads as a broken suite rather than as a permission on a cache directory.
+RUN mkdir -p /home/suite/.cache/go-build /home/suite/.cache/go-mod
+
+ENTRYPOINT ["/bin/bash", "-c"]
+CMD ["go test ./... -count=1"]
