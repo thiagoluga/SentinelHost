@@ -7,10 +7,16 @@ Security fixes say what was exploitable and how, rather than "hardened X". A cha
 entry for a security tool that hides the mechanism is asking the reader to take its word,
 and this project's whole argument is that you should not have to.
 
-## Unreleased
+## v0.1.0
 
-There is no tagged release yet. `main` is the only version, and it is not recommended for
-anything you would mind losing.
+The first release. Everything below is what the tool does on the day it became
+installable, rather than a list of changes against something earlier.
+
+**What it has been proven against, and what it has not.** One real cPanel account, with no
+shell, reached over FTP and a fifteen-minute cron — that is where most of the operational
+defects below were found. And a Debian container with the real engines: yara, maldet, PHP
+and a live WordPress. It has NOT run on a VPS with root, or on a second hosting provider.
+That is the reason for the `0`.
 
 ### Security
 
