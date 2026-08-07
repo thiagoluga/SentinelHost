@@ -7,6 +7,18 @@ Security fixes say what was exploitable and how, rather than "hardened X". A cha
 entry for a security tool that hides the mechanism is asking the reader to take its word,
 and this project's whole argument is that you should not have to.
 
+## v0.1.2
+
+### Added
+
+- **The panel says which version it is running**, in the sidebar, whether or not an update
+  exists. On an account with no shell there was previously no way to answer "which version
+  are you on" — a question asked far more often than an update happens.
+- **The release notes appear in the update banner**, behind a disclosure, with a link to the
+  release page. The banner was asking the user to replace the binary that guards their
+  account without saying what was in it. The notes are written by whoever cut the release,
+  so they are rendered as text and never as markup.
+
 ## v0.1.1
 
 ### Fixed
