@@ -1104,11 +1104,27 @@ async function loadUpdate() {
   const side = $('#side-version');
   if (side && s.current) side.textContent = s.current;
 
+  // Already installed, waiting for a restart. This is a DIFFERENT state from "an update
+  // exists", and showing the second one here is how a user who installed and reloaded
+  // concludes the update failed — the banner would ask them to install what they just did.
+  if (s.pending_restart) {
+    $('#update-title').textContent = `${s.on_disk} is installed and waiting`;
+    $('#update-detail').textContent =
+      `The panel is still running ${s.current}. Restarting is safe: anything in progress ` +
+      `finishes first, and ${s.current} is kept so you can go back.`;
+    $('#update-notes-box').hidden = true;
+    $('#update-install').hidden = true;
+    $('#update-restart').hidden = false;
+    $('#update-dismiss').textContent = 'Later';
+    banner.hidden = false;
+    return;
+  }
+
   if (!s.newer) return;
 
   // textContent throughout: every string below comes from a release listing, which is not
-  // ours. The notes especially — they are markdown written by whoever cut the release, and
-  // they are displayed, never interpreted.
+  // ours. The notes especially — markdown written by whoever cut the release, displayed
+  // and never interpreted.
   $('#update-title').textContent = `SentinelHost ${s.latest} is available`;
   $('#update-detail').textContent =
     `You are running ${s.current}. The new binary is verified against the signing key ` +

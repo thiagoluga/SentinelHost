@@ -195,3 +195,102 @@ func TestAPanelThatCannotStopItselfSaysSo(t *testing.T) {
 		t.Errorf("answered %d; expected 501", w.Code)
 	}
 }
+
+type fakeWithDisk struct {
+	*fakeUpdates
+	disk string
+}
+
+func (f *fakeWithDisk) OnDiskVersion() string { return f.disk }
+
+// Installed but not yet running is a DIFFERENT state from "an update exists".
+//
+// The running process reports the version it was compiled with; after an update that is
+// the old one, because the file changed and the program in memory did not. Comparing
+// against it made the panel keep offering an update it had already installed — so a user
+// who installed and reloaded was told to install again, which is indistinguishable from
+// the update having silently failed.
+func TestAnInstalledUpdateIsReportedAsWaitingNotAsAvailable(t *testing.T) {
+	f := &fakeWithDisk{
+		fakeUpdates: &fakeUpdates{running: "v0.1.2", rel: selfupdate.Release{Version: "v0.1.3"}},
+		disk:        "v0.1.3", // already installed
+	}
+	s := &Server{updates: f}
+
+	w := httptest.NewRecorder()
+	s.handleUpdateStatus(w, httptest.NewRequest("GET", "/api/update", nil))
+	body := w.Body.String()
+
+	if !strings.Contains(body, `"pending_restart":true`) {
+		t.Errorf("an installed update was not reported as waiting: %s", body)
+	}
+	if !strings.Contains(body, `"newer":false`) {
+		t.Errorf("it still offers an update that is already on disk: %s", body)
+	}
+	if !strings.Contains(body, `"on_disk":"v0.1.3"`) || !strings.Contains(body, `"current":"v0.1.2"`) {
+		t.Errorf("the two versions are not both reported: %s", body)
+	}
+}
+
+// And before installing, nothing is waiting.
+func TestNothingIsWaitingWhenDiskAndProcessAgree(t *testing.T) {
+	f := &fakeWithDisk{
+		fakeUpdates: &fakeUpdates{running: "v0.1.2", rel: selfupdate.Release{Version: "v0.1.3"}},
+		disk:        "v0.1.2",
+	}
+	s := &Server{updates: f}
+
+	w := httptest.NewRecorder()
+	s.handleUpdateStatus(w, httptest.NewRequest("GET", "/api/update", nil))
+	body := w.Body.String()
+
+	if !strings.Contains(body, `"pending_restart":false`) {
+		t.Errorf("something was reported as waiting with nothing installed: %s", body)
+	}
+	if !strings.Contains(body, `"newer":true`) {
+		t.Errorf("a real update was not offered: %s", body)
+	}
+}
+
+// A checker that cannot report the disk must not break the panel: it falls back to the
+// running version rather than inventing one.
+func TestACheckerThatCannotSeeTheDiskStillWorks(t *testing.T) {
+	f := &fakeUpdates{running: "v0.1.2", rel: selfupdate.Release{Version: "v0.1.3"}}
+	s := &Server{updates: f}
+
+	w := httptest.NewRecorder()
+	s.handleUpdateStatus(w, httptest.NewRequest("GET", "/api/update", nil))
+	body := w.Body.String()
+	if !strings.Contains(body, `"newer":true`) || !strings.Contains(body, `"pending_restart":false`) {
+		t.Errorf("the fallback path is wrong: %s", body)
+	}
+}
+
+// Installing the same version twice destroys the way back.
+//
+// The second install overwrites the binary with itself and moves the old one to .prev, so
+// the rollback target becomes the version you are already on. It happened on a real
+// account: sentinelhost and sentinelhost.prev both reported v0.1.3, and the v0.1.2 it
+// could have returned to was gone. Two clicks, no warning, and the second looked exactly
+// like the first.
+func TestInstallingWhatIsAlreadyOnDiskIsRefused(t *testing.T) {
+	f := &fakeWithDisk{
+		fakeUpdates: &fakeUpdates{running: "v0.1.2", rel: selfupdate.Release{Version: "v0.1.3"}},
+		disk:        "v0.1.3", // installed by the first click
+	}
+	s := &Server{updates: f}
+
+	w := httptest.NewRecorder()
+	s.handleUpdateApply(w, httptest.NewRequest("POST", "/api/update", nil))
+
+	if f.applied != 0 {
+		t.Error("it installed again over itself, destroying the rollback")
+	}
+	if w.Code != 409 {
+		t.Errorf("answered %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "already installed") || !strings.Contains(body, "rollback") {
+		t.Errorf("the refusal does not explain what a second install would cost: %s", body)
+	}
+}

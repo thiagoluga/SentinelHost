@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/thiagoluga/SentinelHost/internal/selfupdate"
@@ -228,6 +230,32 @@ func newPanelUpdates(ctx context.Context) (*panelUpdates, error) {
 }
 
 func (p *panelUpdates) RunningVersion() string { return version }
+
+// OnDiskVersion asks the binary at our own path what version it is.
+//
+// The running process reports the version it was COMPILED with, which after an update is
+// the old one — the file changed, the program in memory did not. Without asking the file,
+// the panel keeps offering an update that is already installed, and a user who installs and
+// reloads is told to install again. That is indistinguishable from the update having
+// silently failed.
+//
+// By execution rather than by bookkeeping: a note we wrote to ourselves could disagree with
+// what is actually on disk, and the file is the thing that will run next.
+func (p *panelUpdates) OnDiskVersion() string {
+	ctx, cancel := context.WithTimeout(p.ctx, 10*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, p.self, "version").Output()
+	if err != nil {
+		return ""
+	}
+	// "sentinelhost v0.1.3 (commit …, build …)"
+	fields := strings.Fields(string(out))
+	if len(fields) < 2 {
+		return ""
+	}
+	return fields[1]
+}
 
 func (p *panelUpdates) Latest() (selfupdate.Release, error) { return latestRelease(p.ctx) }
 
