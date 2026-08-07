@@ -19,6 +19,14 @@ and this project's whole argument is that you should not have to.
   account without saying what was in it. The notes are written by whoever cut the release,
   so they are rendered as text and never as markup.
 
+### Fixed
+
+- **First access through the panel was impossible.** v0.1.0 made `POST /api/setup` require
+  a token, correctly and with tests — and the setup form was never given a field for it, so
+  the only way to complete first access was to send the request by hand. Every test passed,
+  because they all exercise the API and the API was right. It took opening the page in a
+  browser to see it.
+
 ## v0.1.1
 
 ### Fixed
