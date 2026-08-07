@@ -2,9 +2,11 @@ package web
 
 import (
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/thiagoluga/SentinelHost/internal/selfupdate"
 )
@@ -152,5 +154,44 @@ func TestNotesThatLookLikeMarkupStayText(t *testing.T) {
 	// close a script block if this JSON is ever embedded in one.
 	if !strings.Contains(body, `\u003cimg`) {
 		t.Errorf("the tag was not escaped as expected: %s", body)
+	}
+}
+
+// Stopping is the whole restart, and the answer has to reach the browser before it happens.
+//
+// An update replaces the file; the running process is still the old program. Behind the
+// bridge the next visit starts the new binary, so the panel stopping IS the fix — but only
+// if the client learns the request succeeded. Shutting down first would drop the connection
+// and show a network error for an action that worked.
+func TestTheRestartAnswersBeforeItStops(t *testing.T) {
+	stopped := make(chan struct{})
+	s := &Server{stop: func() { close(stopped) }}
+
+	w := httptest.NewRecorder()
+	s.handleRestart(w, httptest.NewRequest("POST", "/api/restart", nil))
+
+	if w.Code != 200 {
+		t.Fatalf("the restart answered %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "stopping") {
+		t.Errorf("the response does not say what is happening: %s", w.Body.String())
+	}
+
+	// The response is written first; the stop follows shortly after.
+	select {
+	case <-stopped:
+	case <-time.After(3 * time.Second):
+		t.Error("the panel answered but never stopped")
+	}
+}
+
+// A panel that cannot stop itself says so rather than reporting a restart that will not
+// happen — leaving the user reloading a page that never changes version.
+func TestAPanelThatCannotStopItselfSaysSo(t *testing.T) {
+	s := &Server{}
+	w := httptest.NewRecorder()
+	s.handleRestart(w, httptest.NewRequest("POST", "/api/restart", nil))
+	if w.Code != http.StatusNotImplemented {
+		t.Errorf("answered %d; expected 501", w.Code)
 	}
 }

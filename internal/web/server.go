@@ -51,6 +51,11 @@ type Server struct {
 	updates      UpdateChecker
 	updateMu     sync.Mutex
 	updateCached updateCache
+
+	// stop ends the process so the next visit starts the binary now on disk. Nil when
+	// the panel was not started in a way that lets it stop itself, and the endpoint says
+	// so rather than pretending.
+	stop func()
 }
 
 // config returns the configuration for reading.
@@ -146,6 +151,7 @@ func (s *Server) Handler() http.Handler {
 	// Protected like every other state-changing route: a session AND a same-origin
 	// signal. This one replaces the binary that guards the account.
 	mux.Handle("POST /api/update", s.protect(s.handleUpdateApply))
+	mux.Handle("POST /api/restart", s.protect(s.handleRestart))
 
 	// Panel assets.
 	sub, err := fs.Sub(assets, "assets")
@@ -173,8 +179,19 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		ErrorLog:          log.New(discard{}, "", 0),
 	}
 
+	// How the panel stops itself after an update. Graceful: in-flight requests finish, so
+	// a scan triggered a second earlier is not cut in half.
+	stopped := make(chan struct{})
+	var stopOnce sync.Once
+	s.stop = func() {
+		stopOnce.Do(func() { close(stopped) })
+	}
+
 	go func() {
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-stopped:
+		}
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdown)
