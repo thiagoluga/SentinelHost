@@ -133,8 +133,12 @@ func (s *Server) handleUpdateApply(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"installed": rel.Version,
 		"previous":  prev,
-		"note": "the running process is still the old binary until it restarts. The next " +
-			"cycle, and the next time the panel starts, use the new one",
+		// The old wording described the problem and left the user to solve it, which on an
+		// account with no shell is not something they can do. POST /api/restart is the
+		// answer, and it is named here so an API caller finds it too.
+		"note": "installed on disk. This process is still the previous version until it " +
+			"restarts — POST /api/restart, or the button in the panel. The next scheduled " +
+			"cycle uses the new binary either way.",
 	})
 }
 

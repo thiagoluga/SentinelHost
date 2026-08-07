@@ -1145,13 +1145,54 @@ $('#update-install')?.addEventListener('click', async () => {
   btn.textContent = 'Installing…';
   try {
     const r = await api('/api/update', { method: 'POST' });
-    $('#update-banner').hidden = true;
-    toast(`Installed ${r.installed}. ${r.note}`);
+
+    // An update replaces the FILE. This process is still the old program, with the old
+    // code in memory — so the banner turns into the one action that finishes the job,
+    // rather than a sentence explaining a problem the user cannot act on without a shell.
+    $('#update-title').textContent = `${r.installed} is installed`;
+    $('#update-detail').textContent =
+      'The panel is still running the previous version until it restarts. Restarting is ' +
+      'safe: anything in progress finishes first, and the previous binary is kept.';
+    $('#update-notes-box').hidden = true;
+    btn.hidden = true;
+    $('#update-dismiss').textContent = 'Later';
+    $('#update-restart').hidden = false;
   } catch (e) {
-    // The failure text matters here more than anywhere else in the panel: a refused
-    // signature is not a network problem, and the user needs to know which it was.
+    // Which failure it was matters more here than anywhere else in the panel: a refused
+    // signature is not a network problem.
     toast(`The update was not installed: ${e.message}`, true);
     btn.disabled = false;
     btn.textContent = 'Install it';
   }
+});
+
+$('#update-restart')?.addEventListener('click', async () => {
+  const btn = $('#update-restart');
+  btn.disabled = true;
+  btn.textContent = 'Restarting…';
+  try {
+    await api('/api/restart', { method: 'POST' });
+  } catch {
+    // Expected, and not a failure: the panel stops while answering, so the connection
+    // often drops before the response arrives. Whether it stopped is decided below by
+    // asking, not by whether this request completed.
+  }
+
+  // Wait for it to come back rather than claiming it has. Behind the bridge the next
+  // request starts the new binary; started by hand, nothing restarts it, and saying so is
+  // better than a spinner that never resolves.
+  for (let i = 0; i < 12; i++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      const s = await api('/api/update');
+      if (s && s.current) {
+        $('#side-version').textContent = s.current;
+        $('#update-banner').hidden = true;
+        toast(`Restarted. Now running ${s.current}.`);
+        return;
+      }
+    } catch { /* still down; keep waiting */ }
+  }
+  toast('The panel stopped but has not come back. If you started it yourself rather than ' +
+        'through the bridge, start it again.', true);
 });
