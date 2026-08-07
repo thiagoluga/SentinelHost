@@ -20,6 +20,16 @@
     <label for="password">Password</label>
     <input id="password" type="password" autocomplete="current-password" required>
 
+    <div id="setup-token-wrap" hidden>
+      <label for="setup-token">Setup token</label>
+      <input id="setup-token" type="text" autocomplete="off" spellcheck="false">
+      <p class="muted small">
+        Printed when the panel starts, and stored in <code>setup-token</code> inside the
+        data directory. Being first to open this page is not a credential: without the
+        token, whoever found the URL first would own the panel.
+      </p>
+    </div>
+
     <div id="password2-wrap" hidden>
       <label for="password2">Repeat the password</label>
       <input id="password2" type="password" autocomplete="new-password">

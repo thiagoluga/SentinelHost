@@ -123,6 +123,9 @@ function showGate(firstAccess = false) {
   $('#app').hidden = true;
   $('#gate').hidden = false;
   $('#password2-wrap').hidden = !firstAccess;
+  // Only on first access: after a password exists, the token is refused anyway, and a
+  // field that does nothing invites somebody to go looking for a value to put in it.
+  $('#setup-token-wrap').hidden = !firstAccess;
   $('#gate-title').textContent = firstAccess ? 'Set the panel password' : 'SentinelHost';
   $('#gate-sub').textContent = firstAccess
     ? 'First access: choose the password that protects this panel.'
@@ -131,6 +134,7 @@ function showGate(firstAccess = false) {
   $('#gate-form').dataset.setup = firstAccess ? '1' : '';
   $('#password').value = '';
   $('#password2').value = '';
+  $('#setup-token').value = '';
   $('#password').focus();
 }
 
@@ -158,8 +162,13 @@ $('#gate-form').addEventListener('submit', async (ev) => {
     return;
   }
   try {
+    // The token travels only with setup. Sending it to /api/login would put a credential
+    // in a request that has no use for it.
+    const payload = setup
+      ? { password, setup_token: $('#setup-token').value.trim() }
+      : { password };
     await api(setup ? '/api/setup' : '/api/login', {
-      method: 'POST', body: JSON.stringify({ password }),
+      method: 'POST', body: JSON.stringify(payload),
     });
     showApp();
   } catch (e) {
