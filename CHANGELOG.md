@@ -7,6 +7,19 @@ Security fixes say what was exploitable and how, rather than "hardened X". A cha
 entry for a security tool that hides the mechanism is asking the reader to take its word,
 and this project's whole argument is that you should not have to.
 
+## v0.1.3
+
+### Added
+
+- **The panel can restart itself into the version it just installed.** An update replaces
+  the file; the process already running is still the old program. The install said so and
+  left it there — which, on an account with no shell, is not something the user can act on.
+  After a successful install the banner now becomes the action: `Restart the panel`.
+  Stopping is the whole restart, because the PHP bridge starts the panel whenever it is not
+  answering, so the next visit brings up the new binary. Where there is no bridge, the
+  response says the panel stopped and nothing will bring it back, rather than promising a
+  restart it cannot deliver.
+
 ## v0.1.2
 
 ### Added
