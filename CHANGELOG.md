@@ -7,6 +7,22 @@ Security fixes say what was exploitable and how, rather than "hardened X". A cha
 entry for a security tool that hides the mechanism is asking the reader to take its word,
 and this project's whole argument is that you should not have to.
 
+## v0.1.4
+
+### Fixed
+
+- **The panel kept offering an update it had already installed.** It compared the release
+  against the version of the *running process*, which after an update is the old one — the
+  file changed, the program in memory did not. So installing and then reloading showed the
+  same "available" banner, which is indistinguishable from the update having silently
+  failed. The panel now asks the binary on disk what version it is, and reports
+  `installed and waiting` as its own state, with the restart as the action.
+- **Installing twice destroyed the way back.** The second install overwrote the binary with
+  itself and moved the old one aside, so the rollback target became the version already
+  running. It happened on a real account: both the binary and its `.prev` reported v0.1.3,
+  and the v0.1.2 it could have returned to was gone. Installing a version already on disk
+  is now refused, with the reason.
+
 ## v0.1.3
 
 ### Added

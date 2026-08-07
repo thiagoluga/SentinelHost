@@ -18,6 +18,14 @@ type UpdateChecker interface {
 	RunningVersion() string
 }
 
+// DiskVersionReporter is implemented by a checker that can say what is on disk.
+//
+// Optional so a checker that cannot answer simply does not implement it, and the panel
+// falls back to the running version rather than inventing one.
+type DiskVersionReporter interface {
+	OnDiskVersion() string
+}
+
 // updateCache holds the last answer.
 //
 // The panel asks on every page view, and the release API rate-limits by IP — an account
@@ -58,12 +66,35 @@ func (s *Server) handleUpdateStatus(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	newer, cmpErr := selfupdate.IsNewer(s.updates.RunningVersion(), rel.Version)
+	// What is ON DISK decides whether there is anything left to install.
+	//
+	// The running process reports the version it was compiled with, which after an update
+	// is the old one — the file changed, the program in memory did not. Comparing against
+	// that made the panel keep offering an update it had already installed, so a user who
+	// installed and reloaded was told to install again. That is indistinguishable from the
+	// update having silently failed, on the one screen that must never be ambiguous.
+	running := s.updates.RunningVersion()
+	onDisk := running
+	if d, ok := s.updates.(DiskVersionReporter); ok {
+		if v := d.OnDiskVersion(); v != "" {
+			onDisk = v
+		}
+	}
+
+	newer, cmpErr := selfupdate.IsNewer(onDisk, rel.Version)
+	// Installed, but not yet running it. A restart is what is left, not another download.
+	pendingRestart := false
+	if staged, err := selfupdate.IsNewer(running, onDisk); err == nil && staged {
+		pendingRestart = true
+	}
+
 	body := map[string]any{
-		"supported": true,
-		"current":   s.updates.RunningVersion(),
-		"latest":    rel.Version,
-		"newer":     newer,
+		"supported":       true,
+		"current":         running,
+		"on_disk":         onDisk,
+		"pending_restart": pendingRestart,
+		"latest":          rel.Version,
+		"newer":           newer,
 		// What the user is being asked to install. Sent even when it is not newer, so the
 		// panel can show what the current version was released with.
 		"notes":     rel.Notes,
@@ -95,7 +126,23 @@ func (s *Server) handleUpdateApply(w http.ResponseWriter, req *http.Request) {
 		writeErr(w, http.StatusBadGateway, "could not reach the release listing: %v", err)
 		return
 	}
-	newer, err := selfupdate.IsNewer(s.updates.RunningVersion(), rel.Version)
+	// Compared against DISK, not against the running process.
+	//
+	// Installing a version that is already on disk overwrites the binary with itself and
+	// moves the old one to .prev — which means the rollback target becomes the version you
+	// are already on. Two clicks of Install destroyed the only way back, silently, and the
+	// second click looked exactly like the first.
+	//
+	// It happened: an account ended up with sentinelhost and sentinelhost.prev both
+	// reporting v0.1.3, and the v0.1.2 it could have returned to was gone.
+	installed := s.updates.RunningVersion()
+	if d, ok := s.updates.(DiskVersionReporter); ok {
+		if v := d.OnDiskVersion(); v != "" {
+			installed = v
+		}
+	}
+
+	newer, err := selfupdate.IsNewer(installed, rel.Version)
 	if err != nil {
 		writeErr(w, http.StatusConflict, "%v", err)
 		return
@@ -103,8 +150,18 @@ func (s *Server) handleUpdateApply(w http.ResponseWriter, req *http.Request) {
 	if !newer {
 		// Refused rather than performed. The panel must not be able to install a release
 		// that is not an upgrade, whatever it was showing when the button was clicked.
+		if installed != s.updates.RunningVersion() {
+			// Already installed, waiting for a restart. Saying "not newer" here would be
+			// technically true and completely unhelpful.
+			writeErr(w, http.StatusConflict,
+				"%s is already installed — the panel is still running %s until it restarts. "+
+					"Installing again would overwrite the binary with itself and leave the "+
+					"rollback pointing at %s instead of %s",
+				rel.Version, s.updates.RunningVersion(), rel.Version, s.updates.RunningVersion())
+			return
+		}
 		writeErr(w, http.StatusConflict,
-			"%s is not newer than the running %s", rel.Version, s.updates.RunningVersion())
+			"%s is not newer than the installed %s", rel.Version, installed)
 		return
 	}
 
