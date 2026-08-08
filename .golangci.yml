@@ -1,6 +1,17 @@
-# The v1 format, which is what golangci-lint-action installs by default.
-# Moving to the v2 format would require pinning a specific version of the tool in
-# CI, and a lint that only runs on an exact version breaks for contributors.
+# The v2 format.
+#
+# This file used to carry a note saying the v1 format was kept deliberately, because
+# moving to v2 "would require pinning a specific version of the tool in CI, and a lint
+# that only runs on an exact version breaks for contributors". That reasoning was
+# overtaken: golangci-lint-action@v6 resolves `latest` to the v1 line, which is built
+# with Go 1.24 and refuses outright to read a module targeting Go 1.25 —
+#
+#   can't load config: the Go language version (go1.24) used to build golangci-lint
+#   is lower than the targeted Go version (1.25.0)
+#
+# So the old config was not the portable choice any more; it was the one that stopped
+# working. Action v8 installs the v2 line, which tracks current Go.
+version: "2"
 
 run:
   timeout: 5m
@@ -17,38 +28,42 @@ linters:
     - revive
     - unconvert
     - nolintlint
-    - gofmt
     # `misspell` only knows English, which is now the repository's language
     # (constitution 1.1.0, Principle VIII). It used to be disabled because the code
     # was written in Portuguese and it flagged correct words as typos; with the
     # translation done, it became a cheap way of keeping the policy honest.
     - misspell
 
-linters-settings:
-  gosec:
-    excludes:
-      # G204: the ENTIRE project exists to run external engines as subprocesses.
-      # The arguments are assembled in internal/exec, which resolves the binary and
-      # never goes through a shell.
-      - G204
-      # G501: MD5 is mandatory for INTEROPERABILITY, not by choice. The
-      # WordPress.org checksums API publishes MD5, and the comparison has to use the
-      # same algorithm as the source. There is no cryptographic use: the MD5 only
-      # serves to match the published value, and the hash that enters the normalized
-      # schema is SHA-256, computed in the same read of the file.
-      - G501
-      # G401 for the same reason: it is the md5.New() CALL that matches the value the
-      # API publishes. Without it there is no way to compare against the official
-      # source.
-      - G401
-  revive:
-    rules:
-      - name: exported
-        disabled: true
+  settings:
+    gosec:
+      excludes:
+        # G204: the ENTIRE project exists to run external engines as subprocesses.
+        # The arguments are assembled in internal/exec, which resolves the binary and
+        # never goes through a shell.
+        - G204
+        # G501: MD5 is mandatory for INTEROPERABILITY, not by choice. The
+        # WordPress.org checksums API publishes MD5, and the comparison has to use the
+        # same algorithm as the source. There is no cryptographic use: the MD5 only
+        # serves to match the published value, and the hash that enters the normalized
+        # schema is SHA-256, computed in the same read of the file.
+        - G501
+        # G401 for the same reason: it is the md5.New() CALL that matches the value the
+        # API publishes. Without it there is no way to compare against the official
+        # source.
+        - G401
+    revive:
+      rules:
+        - name: exported
+          disabled: true
 
-issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - gosec
-        - errcheck
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+
+# gofmt moved out of `linters` in v2: formatting is its own phase, not a lint.
+formatters:
+  enable:
+    - gofmt

@@ -19,7 +19,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - uses: golangci/golangci-lint-action@v6
+      # v8 installs the golangci-lint v2 line. v6 resolves `latest` to the v1 line,
+      # which is built with Go 1.24 and refuses to read a module targeting 1.25:
+      # "the Go language version (go1.24) used to build golangci-lint is lower than
+      # the targeted Go version". The config moved to the v2 schema with it.
+      - uses: golangci/golangci-lint-action@v8
         with:
           version: latest
 
