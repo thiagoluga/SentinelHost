@@ -7,6 +7,22 @@ Security fixes say what was exploitable and how, rather than "hardened X". A cha
 entry for a security tool that hides the mechanism is asking the reader to take its word,
 and this project's whole argument is that you should not have to.
 
+## v0.1.6
+
+### Fixed
+
+- **The sidebar said `loading…` forever** when the panel was opened straight into any tab
+  other than Overview. Nothing was pending: the line is written only by the overview's
+  loader, so on `#settings` it kept a placeholder that says "wait" and never resolves. The
+  sidebar is chrome rather than tab content, so it is now filled once per page load
+  whatever tab you land on — and when that cannot be read, it says nothing rather than
+  promising an answer.
+- **The sidebar grew taller than the window.** It stretched to match the content column, so
+  on a long page such as Settings the `Sign out` button and the last-cycle line sat below
+  the fold, reachable only by scrolling a column with nothing in it. It now keeps its own
+  height and scrolls independently, and on a narrow window it goes back to sitting above
+  the content instead of being trapped in a full-height column.
+
 ## v0.1.5
 
 ### Added

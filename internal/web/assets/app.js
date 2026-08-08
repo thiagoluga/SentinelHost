@@ -138,9 +138,38 @@ function showGate(firstAccess = false) {
   $('#password').focus();
 }
 
+/**
+ * The sidebar, filled once per page load whatever tab you land on.
+ *
+ * It is chrome, not tab content, and it was being written only by the overview's loader —
+ * so opening the panel straight into #settings left the footer reading "loading…" for as
+ * long as the page stayed open. Nothing was pending. It is a placeholder nobody ever
+ * replaced, which is worse than an empty line: it says "wait" forever.
+ *
+ * One request, deliberately, and it fails quiet: the footer says where the roots are and
+ * when the last cycle ran, which is context rather than something to act on. Making it
+ * shout would put an error in front of somebody who came to read a setting.
+ */
+async function loadChrome() {
+  const foot = $('#side-foot');
+  try {
+    const s = await api('/api/status');
+    if (foot) {
+      foot.textContent =
+        `${(s.roots || []).join(', ')}
+Last cycle: ${fmtDate(s.last_scan?.finished_at)}`;
+    }
+  } catch {
+    // Say nothing rather than "loading…". An empty line is honest about not knowing; a
+    // spinner that never resolves is not.
+    if (foot) foot.textContent = '';
+  }
+}
+
 function showApp() {
   $('#gate').hidden = true;
   $('#app').hidden = false;
+  void loadChrome();
 
   // The URL decides, then whatever the markup marked active, then the overview. The last
   // fallback matters: a hash naming a tab that no longer exists must not leave the panel
