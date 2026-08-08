@@ -32,6 +32,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/lib/path.php';
 require_once __DIR__ . '/lib/request.php';
+require_once __DIR__ . '/lib/panel.php';
 
 // Every failure path here answers in plain text: an HTML error page from a security
 // tool invites the reader to wonder what else is being rendered.
@@ -51,6 +52,10 @@ $binary   = $home . '/sentinelhost/bin/sentinelhost';
 $config   = $home . '/sentinelhost/config.toml';
 $lockFile = $home . '/sentinelhost/.bridge.lock';
 $logFile  = $home . '/sentinelhost/panel.log';
+// Where the panel records its own process id, so a wedged one can be identified and
+// cleared. The bridge passes this path to `serve`, so the two cannot drift apart: there is
+// one place it is configured and it is this line.
+$pidFile  = $home . '/sentinelhost/.panel.pid';
 $upstream = '127.0.0.1:8787';                    // must match web.listen in the TOML
 // How long a request may hold a PHP worker waiting for a cold start.
 //
@@ -140,8 +145,7 @@ function lastPanelError(string $logFile): string
     $tail = (string) fread($fh, 8192);
     fclose($fh);
 
-    $lines = preg_split('/?
-/', trim($tail)) ?: [];
+    $lines = preg_split('/\r?\n/', trim($tail)) ?: [];
     for ($i = count($lines) - 1; $i >= 0; $i--) {
         $line = trim($lines[$i]);
         if ($line === '') {
@@ -157,16 +161,70 @@ function lastPanelError(string $logFile): string
     return '';
 }
 
-/** Is the panel accepting connections right now? */
+/** Is the panel answering right now? See lib/panel.php for why this is not a TCP connect. */
 function panelIsUp(string $hostPort, float $timeout = 1.5): bool
 {
-    [$host, $port] = explode(':', $hostPort, 2);
-    $sock = @fsockopen($host, (int) $port, $errno, $errstr, $timeout);
-    if ($sock === false) {
-        return false;
+    return panelHealth($hostPort, $timeout) === PANEL_ANSWERING;
+}
+
+/**
+ * Clear a process that holds the panel's port without answering on it.
+ *
+ * Nothing else can fix this. The port is taken, so every start dies with "address already in
+ * use"; the process will not recover, because a wedged one does not; and the account has no
+ * shell, which is the whole reason this bridge exists. Left alone it stays down forever while
+ * each visit hangs for a minute.
+ *
+ * Two rules make killing safe enough to do without asking:
+ *
+ *   - Only a pid this account's own binary owns, proved through /proc, is ever signalled.
+ *     ownedPanelPID() returns 0 for every doubt and 0 is never signalled. If some OTHER
+ *     program of the account's has taken the port, this refuses and the 503 says so, which
+ *     is a fact the owner can act on.
+ *   - TERM first, KILL only if the port is still occupied afterwards. A panel that is merely
+ *     slow shuts down cleanly and finishes what it was doing; only one that cannot respond
+ *     to a signal gets the hard one.
+ *
+ * Returns the reason it could not, or '' on success.
+ */
+function clearStuckPanel(string $upstream, string $pidFile, string $binary): string
+{
+    $pid = ownedPanelPID($pidFile, $binary);
+    if ($pid === 0) {
+        // Requests arrive together, and a moment ago one of them may have cleared this and
+        // taken the pid file with it. Reporting a blocked port to everyone who lost that
+        // race would be wrong: the port is no longer blocked. So the state is re-read rather
+        // than inferred from a pid file that has already served its purpose.
+        if (panelHealth($upstream, 0.5) !== PANEL_SILENT) {
+            return '';
+        }
+        return 'something is holding ' . $upstream . ' without answering, and it could not be '
+            . 'identified as this account\'s panel — nothing was killed';
     }
-    fclose($sock);
-    return true;
+
+    // 15 = TERM, 9 = KILL. The numbers rather than the constants, which live in ext-posix
+    // and this host may not have it.
+    if (!signalPanel($pid, 15)) {
+        return 'process ' . $pid . ' is holding ' . $upstream . ' without answering, and this '
+            . 'PHP cannot signal it (neither posix_kill nor exec is available)';
+    }
+
+    // Up to two seconds for it to go. Longer would hold a PHP worker for a case that is
+    // already a fault; shorter would send KILL to something on its way out cleanly.
+    $deadline = microtime(true) + 2.0;
+    while (microtime(true) < $deadline) {
+        usleep(150000);
+        if (panelHealth($upstream, 0.3) === PANEL_DOWN) {
+            return '';
+        }
+    }
+
+    signalPanel($pid, 9);
+    usleep(300000);
+    if (panelHealth($upstream, 0.3) !== PANEL_DOWN) {
+        return 'process ' . $pid . ' survived both TERM and KILL and still holds ' . $upstream;
+    }
+    return '';
 }
 
 /**
@@ -181,7 +239,7 @@ function panelIsUp(string $hostPort, float $timeout = 1.5): bool
  * there holding a PHP worker open, it just waits for the panel the other request is
  * already starting.
  */
-function startPanel(string $binary, string $config, string $lockFile, string $logFile, string $upstream, float $wait): bool
+function startPanel(string $binary, string $config, string $lockFile, string $logFile, string $pidFile, string $upstream, float $wait): bool
 {
     $lock = is_executable($binary) ? @fopen($lockFile, 'c') : false;
     if ($lock === false) {
@@ -197,10 +255,14 @@ function startPanel(string $binary, string $config, string $lockFile, string $lo
     // from before it.
     if (flock($lock, LOCK_EX | LOCK_NB)) {
         if (!panelIsUp($upstream)) {
+            // --pidfile so the process can be identified later. A panel that wedges keeps
+            // its listening socket, and without a verifiable pid there is nothing on this
+            // account able to clear it.
             $cmd = sprintf(
-                'nohup %s serve --config %s >> %s 2>&1 &',
+                'nohup %s serve --config %s --pidfile %s >> %s 2>&1 &',
                 escapeshellarg($binary),
                 escapeshellarg($config),
+                escapeshellarg($pidFile),
                 escapeshellarg($logFile)
             );
             // exec() rather than shell_exec(): nothing here wants the output, and the
@@ -299,9 +361,29 @@ trace($traceLog, sprintf('>>> %-6s %-28s id=%s',
     $reqID));
 
 $t0 = microtime(true);
-$wasUp = panelIsUp($upstream);
+$health = panelHealth($upstream);
+$wasUp = $health === PANEL_ANSWERING;
 $tProbe = microtime(true);
-$started = $wasUp || startPanel($binary, $config, $lockFile, $logFile, $upstream, $bootWait);
+
+// The port accepts and nothing answers on it.
+//
+// Confirmed with a second, slower probe before acting: one silent reply could be a moment of
+// load, and what follows kills a process. Two in a row, on a handler that touches no database
+// and takes no lock, is not load.
+$stuckReason = '';
+if ($health === PANEL_SILENT && panelHealth($upstream, 3.0) === PANEL_SILENT) {
+    trace($traceLog, sprintf('!!! %s accepts connections and does not answer; id=%s',
+        $upstream, $reqID));
+    $stuckReason = clearStuckPanel($upstream, $pidFile, $binary);
+    if ($stuckReason !== '') {
+        trace($traceLog, sprintf('!!! could not clear %s: %s; id=%s',
+            $upstream, $stuckReason, $reqID));
+    }
+}
+
+$started = $wasUp
+    || ($stuckReason === ''
+        && startPanel($binary, $config, $lockFile, $logFile, $pidFile, $upstream, $bootWait));
 $tStart = microtime(true);
 
 if (!$started) {
@@ -310,7 +392,10 @@ if (!$started) {
     $missing = !is_executable($binary);
 
     http_response_code(503);
-    header('Retry-After: ' . ($missing ? '30' : '2'));
+    // Two seconds is right for a cold start, which the next visit finishes. It is wrong for
+    // a port held by something that will not let go: that does not clear on its own, and a
+    // page reloading every two seconds against it is just a faster way of getting nowhere.
+    header('Retry-After: ' . ($missing || $stuckReason !== '' ? '30' : '2'));
 
     if ($missing) {
         $why = "the binary is missing or not executable at {$binary}";
@@ -320,7 +405,9 @@ if (!$started) {
         exit("SentinelHost bridge: {$why}.\n");
     }
 
-    $why = sprintf('still starting after %.1fs; worker released for the client to retry', $bootWait);
+    $why = $stuckReason !== ''
+        ? $stuckReason
+        : sprintf('still starting after %.1fs; worker released for the client to retry', $bootWait);
 
     // What the panel actually complained about, if it complained. This is the difference
     // between a page that says "wait" forever and one that names the cause.
@@ -341,21 +428,35 @@ if (!$started) {
     // so ten people reloading cost ten short requests instead of ten held workers.
     if (wantsHTML($_SERVER)) {
         header('Content-Type: text/html; charset=utf-8');
+
+        // A blocked port is not a slow start, and saying "starting" over it would be a lie
+        // the reader can do nothing with. No self-refresh either: reloading changes nothing
+        // here, and a page that keeps retrying reads as progress when there is none.
+        $stuck = $stuckReason !== '';
+        $heading = $stuck ? 'The panel cannot start' : 'Starting the panel';
+        $explain = $stuck
+            ? '<p>Its port, ' . htmlspecialchars($upstream, ENT_QUOTES, 'UTF-8') . ', is held '
+                . 'by a process that is not answering, so a new panel cannot bind to it. '
+                . 'Reloading will not clear this.</p>'
+                . '<p style="color:#e6a">' . htmlspecialchars($stuckReason, ENT_QUOTES, 'UTF-8')
+                . '</p>'
+            : '<p>Shared hosting does not keep the panel running between visits, so the '
+                . 'first request after an idle period has to start it. This page reloads by '
+                . 'itself every two seconds.</p>'
+                . '<p>If it has not settled within a minute the panel failed to start: check '
+                . htmlspecialchars(basename($logFile), ENT_QUOTES, 'UTF-8') . '.</p>';
+
         // Nothing external: this renders while the panel is, by definition, not answering.
         exit('<!doctype html><meta charset="utf-8">'
             . '<meta name="viewport" content="width=device-width,initial-scale=1">'
-            . '<meta http-equiv="refresh" content="2">'
-            . '<title>SentinelHost — starting</title>'
+            . ($stuck ? '' : '<meta http-equiv="refresh" content="2">')
+            . '<title>SentinelHost — ' . ($stuck ? 'blocked' : 'starting') . '</title>'
             . '<style>body{font:16px/1.6 system-ui,sans-serif;margin:0;min-height:100vh;'
             . 'display:grid;place-items:center;background:#111;color:#eee}'
             . 'div{max-width:32rem;padding:2rem;text-align:center}'
             . 'p{color:#aaa;font-size:.9rem}</style>'
-            . '<div><h1>Starting the panel</h1>'
-            . '<p>Shared hosting does not keep the panel running between visits, so the '
-            . 'first request after an idle period has to start it. This page reloads by '
-            . 'itself every two seconds.</p>'
-            . '<p>If it has not settled within a minute the panel failed to start: check '
-            . htmlspecialchars(basename($logFile), ENT_QUOTES, 'UTF-8') . '.</p>'
+            . '<div><h1>' . $heading . '</h1>'
+            . $explain
             . $panelErrorHTML . '</div>');
     }
 
@@ -382,8 +483,7 @@ $target = upstreamURL($upstream, upstreamPath($rawPath, http_build_query($params
 if ($target === null) {
     http_response_code(400);
     header(PLAIN);
-    exit("SentinelHost bridge: refusing a request whose path does not resolve to the panel.
-");
+    exit("SentinelHost bridge: refusing a request whose path does not resolve to the panel.\n");
 }
 
 // $target has been through upstreamURL(), which returns null unless the assembled URL

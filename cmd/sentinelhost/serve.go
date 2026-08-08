@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/thiagoluga/SentinelHost/internal/store"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/thiagoluga/SentinelHost/internal/alert"
@@ -15,6 +17,7 @@ import (
 func cmdServe(ctx context.Context, args []string) error {
 	fs, cfgPath := flagSet("serve")
 	listen := fs.String("listen", "", "listen address (overrides the TOML)")
+	pidFile := fs.String("pidfile", "", "write this process's id here, and remove it on a clean exit")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `sentinelhost serve — starts the embedded web panel.
 
@@ -45,6 +48,21 @@ OPTIONS
 	if !a.cfg.Web.Enabled {
 		return fmt.Errorf("the panel is disabled in the configuration (web.enabled = false)")
 	}
+
+	// Say which process this is, for whoever has to clear it later.
+	//
+	// A panel that wedges keeps its listening socket, so nothing can start a replacement on
+	// the port and nothing can identify what to kill. On the account this was built for
+	// there is no shell — no ps, no fuser — so the only party able to act is the PHP bridge,
+	// and it needs a process id it can verify belongs to this binary before it signals it.
+	//
+	// Removed on a clean exit precisely so a file that SURVIVES means something: the process
+	// did not get to shut down, which is the case the bridge is looking for.
+	removePID, err := writePIDFile(*pidFile)
+	if err != nil {
+		return err
+	}
+	defer removePID()
 
 	dispatcher := alert.NewDispatcher(ctx, a.cfg, a.store)
 	runner := cycle.New(a.cfg, a.store, a.registry, a.vault).WithDispatcher(dispatcher)
@@ -93,6 +111,27 @@ OPTIONS
 	fmt.Println("Ctrl-C to stop.")
 
 	return srv.ListenAndServe(ctx)
+}
+
+// writePIDFile records this process's id, and returns the way to take it back.
+//
+// An empty path is not an error: a panel started by hand does not need one, and refusing to
+// serve without it would break every existing install for the sake of a debugging aid.
+//
+// 0600 because the file names a process the bridge is allowed to kill. It is written whole
+// rather than appended so a reader never sees two ids, and the caller removes it on a clean
+// exit so a file left behind carries information: this process never shut down.
+func writePIDFile(path string) (func(), error) {
+	if path == "" {
+		return func() {}, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("preparing the directory for %s: %w", path, err)
+	}
+	if err := os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600); err != nil {
+		return nil, fmt.Errorf("writing %s: %w", path, err)
+	}
+	return func() { _ = os.Remove(path) }, nil
 }
 
 // passwordAlreadySet reports whether the panel has an owner.

@@ -1803,3 +1803,59 @@ The lesson is narrower than "review your code". Both D-044 and this entry were w
 carefully, and D-044 argued *explicitly* against trusting a name — while trusting
 something equally forgeable. **A convincing argument for why one thing cannot be forged is
 not an argument about the thing you replaced it with.**
+
+## D-051 — a socket that accepts is not a service that answers
+
+**Context**: the panel on the real cPanel account went down and stayed down. The symptom
+changed as it got worse: first a `503` in two seconds, which is the bridge working as
+designed; then sixty seconds with no response at all, not even the bridge's own page. The
+site itself answered in 0.1s throughout, so the web server was fine.
+
+The bridge decided whether the panel was up with `fsockopen`. That asks whether the port
+**accepts a connection**. A process that is wedged still holds its listening socket, and the
+kernel completes the handshake on its behalf — so the probe passed, the bridge proxied the
+visitor's request to it, and the request hung until the web server killed it.
+
+Confirmed against the real binary rather than argued: with the panel stopped by `SIGSTOP`,
+which holds the socket and serves nothing, `fsockopen` answers **UP in 0.00s** while a
+`GET /healthz` answers **silent in 1.51s**.
+
+This is the failure the project is named after, moved into the plumbing. `ScanStatus.
+CountsAsVote()` exists because an engine that could not run has not found zero threats. A
+probe that could not get an answer has not found a healthy panel. Same mistake, different
+layer — and this one was written by the same hand that wrote the rule.
+
+A wedged panel is *worse* than a stopped one. A stopped panel gets a `503` in two seconds
+and the next visit starts a new one. A wedged panel holds a PHP worker on an account with a
+small ceiling on them, blocks every replacement with *address already in use*, and reports
+nothing to the person looking at the screen.
+
+**Decision**: the liveness probe is an HTTP request, and what does not answer gets cleared.
+
+- **`GET /healthz`**, answered without touching the database, the configuration lock or a
+  session. Anything this handler waited on would make a panel BUSY with a scan
+  indistinguishable from a wedged one, and the bridge acts on the answer by killing the
+  process. The Go test uses a zero `Server` so a future dependency panics rather than
+  passing quietly.
+- **Any HTTP status line counts as answering**, including the `404` an older panel with no
+  `/healthz` returns. The question is whether it serves, not what it thinks of the path.
+- **Confirmed twice before killing.** One silent probe could be a moment of load; two, on a
+  handler that waits for nothing, is not.
+- **Only a verified process id is signalled.** `serve --pidfile` records it and removes it
+  on a clean exit, so a file that survives means the process never shut down. Before
+  signalling, `/proc/<pid>/cmdline` must show **this binary** — a pid file outlives a
+  process killed hard, and Linux reuses process ids. Every doubt answers 0, and 0 is never
+  signalled. Where `/proc` cannot be read, the bridge refuses and the `503` says the port is
+  held by something it could not identify.
+- **`TERM`, then `KILL` two seconds later.** A panel that is merely slow shuts down cleanly.
+  A `SIGSTOP`ped one cannot handle `TERM` at all, which the container run above exercises:
+  `TERM` does not land, `KILL` clears it, the replacement binds and answers.
+- **The blocked page does not pretend to be starting**, and does not refresh itself.
+  Reloading changes nothing when a port is held, and a page that keeps retrying reads as
+  progress where there is none. `Retry-After` is 30, not 2.
+
+**What this does not fix**: why the panel wedged in the first place is still unknown. The
+config corruption that preceded it could not be reproduced — the TOML encoder escapes even
+the exact hostile shape that broke the account (see the honest limitation recorded in
+`internal/config/load_test.go`). This entry is about the bridge no longer being unable to
+tell, which is a smaller claim and the only one the evidence supports.
