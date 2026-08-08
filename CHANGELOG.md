@@ -7,6 +7,20 @@ Security fixes say what was exploitable and how, rather than "hardened X". A cha
 entry for a security tool that hides the mechanism is asking the reader to take its word,
 and this project's whole argument is that you should not have to.
 
+## v0.1.7
+
+### Fixed
+
+- **A configuration that cannot be read back no longer replaces the one that works.** The
+  write was already atomic, so the file was never half-written — but nothing checked the
+  bytes were parseable. An account was left with a duplicated table, and every start died
+  reading it: 54 attempts, each triggered by a visit, with nothing on screen but a page
+  that reloaded itself. `SaveTo` now loads the temporary file before the rename, so a bad
+  write fails as "the change did not save, and here is why" rather than stopping the tool.
+- **The waiting page says why the panel failed**, instead of telling the reader to check a
+  log they cannot open. The bridge exists because the account has no shell, so "check
+  panel.log" was advice nobody could follow. The last error line is now read and shown.
+
 ## v0.1.6
 
 ### Fixed
