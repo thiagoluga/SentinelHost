@@ -106,6 +106,57 @@ function trace(string $file, string $line): void
     @file_put_contents($file, gmdate('c') . ' ' . $line . "\n", FILE_APPEND);
 }
 
+/**
+ * The last thing the panel said before giving up.
+ *
+ * The 503 page used to say "check panel.log", which is advice the reader cannot follow:
+ * this bridge exists precisely because the account has no shell. So the log is read here
+ * and the reason is put on the page.
+ *
+ * It happened on a real account. An invalid config meant every start died reading it, and
+ * every visit started another one — 54 attempts, all identical, with nothing on screen but
+ * a page that reloaded itself forever. The reason was one line in a file the owner had no
+ * way to open.
+ *
+ * Only the tail, and only lines that look like a failure: the log is mostly startup
+ * banners, and showing those would bury the one line that matters.
+ */
+function lastPanelError(string $logFile): string
+{
+    if ($logFile === '' || !is_readable($logFile)) {
+        return '';
+    }
+    $size = @filesize($logFile);
+    if ($size === false) {
+        return '';
+    }
+    $fh = @fopen($logFile, 'rb');
+    if ($fh === false) {
+        return '';
+    }
+    // 8 KiB is many failures' worth; reading the whole file would be unbounded.
+    $from = max(0, $size - 8192);
+    fseek($fh, $from);
+    $tail = (string) fread($fh, 8192);
+    fclose($fh);
+
+    $lines = preg_split('/?
+/', trim($tail)) ?: [];
+    for ($i = count($lines) - 1; $i >= 0; $i--) {
+        $line = trim($lines[$i]);
+        if ($line === '') {
+            continue;
+        }
+        // Anything that is not the ordinary startup chatter is worth showing.
+        if (stripos($line, 'panel at') !== false || stripos($line, 'Ctrl-C') !== false) {
+            continue;
+        }
+        // A long line is truncated rather than allowed to fill the page.
+        return mb_strimwidth($line, 0, 300, '…');
+    }
+    return '';
+}
+
 /** Is the panel accepting connections right now? */
 function panelIsUp(string $hostPort, float $timeout = 1.5): bool
 {
@@ -270,6 +321,18 @@ if (!$started) {
     }
 
     $why = sprintf('still starting after %.1fs; worker released for the client to retry', $bootWait);
+
+    // What the panel actually complained about, if it complained. This is the difference
+    // between a page that says "wait" forever and one that names the cause.
+    $panelError = lastPanelError($logFile);
+    $panelErrorHTML = '';
+    if ($panelError !== '') {
+        $why .= ' — last error: ' . $panelError;
+        $panelErrorHTML = '<p style="color:#e6a">The panel last reported:</p>'
+            . '<pre style="text-align:left;white-space:pre-wrap;word-break:break-word;'
+            . 'background:#000;padding:.75rem;border-radius:6px;font-size:.8rem;color:#f8d">'
+            . htmlspecialchars($panelError, ENT_QUOTES, 'UTF-8') . '</pre>';
+    }
     trace($traceLog, sprintf('503 probe=%.2fs start=%.2fs id=%s %s',
         $tProbe - $t0, $tStart - $tProbe, $reqID, $why));
 
@@ -292,7 +355,8 @@ if (!$started) {
             . 'first request after an idle period has to start it. This page reloads by '
             . 'itself every two seconds.</p>'
             . '<p>If it has not settled within a minute the panel failed to start: check '
-            . htmlspecialchars(basename($logFile), ENT_QUOTES, 'UTF-8') . '.</p></div>');
+            . htmlspecialchars(basename($logFile), ENT_QUOTES, 'UTF-8') . '.</p>'
+            . $panelErrorHTML . '</div>');
     }
 
     header(PLAIN);

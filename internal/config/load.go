@@ -337,6 +337,22 @@ func (c *Config) SaveTo(path string) error {
 	if err := os.Chmod(tmpName, 0o600); err != nil {
 		return fmt.Errorf("adjusting configuration permissions: %w", err)
 	}
+	// Read back what we just wrote, BEFORE it replaces anything.
+	//
+	// This is the whole point of writing to a temporary file, and it was missing: the
+	// rename was atomic, so the file was never half-written, but nothing checked that the
+	// bytes were readable. A config the tool cannot parse stops it completely — every start
+	// dies reading it, and on an account with no shell the only evidence is a log the user
+	// cannot open. It happened: an account was left with a duplicated table, and the panel
+	// restarted into that failure on every visit for as long as it took to notice.
+	//
+	// Verifying here means the existing configuration survives a bad write. The worst case
+	// becomes "the change did not save, and here is why", which the user can act on.
+	if _, err := Load(tmpName); err != nil {
+		return fmt.Errorf("refusing to install a configuration that cannot be read back: %w. "+
+			"%s is unchanged", err, path)
+	}
+
 	if err := os.Rename(tmpName, path); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
