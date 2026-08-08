@@ -35,6 +35,19 @@ linters:
     - misspell
 
   settings:
+    errcheck:
+      # v1 excluded these by default and v2 does not, which turned roughly thirty-five
+      # CLI print statements into lint failures overnight.
+      #
+      # Restored rather than annotated. A write to stdout that fails has no recovery —
+      # the place to report it would be the thing that just failed — and the buffered
+      # writers here are tabwriters whose errors surface on Flush, which IS checked.
+      # Prefixing thirty-five lines with `_, _ =` would say "considered and dismissed"
+      # in the one place where nobody ever considers anything.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
     gosec:
       excludes:
         # G204: the ENTIRE project exists to run external engines as subprocesses.
