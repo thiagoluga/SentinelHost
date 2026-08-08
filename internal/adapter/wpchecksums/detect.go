@@ -68,6 +68,165 @@ func Detect(root string) (Install, error) {
 	return Install{}, fmt.Errorf("%w: %s does not declare $wp_version", ErrNotWordPress, versionFile)
 }
 
+// Search bounds for DetectAll.
+//
+// The walk is over an account's home directory on shared hosting, so it has to be
+// bounded in three directions at once — how deep, how many installations, and how many
+// directories examined — and it has to SAY when a bound stopped it. A search that gave
+// up silently would report "no WordPress here" for an account that has one, which is
+// the same lie this adapter's abstention is designed to avoid.
+const (
+	// DefaultSearchDepth counts directories below each configured root. A cPanel
+	// account keeps its sites at public_html/<domain>/ or public_html/<domain>/blog/,
+	// which is two or three; six leaves room without walking an entire disk.
+	DefaultSearchDepth = 6
+	// DefaultMaxInstalls is a ceiling, not an expectation. Accounts with dozens of
+	// addon domains exist, and each installation costs an API round trip and a full
+	// core inventory on every cycle.
+	DefaultMaxInstalls = 25
+	// DefaultMaxDirs bounds the walk itself, for the account whose uploads directory
+	// holds a hundred thousand folders.
+	DefaultMaxDirs = 50000
+)
+
+// skipDirs are never descended into while looking for a WordPress.
+//
+// None of them can contain the ROOT of an installation. wp-content is the interesting
+// case: a WordPress inside another WordPress's content directory is somebody's backup or
+// a staging copy, and scanning it as a separate site would double every finding.
+var skipDirs = map[string]bool{
+	"node_modules": true,
+	"vendor":       true,
+	".git":         true,
+	".svn":         true,
+	".cache":       true,
+	"cache":        true,
+	"wp-content":   true,
+	"wp-includes":  true,
+	"wp-admin":     true,
+}
+
+// SearchResult is what a look for WordPress installations found, and what stopped it.
+type SearchResult struct {
+	Installs []Install
+	// DirsWalked is evidence that the search happened at all. A zero here with no
+	// installations means the roots were unreadable, not that the account has no
+	// WordPress, and those are different answers.
+	DirsWalked int
+	// Roots searched, in the order given.
+	Roots []string
+	Depth int
+	// StoppedAt names the bound that cut the search short, empty when none did.
+	// Reported rather than swallowed: a truncated search that reads as a complete one
+	// is how "we found nothing" comes to mean "we stopped looking".
+	StoppedAt string
+	// Unreadable roots, which are a coverage gap and not an absence of WordPress.
+	Unreadable []string
+}
+
+// DetectAll finds every WordPress installation at or under the given roots.
+//
+// Detect() answers a narrower question — is THIS directory a WordPress — and that was
+// the only question ever asked. On a hosting account it is almost always the wrong one:
+// the configured root is the account's home, and WordPress lives at
+// public_html/<domain>/. The adapter reported "this does not look like a WordPress
+// installation: /home/user/wp-includes/version.php does not exist" for accounts running
+// several of them.
+//
+// That silence is expensive beyond the missing coverage. This is the only engine that
+// votes FOR legitimacy, and that vote is a veto: a file matching the official checksum is
+// never quarantined however many heuristics flag it (D-005). With the engine abstaining,
+// genuine core files face AMWScan and YARA with nothing speaking for them.
+//
+// Finding an installation does not stop the descent, and that is deliberate. On cPanel
+// the main site is public_html/ and every addon domain is public_html/<domain>/ — so one
+// WordPress routinely sits inside another's directory and is a completely separate site.
+// Refusing to descend cost exactly that case in the first draft of this function.
+//
+// What keeps a backup out is skipDirs: wp-content is never descended into, and that is
+// where a staging or backup copy lives. Treating one of those as its own site would
+// report every finding in it twice.
+func DetectAll(roots []string, depth, maxInstalls, maxDirs int) SearchResult {
+	if depth <= 0 {
+		depth = DefaultSearchDepth
+	}
+	if maxInstalls <= 0 {
+		maxInstalls = DefaultMaxInstalls
+	}
+	if maxDirs <= 0 {
+		maxDirs = DefaultMaxDirs
+	}
+
+	res := SearchResult{Roots: roots, Depth: depth}
+	seen := map[string]bool{}
+
+	for _, root := range roots {
+		if root == "" {
+			continue
+		}
+		abs, err := filepath.Abs(root)
+		if err != nil {
+			abs = root
+		}
+		if _, err := os.Stat(abs); err != nil {
+			res.Unreadable = append(res.Unreadable, root)
+			continue
+		}
+		if res.StoppedAt != "" {
+			break
+		}
+		walkForWordPress(abs, depth, maxInstalls, maxDirs, seen, &res)
+	}
+	return res
+}
+
+// walkForWordPress descends one root, breadth-first by level so the shallowest
+// installations are found first — those are the real sites, and a ceiling on the number
+// found should keep them rather than whatever the walker reached first.
+func walkForWordPress(root string, depth, maxInstalls, maxDirs int, seen map[string]bool, res *SearchResult) {
+	level := []string{root}
+
+	for d := 0; d <= depth && len(level) > 0; d++ {
+		var next []string
+		for _, dir := range level {
+			if res.DirsWalked >= maxDirs {
+				res.StoppedAt = fmt.Sprintf(
+					"the search stopped after examining %d directories", maxDirs)
+				return
+			}
+			res.DirsWalked++
+
+			if inst, err := Detect(dir); err == nil && !seen[inst.Root] {
+				seen[inst.Root] = true
+				res.Installs = append(res.Installs, inst)
+				if len(res.Installs) >= maxInstalls {
+					res.StoppedAt = fmt.Sprintf(
+						"the search stopped at %d installations", maxInstalls)
+					return
+				}
+			}
+
+			if d == depth {
+				// The last level is examined but not expanded.
+				continue
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				// One unreadable directory is not the search failing. It is counted
+				// through DirsWalked and the rest of the level proceeds.
+				continue
+			}
+			for _, e := range entries {
+				if !e.IsDir() || strings.HasPrefix(e.Name(), ".") || skipDirs[e.Name()] {
+					continue
+				}
+				next = append(next, filepath.Join(dir, e.Name()))
+			}
+		}
+		level = next
+	}
+}
+
 // LocalFile is the on-disk state of a core file.
 type LocalFile struct {
 	// RelPath is relative to the root, always with forward slashes (the format

@@ -104,11 +104,6 @@ func cmdEngines(ctx context.Context, args []string) error {
 // under the same quota as the cycle.
 func envFor(cfg *config.Config, slug string) adapter.Environment {
 	e := cfg.Engines[slug]
-	binPath := e.Path
-	if slug == "wp-checksums" && binPath == "" && len(cfg.General.Roots) > 0 {
-		// A native adapter: what it needs to know is where to look.
-		binPath = cfg.General.Roots[0]
-	}
 	return adapter.Environment{
 		DataDir: cfg.General.DataDir,
 		Runner: sexec.New(sexec.Limits{
@@ -116,7 +111,11 @@ func envFor(cfg *config.Config, slug string) adapter.Environment {
 			IoniceClass: cfg.Limits.IoniceClass,
 			Timeout:     cfg.Limits.EngineTimeout.Duration,
 		}, cfg.RawOutputDir()),
-		BinaryPath: binPath,
+		// wp-checksums used to receive Roots[0] here disguised as a BinaryPath, and
+		// treated that one directory as the WordPress itself. It searches now, so it
+		// gets the roots; an explicit Engines[slug].Path still overrides the search.
+		BinaryPath: e.Path,
+		Roots:      cfg.General.Roots,
 		ExtraArgs:  e.ExtraArgs,
 	}
 }

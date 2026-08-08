@@ -109,7 +109,7 @@ func (a *Adapter) scanPlugins(ctx context.Context, root string) ([]pluginPayload
 // legitimate plugin file flagged by another engine's heuristic needs that same
 // protection — plugins tend to carry minified JS and base64, which is exactly what
 // produces false positives.
-func (a *Adapter) parsePlugins(raw rawOutputInfo, payload rawPayload, detectedAt time.Time) ([]schema.Finding, []string) {
+func (a *Adapter) parsePlugins(raw rawOutputInfo, payload installPayload, detectedAt time.Time) ([]schema.Finding, []string) {
 	var findings []schema.Finding
 	var clean []string
 

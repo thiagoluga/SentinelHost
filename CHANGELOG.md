@@ -7,6 +7,38 @@ Security fixes say what was exploitable and how, rather than "hardened X". A cha
 entry for a security tool that hides the mechanism is asking the reader to take its word,
 and this project's whole argument is that you should not have to.
 
+## Unreleased
+
+### Fixed
+
+- **The WordPress check only ever looked at one directory, and it was almost never the
+  right one.** It asked whether the configured root *was* a WordPress — so on a hosting
+  account, where the root is the home and the site lives at `public_html/<domain>/`, it
+  reported `this does not look like a WordPress installation` and abstained for the whole
+  cycle. It now searches at and below every configured root, and scans every installation
+  it finds; one account with one WordPress per addon domain is the ordinary shape of
+  shared hosting, not an edge case.
+
+  The cost was larger than the missing check. This is the only engine that votes *for*
+  legitimacy, and that vote is a veto: a file identical to the official checksum is never
+  quarantined however many heuristics flag it. Silent, it left genuine core files to be
+  judged by AMWScan and YARA alone — so the gap made false quarantines more likely, not
+  just coverage smaller.
+- **Only the first configured root was ever passed to it.** A second `roots` entry was
+  never looked at. The same "checked one place, reported as if complete", one layer up.
+- **One unverifiable site no longer discards the whole report.** The guard against
+  comparing against an incomplete core returned an error for the entire engine, so a
+  single broken directory could take an account's coverage with it. Each installation is
+  now judged on its own, and one that cannot be is **counted** as
+  `wordpress_not_verified` rather than vanishing. When *none* can be verified the engine
+  still abstains — reporting `completed` with no findings after comparing nothing is this
+  adapter's worst possible output.
+- **The abstention now says where it looked and how far**, instead of naming a single file
+  that does not exist. `searched /home/user to a depth of 6 (412 directories examined)`
+  can be checked; `wp-includes/version.php does not exist` made a search that never
+  happened look like a definitive result. A search stopped by one of its own bounds says
+  which bound stopped it.
+
 ## v0.1.9
 
 ### Fixed

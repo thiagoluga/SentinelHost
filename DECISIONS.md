@@ -1902,3 +1902,65 @@ bridge trace        : probe=0.00s
 
 The probe costs nothing measurable against the `fsockopen` it replaced, which was the one
 practical objection to making it a real request.
+
+## D-052 — the engine that speaks for legitimacy was looking in one directory
+
+**Context**: on the real cPanel account, `doctor` reported
+
+```
+wp-checksums  yes  1.50  no  this does not look like a WordPress installation:
+                             /home1/motel510/wp-includes/version.php does not exist
+```
+
+The maintainer's reaction was the right one and took one line: *"but the WordPress may be
+in another folder."* It was. `Detect()` joined the configured root with
+`wp-includes/version.php` and stopped there, so the only question ever asked was whether
+the root **itself** was a WordPress. On a hosting account the root is the home directory
+and the site is at `public_html/<domain>/`. The cycle also passed `firstRoot(cfg)`, so a
+second configured root was never looked at either — the same mistake one layer up.
+
+**Why this one matters more than a missing check.** wp-checksums is the only engine that
+votes FOR legitimacy, and D-005 makes that vote a veto: a file identical to the official
+checksum is never quarantined, however many heuristics flag it. An abstaining
+wp-checksums does not merely reduce coverage — it removes the defence of every genuine
+core file, leaving them to AMWScan and YARA alone. The gap made **false quarantines more
+likely**, on the files a user would least expect to lose.
+
+And the abstention read as a conclusion. `wp-includes/version.php does not exist` is a
+true statement about a path nobody should have been looking at, phrased as a finding about
+the account.
+
+**Decision**: the adapter searches, scans everything it finds, and says what it did.
+
+- **`DetectAll` walks at and below every configured root**, breadth-first so the
+  shallowest installations — the real sites — are found before any ceiling is reached.
+- **Finding one does not stop the descent.** On cPanel the main site is `public_html/` and
+  every addon domain is `public_html/<domain>/`, so one WordPress routinely sits inside
+  another's directory and is a completely separate site. The first draft stopped
+  descending and lost exactly that; a test caught it. What keeps a backup out instead is
+  the skip list: `wp-content` is never entered, and that is where staging and backup
+  copies live.
+- **Three bounds, all reported**: depth (6), installations (25), directories (50 000). A
+  search stopped by one of them says which — a truncated search that reads like a complete
+  one reproduces the original defect at one remove.
+- **The reason names where it looked and how far.** `searched /home/user to a depth of 6
+  (412 directories examined)` can be checked by the reader. Unreadable roots are listed
+  separately, because "could not open" and "has no WordPress" are different answers.
+- **One installation's failure is counted, not fatal.** The incomplete-core guard used to
+  return an error from `Parse` and discard everything; now it skips that site as
+  `wordpress_not_verified` and the rest are reported. When NONE can be verified the engine
+  abstains, because `completed` with no findings after comparing nothing is exactly the
+  output this project exists to prevent.
+- **An explicit `engines.wp-checksums.path` still wins.** A search must never overrule
+  somebody who told us the answer.
+
+**What this does not do**: it does not read the web server's virtual host configuration,
+which is where the authoritative list of document roots lives. Walking the filesystem is
+a heuristic — a good one for the layout every cPanel account uses, and one that reports
+its own limits rather than hiding them.
+
+**The lesson is not "support subdirectories".** The function was named `Detect` and
+answered a narrower question than its name implied, and every caller took the name at its
+word for months. The reason it survived is that its failure output was a confident
+sentence about a specific file — which is the same shape as D-051 and as the eight defects
+in D-022. **An answer that names a path sounds like it looked everywhere.**

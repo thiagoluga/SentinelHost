@@ -76,6 +76,16 @@ type Environment struct {
 	// BinaryPath forced by the user's configuration, when the automatic probe
 	// cannot find the engine.
 	BinaryPath string
+	// Roots is every directory the cycle was configured to cover.
+	//
+	// Native adapters need all of them. wp-checksums was handed Roots[0] alone, and
+	// only ever asked whether that one directory WAS a WordPress — so an account with
+	// its site at public_html/<domain>/, which is the ordinary shape of shared
+	// hosting, was told "this does not look like a WordPress installation".
+	//
+	// Separate from BinaryPath rather than replacing it: BinaryPath still carries the
+	// user's explicit override, and an override has to keep beating a search.
+	Roots []string
 	// ExtraArgs from the configuration.
 	ExtraArgs []string
 	// Offline disables any network access (probe, install, checksums).
