@@ -13,6 +13,13 @@
 #
 # Not a required check. It is slower than the rest of CI and it is advisory: a finding
 # here is a question, not a verdict.
+#
+# The actions are pinned to commits, as everywhere else — the rationale is at the top of
+# ci.yml. There is a cost specific to this one: github/codeql-action carries the query
+# packs, so a pin freezes which queries run until it is bumped, and a new query finding
+# old code is one of the more valuable things this job produces. Dependabot watches
+# github-actions weekly, so the freeze lasts days rather than indefinitely — and a
+# deliberate week behind is a better trade than an action that can be retargeted under us.
 name: CodeQL
 
 on:
@@ -44,14 +51,14 @@ jobs:
       actions: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: "1.25"
 
       - name: Initialise
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
         with:
           languages: go
           # security-extended over the default set. The default is tuned to keep noise
@@ -61,9 +68,9 @@ jobs:
           queries: security-extended
 
       - name: Build
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
 
       - name: Analyse
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
         with:
           category: /language:go

@@ -9,6 +9,16 @@
 # The private key lives in the repository secret SENTINELHOST_RELEASE_KEY and is never
 # printed, never written to a file that outlives the step, and never used for anything but
 # signing these assets.
+#
+# Which is why the actions below are pinned to commits rather than tags, and why this is
+# the workflow where it matters most. A step here runs in the same job as that secret. A
+# tag like `@v4` is a movable pointer: the owner of that repository decides at any moment
+# what it dereferences to, and an account takeover upstream would put somebody else's code
+# next to the key that signs what users install. The pin is the difference between
+# trusting a commit we looked at and trusting a name.
+#
+# Updated by Dependabot, which reads the trailing version comment — see
+# .github/dependabot.yml. The full rationale is at the top of ci.yml.
 name: Release
 
 on:
@@ -25,8 +35,8 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ env.GO_VERSION }}
 
