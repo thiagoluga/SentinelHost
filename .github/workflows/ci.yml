@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: "1.24"
+  GO_VERSION: "1.25"
 
 jobs:
   lint:
@@ -19,7 +19,15 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - uses: golangci/golangci-lint-action@v6
+      # v8 installs the golangci-lint v2 line. v6 resolves `latest` to the v1 line,
+      # which is built with Go 1.24 and refuses to read a module targeting 1.25:
+      # "the Go language version (go1.24) used to build golangci-lint is lower than
+      # the targeted Go version". The config moved to the v2 schema with it.
+      #
+      # Pinned to a commit for the same reason as setup-php below, and because the
+      # quality gate asked: a tag is a movable pointer, and this action runs with a
+      # checkout of ours. 4afd733 is what v8 dereferenced to when this was added.
+      - uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9 # v8
         with:
           version: latest
 

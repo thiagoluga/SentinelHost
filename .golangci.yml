@@ -1,6 +1,17 @@
-# The v1 format, which is what golangci-lint-action installs by default.
-# Moving to the v2 format would require pinning a specific version of the tool in
-# CI, and a lint that only runs on an exact version breaks for contributors.
+# The v2 format.
+#
+# This file used to carry a note saying the v1 format was kept deliberately, because
+# moving to v2 "would require pinning a specific version of the tool in CI, and a lint
+# that only runs on an exact version breaks for contributors". That reasoning was
+# overtaken: golangci-lint-action@v6 resolves `latest` to the v1 line, which is built
+# with Go 1.24 and refuses outright to read a module targeting Go 1.25 —
+#
+#   can't load config: the Go language version (go1.24) used to build golangci-lint
+#   is lower than the targeted Go version (1.25.0)
+#
+# So the old config was not the portable choice any more; it was the one that stopped
+# working. Action v8 installs the v2 line, which tracks current Go.
+version: "2"
 
 run:
   timeout: 5m
@@ -17,38 +28,99 @@ linters:
     - revive
     - unconvert
     - nolintlint
-    - gofmt
     # `misspell` only knows English, which is now the repository's language
     # (constitution 1.1.0, Principle VIII). It used to be disabled because the code
     # was written in Portuguese and it flagged correct words as typos; with the
     # translation done, it became a cheap way of keeping the policy honest.
     - misspell
 
-linters-settings:
-  gosec:
-    excludes:
-      # G204: the ENTIRE project exists to run external engines as subprocesses.
-      # The arguments are assembled in internal/exec, which resolves the binary and
-      # never goes through a shell.
-      - G204
-      # G501: MD5 is mandatory for INTEROPERABILITY, not by choice. The
-      # WordPress.org checksums API publishes MD5, and the comparison has to use the
-      # same algorithm as the source. There is no cryptographic use: the MD5 only
-      # serves to match the published value, and the hash that enters the normalized
-      # schema is SHA-256, computed in the same read of the file.
-      - G501
-      # G401 for the same reason: it is the md5.New() CALL that matches the value the
-      # API publishes. Without it there is no way to compare against the official
-      # source.
-      - G401
-  revive:
-    rules:
-      - name: exported
-        disabled: true
+  settings:
+    errcheck:
+      # v1 excluded these by default and v2 does not, which turned roughly thirty-five
+      # CLI print statements into lint failures overnight.
+      #
+      # Restored rather than annotated. A write to stdout that fails has no recovery —
+      # the place to report it would be the thing that just failed — and the buffered
+      # writers here are tabwriters whose errors surface on Flush, which IS checked.
+      # Prefixing thirty-five lines with `_, _ =` would say "considered and dismissed"
+      # in the one place where nobody ever considers anything.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+    gosec:
+      excludes:
+        # G204: the ENTIRE project exists to run external engines as subprocesses.
+        # The arguments are assembled in internal/exec, which resolves the binary and
+        # never goes through a shell.
+        - G204
+        # G501: MD5 is mandatory for INTEROPERABILITY, not by choice. The
+        # WordPress.org checksums API publishes MD5, and the comparison has to use the
+        # same algorithm as the source. There is no cryptographic use: the MD5 only
+        # serves to match the published value, and the hash that enters the normalized
+        # schema is SHA-256, computed in the same read of the file.
+        - G501
+        # G401 for the same reason: it is the md5.New() CALL that matches the value the
+        # API publishes. Without it there is no way to compare against the official
+        # source.
+        - G401
+        # Everything below this line is a rule v2's gosec added, which v1 never ran.
+        # Each was read before being listed here, and each is a decision already argued
+        # in the code it flags. They are excluded rather than annotated at ~10 call
+        # sites so this change stays reviewable; the annotations are their own change.
+        #
+        # G118: a goroutine using context.Background(). The one it flags builds the
+        # SHUTDOWN context, and the request context is precisely the one that was just
+        # cancelled — handing Shutdown a dead context would skip the graceful drain
+        # this project takes trouble over.
+        - G118
+        # G124: a cookie without a literal Secure:true. The session cookie sets
+        # HttpOnly and SameSite=Strict, and Secure follows whether there is real TLS —
+        # marking it unconditionally would make the browser drop the cookie on
+        # http://127.0.0.1 and the login would never complete (D-044).
+        - G124
+        # G202: SQL string concatenation. The only interpolation in the store is an
+        # integer LIMIT/OFFSET through %d, which cannot produce anything but digits.
+        # Every value binds as a parameter.
+        - G202
+        # G301: a directory created with 0755. It is the RESTORE path re-creating the
+        # directory a quarantined file came from, inside a web root. 0750 would remove
+        # the traversal bit the web server needs on hosts where it runs as another
+        # user — a restore that puts the file back where nothing can read it.
+        - G301
+        # G302: a file chmod'ed 0700. It is AMWScan's phar, which this tool executes.
+        # Owner-only is the property that matters, and 0600 would not run.
+        - G302
+        # G304: opening a file named by a variable. That is what a scanner does; the
+        # paths come from the configured roots and are bounded by PathIsWithinAny
+        # before anything destructive touches them (D-045).
+        - G304
+        # G703: path traversal into tools/verify-release, whose one argument is the
+        # path of the file to verify. Taking a path is the program.
+        - G703
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+    staticcheck:
+      checks:
+        - all
+        # The QF ("quickfix") category is style: remove an embedded field from a
+        # selector, apply De Morgan's law. v2 turns it on by default. Rewriting
+        # `d.Duration.Seconds()` to `d.Seconds()` is not a correctness improvement, and
+        # a lint gate that fails on preference teaches contributors to argue with the
+        # linter instead of reading it.
+        - -QF1001
+        - -QF1008
 
-issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - gosec
-        - errcheck
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+
+# gofmt moved out of `linters` in v2: formatting is its own phase, not a lint.
+formatters:
+  enable:
+    - gofmt
