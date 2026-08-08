@@ -7,6 +7,39 @@ Security fixes say what was exploitable and how, rather than "hardened X". A cha
 entry for a security tool that hides the mechanism is asking the reader to take its word,
 and this project's whole argument is that you should not have to.
 
+## Unreleased
+
+### Fixed
+
+- **A wedged panel was reported as a healthy one.** The PHP bridge decided the panel was up
+  by opening a TCP connection to its port, which answers whether something *accepts* — not
+  whether anything *answers*. A process that is wedged still holds its listening socket, so
+  the probe passed, the bridge proxied the visitor's request to it, and the request hung
+  until the web server gave up: sixty seconds with no response at all, not even the bridge's
+  own 503 page. Measured against the real binary, a panel stopped with `SIGSTOP` reads as
+  `UP in 0.00s` to the old probe and `silent in 1.51s` to the new one. The probe is now
+  `GET /healthz`, which the panel answers without touching its database, its configuration
+  lock or a session — so a panel busy with a scan still replies at once.
+- **A port held by a dead-but-not-gone process no longer keeps the panel down forever.**
+  Nothing else could clear it: the port is taken, so every start died with *address already
+  in use*, a wedged process does not recover, and the account has no shell. The bridge now
+  clears it — but only a process id the panel wrote itself and `/proc` confirms is still
+  running this binary, `TERM` first and `KILL` only if the port is still occupied two
+  seconds later. Anything it cannot prove it owns is left alone and named on the page,
+  because a pid file outlives a process that died hard and Linux reuses process ids.
+
+### Added
+
+- `GET /healthz` on the panel, and `serve --pidfile`. Both exist for the bridge; neither
+  discloses anything to an unauthenticated caller beyond "this process is serving".
+
+### Upgrading
+
+Install the new binary **before** the new bridge. The bridge starts the panel with
+`--pidfile`, and a binary older than this release rejects the flag and exits. In the wrong
+order the panel does not come up and the waiting page says
+`flag provided but not defined: -pidfile` — install the newer binary and it recovers.
+
 ## v0.1.7
 
 ### Fixed

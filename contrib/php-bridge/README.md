@@ -120,6 +120,51 @@ open waiting for it. It waits for the panel, which is the thing it actually need
 The panel is also re-checked after the lock is acquired: between finding it down and
 getting the lock, the other request may already have finished.
 
+## Why the check is an HTTP request, and not a connection
+
+The bridge used to decide the panel was up by opening a TCP connection to its port. That
+answers a different question: whether something **accepts**, not whether anything
+**answers**.
+
+A wedged process still holds its listening socket. The kernel completes the handshake on
+its behalf, so the probe passed, the bridge proxied the visitor's request to it, and the
+request hung until the web server gave up — sixty seconds with no response at all, not even
+this bridge's own 503 page. It happened on the account this was built against.
+
+That is worse than the panel being down. A down panel is answered in two seconds by a page
+that retries itself, and the next visit starts a new one. A wedged panel holds a PHP worker
+on an account with a small ceiling on them, and tells the person looking at the screen
+nothing.
+
+So the probe now sends `GET /healthz` and requires an HTTP response. The panel answers that
+without touching its database, its configuration lock or a session, so a panel busy with a
+scan still replies at once and only one that cannot serve at all stays quiet.
+
+**When something is holding the port without answering, the bridge clears it.** Nothing else
+can: the port is taken, so every start dies with *address already in use*; a wedged process
+does not recover; and the account has no shell, which is the reason this bridge exists.
+
+Two rules make that safe enough to do without asking:
+
+- Only a process id written by the panel itself, and confirmed through `/proc` to still be
+  running **this binary**, is ever signalled. A pid file outlives a process that died hard,
+  and Linux reuses process ids — the number that meant the panel this morning can mean the
+  account's cron job this afternoon. Every case that cannot prove ownership refuses, and the
+  503 page says the port is held by something it could not identify, which is a fact you can
+  act on.
+- `TERM` first, `KILL` only if the port is still occupied two seconds later. A panel that is
+  merely slow shuts down cleanly and finishes what it was doing.
+
+This is why the bridge starts the panel with `--pidfile`, and why `$pidFile` sits beside
+`$lockFile` at the top of `index.php`. It is configured in one place and passed from there,
+so the two cannot drift apart.
+
+**Upgrade the binary before this bridge.** `--pidfile` and `/healthz` arrived together with
+it, and a binary older than that rejects the flag and exits — every start would die. If you
+do it in the wrong order the panel will not come up, and the waiting page will say
+`flag provided but not defined: -pidfile`, which is the whole diagnosis. Install the newer
+binary and it starts working again; nothing is lost.
+
 ## What this does not do
 
 It does not make the panel survive. The process still dies when the host decides to kill

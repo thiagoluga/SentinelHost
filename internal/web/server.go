@@ -125,6 +125,11 @@ func (s *Server) WithUpdates(u UpdateChecker) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
+	// Liveness. Unauthenticated and unconditional: the caller is the PHP bridge, which has
+	// no session and needs to know whether this process still answers before it decides to
+	// kill it. See handleHealth for why a TCP connect was not enough.
+	mux.HandleFunc("GET /healthz", s.handleHealth)
+
 	// Authentication.
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
