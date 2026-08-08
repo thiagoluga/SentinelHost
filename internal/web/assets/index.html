@@ -246,6 +246,24 @@
   </header>
 
   <div class="card">
+    <h2>Version</h2>
+    <dl class="kv">
+      <dt>Running</dt><dd id="v-running">—</dd>
+      <dt id="v-disk-label" hidden>Installed on disk</dt><dd id="v-disk" hidden>—</dd>
+      <dt>Latest release</dt><dd id="v-latest">—</dd>
+    </dl>
+    <p id="v-note" class="muted small"></p>
+    <div class="row">
+      <button id="v-check" class="btn-quiet">Check for updates</button>
+      <span id="v-checked" class="muted small"></span>
+    </div>
+    <p class="muted small">
+      The check asks GitHub for the latest release. Nothing is downloaded or replaced by
+      looking — an update only happens when you ask for it, from the banner at the top.
+    </p>
+  </div>
+
+  <div class="card">
     <h2>Automatic action</h2>
     <label class="inline"><input type="checkbox" id="c-observation"> observation mode (nothing is moved)</label>
     <label>Grace period after the first run (days)

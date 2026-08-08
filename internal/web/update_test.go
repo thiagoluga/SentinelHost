@@ -17,10 +17,16 @@ type fakeUpdates struct {
 	latestEr error
 	applyEr  error
 	applied  int
+	// latestCalls counts trips to the source, so a test can tell a cached answer from a
+	// fresh one.
+	latestCalls int
 }
 
-func (f *fakeUpdates) RunningVersion() string              { return f.running }
-func (f *fakeUpdates) Latest() (selfupdate.Release, error) { return f.rel, f.latestEr }
+func (f *fakeUpdates) RunningVersion() string { return f.running }
+func (f *fakeUpdates) Latest() (selfupdate.Release, error) {
+	f.latestCalls++
+	return f.rel, f.latestEr
+}
 func (f *fakeUpdates) Apply(selfupdate.Release) (string, error) {
 	f.applied++
 	return "/path/sentinelhost.prev", f.applyEr
@@ -292,5 +298,40 @@ func TestInstallingWhatIsAlreadyOnDiskIsRefused(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, "already installed") || !strings.Contains(body, "rollback") {
 		t.Errorf("the refusal does not explain what a second install would cost: %s", body)
+	}
+}
+
+// The check button has to actually re-ask.
+//
+// The cache exists because the panel checks on every page view and the release API
+// rate-limits by IP. But somebody clicking "Check for updates" is asking precisely because
+// they want a fresh answer — handing them an hour-old one, with no way to tell, makes the
+// button a decoration.
+func TestAForcedCheckIgnoresTheCache(t *testing.T) {
+	f := &fakeUpdates{running: "v0.1.2", rel: selfupdate.Release{Version: "v0.1.3"}}
+	s := &Server{updates: f}
+
+	// Warm the cache.
+	w1 := httptest.NewRecorder()
+	s.handleUpdateStatus(w1, httptest.NewRequest("GET", "/api/update", nil))
+	if f.latestCalls != 1 {
+		t.Fatalf("the first check made %d calls", f.latestCalls)
+	}
+
+	// A second ordinary check reuses it.
+	w2 := httptest.NewRecorder()
+	s.handleUpdateStatus(w2, httptest.NewRequest("GET", "/api/update", nil))
+	if f.latestCalls != 1 {
+		t.Errorf("an ordinary check re-asked; the cache is not being used")
+	}
+
+	// Forced goes back to the source.
+	w3 := httptest.NewRecorder()
+	s.handleUpdateStatus(w3, httptest.NewRequest("GET", "/api/update?force=1", nil))
+	if f.latestCalls != 2 {
+		t.Errorf("the forced check did not re-ask: %d calls", f.latestCalls)
+	}
+	if !strings.Contains(w3.Body.String(), "checked_at") {
+		t.Errorf("the answer does not say when it was obtained: %s", w3.Body.String())
 	}
 }

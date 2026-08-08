@@ -343,3 +343,10 @@ legend{color:var(--muted);font-size:11px;padding:0 4px}
   font-size:.8rem; line-height:1.45; color:var(--fg);
 }
 .update-notes a{font-size:.8rem}
+
+/* Version block: label/value pairs that stay readable when a value is missing. */
+.kv{display:grid; grid-template-columns:auto 1fr; gap:.35rem 1rem; margin:.25rem 0 .75rem}
+.kv dt{color:var(--muted); font-size:.85rem}
+.kv dd{margin:0; font-variant-numeric:tabular-nums}
+.kv dt[hidden],.kv dd[hidden]{display:none}
+.row{display:flex; align-items:center; gap:.75rem; flex-wrap:wrap}
