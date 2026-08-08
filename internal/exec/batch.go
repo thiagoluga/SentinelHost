@@ -13,6 +13,18 @@ import (
 type Batcher struct {
 	Size  int
 	Pause time.Duration
+
+	// sleep is how a pause is taken. nil means sleepCtx, which is the only thing
+	// production ever uses.
+	//
+	// It exists so a test can COUNT pauses instead of timing them. The rule below —
+	// never a pause after the last batch — used to be checked by measuring the whole
+	// call and requiring it to finish inside twice the time it actually sleeps. That
+	// measures the machine as much as the code: on a loaded container it read 248ms
+	// against a 200ms ceiling and failed while the code was correct. A suite that
+	// reports a fault where there is none teaches its readers to skip the output, which
+	// costs more than the test was ever worth.
+	sleep func(context.Context, time.Duration) error
 }
 
 // NewBatcher creates a Batcher with safe minimums.
@@ -42,7 +54,7 @@ func (b *Batcher) Each(ctx context.Context, items []string, fn func(context.Cont
 		}
 
 		if end < len(items) && b.Pause > 0 {
-			if err := sleepCtx(ctx, b.Pause); err != nil {
+			if err := b.takePause(ctx); err != nil {
 				return err
 			}
 		}
@@ -58,6 +70,18 @@ func (b *Batcher) Batches(items []string) [][]string {
 		out = append(out, items[i:min(i+b.Size, len(items))])
 	}
 	return out
+}
+
+// takePause waits out one gap between batches.
+//
+// A zero sleep field means the real one, so a Batcher built any way at all — the
+// constructor, a struct literal, a copy — pauses for real unless something deliberately
+// replaced it.
+func (b *Batcher) takePause(ctx context.Context) error {
+	if b.sleep != nil {
+		return b.sleep(ctx, b.Pause)
+	}
+	return sleepCtx(ctx, b.Pause)
 }
 
 // sleepCtx sleeps while respecting cancellation. A pause that ignores the
