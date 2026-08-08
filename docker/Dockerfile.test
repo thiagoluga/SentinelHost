@@ -14,7 +14,7 @@
 # WordPress to check what the ENGINES do (docker/Dockerfile.validation, `make
 # validate-engines`), takes minutes, and needs the network. This one answers a smaller
 # question — does our own code behave on Linux — and has to be fast enough to run often.
-FROM golang:1.24-bookworm
+FROM golang:1.25-bookworm
 
 # The suite creates hard links, symlinks, files with newlines in their names, and files
 # with permissions cleared. All of that needs a real Linux filesystem, which is what the
