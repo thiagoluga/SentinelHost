@@ -1813,12 +1813,38 @@ site itself answered in 0.1s throughout, so the web server was fine.
 
 The bridge decided whether the panel was up with `fsockopen`. That asks whether the port
 **accepts a connection**. A process that is wedged still holds its listening socket, and the
-kernel completes the handshake on its behalf — so the probe passed, the bridge proxied the
-visitor's request to it, and the request hung until the web server killed it.
+kernel completes the handshake on its behalf — so the probe passes, the bridge proxies the
+visitor's request to it, and the request hangs until the web server kills it.
 
 Confirmed against the real binary rather than argued: with the panel stopped by `SIGSTOP`,
 which holds the socket and serves nothing, `fsockopen` answers **UP in 0.00s** while a
 `GET /healthz` answers **silent in 1.51s**.
+
+**This entry originally claimed that was the cause of the outage. It was not, and the
+correction belongs here rather than in a commit message.** The recovery task that ran on the
+account during the incident reported:
+
+```
+=== does the port accept, and does it ANSWER?
+  port accepts
+  direct to 127.0.0.1:8787 -> http 200 in 0.000596s
+```
+
+The panel was answering the loopback in six tenths of a millisecond while the public URL hung
+for sixty seconds. So the process was not wedged; something between the browser and it was
+not delivering. The likely suspect is the account's PHP worker ceiling, which D-049 already
+records as an unexplained `503`, and which this entry does nothing about.
+
+The output was sitting in the account's `run.log` for two hours before it was read. The
+hypothesis had already been written up by then, and it fit the symptom well enough that
+nobody went looking for the evidence that would have killed it. **A diagnosis that explains
+the symptom is not the same as one the evidence supports**, and the gap between them is where
+the eight defects in D-022 lived.
+
+What survives is smaller and still worth the change: the probe genuinely could not tell a
+wedged panel from a healthy one, the `SIGSTOP` measurement proves it, and a bridge that
+cannot tell will eventually meet the case it cannot tell apart. This fixes the blindness, not
+the outage.
 
 This is the failure the project is named after, moved into the plumbing. `ScanStatus.
 CountsAsVote()` exists because an engine that could not run has not found zero threats. A
@@ -1854,8 +1880,25 @@ nothing to the person looking at the screen.
   Reloading changes nothing when a port is held, and a page that keeps retrying reads as
   progress where there is none. `Retry-After` is 30, not 2.
 
-**What this does not fix**: why the panel wedged in the first place is still unknown. The
-config corruption that preceded it could not be reproduced — the TOML encoder escapes even
-the exact hostile shape that broke the account (see the honest limitation recorded in
-`internal/config/load_test.go`). This entry is about the bridge no longer being unable to
-tell, which is a smaller claim and the only one the evidence supports.
+**What this does not fix**, restated now that the evidence is in: the sixty-second hang is
+still unexplained, and this change does not address it. The panel was answering locally at
+the time, so it was not the case this entry describes. The config corruption that preceded
+the whole episode could not be reproduced either — the TOML encoder escapes even the exact
+hostile shape that broke the account (see the honest limitation recorded in
+`internal/config/load_test.go`). Two open questions remain, and naming them is worth more
+than a decision record that reads as though they were closed.
+
+**Verified on the account** after deploying v0.1.8, which is the only kind of confirmation
+this repository accepts for anything crossing a process boundary:
+
+```
+the running process : sentinelhost serve --config …/config.toml --pidfile …/.panel.pid
+pid file            : 484697   (the same process)
+/healthz            : ok [200]
+first visit         : 200 in 0.686s   (cold start)
+second visit        : 200 in 0.016s
+bridge trace        : probe=0.00s
+```
+
+The probe costs nothing measurable against the `fsockopen` it replaced, which was the one
+practical objection to making it a real request.
