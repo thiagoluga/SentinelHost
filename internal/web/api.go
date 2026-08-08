@@ -425,16 +425,20 @@ func (s *Server) handleEngines(w http.ResponseWriter, req *http.Request) {
 		info := a.Info()
 		st := bySlug[slug]
 		out = append(out, map[string]any{
-			"slug":                  slug,
-			"name":                  info.Name,
-			"license":               info.License,
-			"homepage":              info.Homepage,
-			"cost":                  info.Cost,
-			"enabled":               cfg.EngineEnabled(slug),
-			"weight":                cfg.WeightFor(slug),
-			"default_weight":        info.DefaultWeight,
-			"available":             st.Available,
-			"unavailable_reason":    st.UnavailableReason,
+			"slug":               slug,
+			"name":               info.Name,
+			"license":            info.License,
+			"homepage":           info.Homepage,
+			"cost":               info.Cost,
+			"enabled":            cfg.EngineEnabled(slug),
+			"weight":             cfg.WeightFor(slug),
+			"default_weight":     info.DefaultWeight,
+			"available":          st.Available,
+			"unavailable_reason": st.UnavailableReason,
+			// Whether offering an install button would be honest. maldet is a system
+			// package and the WordPress check needs a WordPress: for both, Install()
+			// returns ErrNotInstallable, and the panel used to show the button anyway.
+			"installable":           st.Installable,
 			"version":               st.Version,
 			"signatures_updated_at": st.SignaturesUpdatedAt,
 			"last_run_at":           st.LastRunAt,
@@ -465,8 +469,39 @@ func (s *Server) handleEngineInstall(w http.ResponseWriter, req *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "%v", err)
 		return
 	}
-	s.logAction(req, "engine installed from the panel: "+slug, nil)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+
+	// Ask again whether the engine RUNS. "Install returned no error" is a different
+	// statement from "this engine now works", and reporting the first as the second is
+	// the failure this project exists to avoid.
+	//
+	// The two come apart routinely, and not because anything went wrong. Installing
+	// php-malware-finder fetches its YARA rules; running it needs the `yara` binary, which
+	// is a system package no unprivileged account can install. So the install genuinely
+	// succeeds and the engine stays unavailable — forever, on that host. The panel used to
+	// answer `{"ok": true}`, the toast said "php-malware-finder installed", and the card
+	// under it still said `unavailable` with the same button. Reloading changed nothing,
+	// because nothing had changed.
+	probe := adapter.SafeProbe(req.Context(), a, env)
+	s.logAction(req, "engine installed from the panel: "+slug, map[string]any{
+		"available_afterwards": probe.Available,
+		"reason":               probe.Reason,
+	})
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		// Kept for callers that only ever looked at this: the install itself did work.
+		"ok": true,
+		// What the user actually needs to know, and what the card is about to show.
+		"available": probe.Available,
+		"version":   probe.Version,
+		// Empty when it is available. When it is not, this is the same sentence the card
+		// carries, and it is the only actionable thing on the screen — "ask your host for
+		// yara" is something a person can do; "installed" followed by `unavailable` is not.
+		"reason": probe.Reason,
+		// Whether trying again could change anything. An engine that needs a system
+		// package will answer the same way every time, and offering the button again is
+		// inviting the user to repeat something that cannot work.
+		"installable": probe.Installable,
+	})
 }
 
 // Configuration ----------------------------------------------------------------

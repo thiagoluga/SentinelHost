@@ -733,21 +733,44 @@ async function loadEngines() {
       // FR-001: the reason is mandatory. "Unavailable" on its own turns a solvable
       // problem into a mystery.
       card.appendChild(el('p', { class: 'small' }, e.unavailable_reason));
-      const install = el('button', { class: 'btn sm' }, 'Install in my space');
-      install.addEventListener('click', async () => {
-        install.disabled = true;
-        install.textContent = 'Installing…';
-        try {
-          await api(`/api/engines/${encodeURIComponent(e.slug)}/install`, { method: 'POST' });
-          toast(`${e.slug} installed.`);
-          await refreshAfterAction();
-        } catch (err) {
-          toast(err.message, true);
-          install.disabled = false;
-          install.textContent = 'Install in my space';
-        }
-      });
-      card.appendChild(install);
+
+      // The button only where it can do something.
+      //
+      // It used to appear on every unavailable engine. maldet is a system package and
+      // the WordPress check needs a WordPress to check — both answer ErrNotInstallable,
+      // so two of the buttons on this screen returned 400 to anyone who pressed them.
+      // The reason above already says what to do instead; a button that cannot work is
+      // worse than no button, because it reads as an offer.
+      if (e.installable) {
+        const install = el('button', { class: 'btn sm' }, 'Install in my space');
+        install.addEventListener('click', async () => {
+          install.disabled = true;
+          install.textContent = 'Installing…';
+          try {
+            const r = await api(`/api/engines/${encodeURIComponent(e.slug)}/install`, { method: 'POST' });
+            // What the server says about the engine NOW, not that the request succeeded.
+            //
+            // These come apart routinely: installing php-malware-finder fetches its YARA
+            // rules, and running it needs the `yara` binary, which is a system package no
+            // unprivileged account can install. The toast used to say "installed" either
+            // way, and the card underneath kept saying `unavailable` with the same button
+            // — so a reload looked exactly like the install having silently failed.
+            if (r && r.available === false) {
+              toast(r.reason
+                ? `${e.slug}: installed, but it still cannot run — ${r.reason}`
+                : `${e.slug}: installed, but it still cannot run.`, true);
+            } else {
+              toast(`${e.slug} installed and ready.`);
+            }
+            await refreshAfterAction();
+          } catch (err) {
+            toast(err.message, true);
+            install.disabled = false;
+            install.textContent = 'Install in my space';
+          }
+        });
+        card.appendChild(install);
+      }
     } else if (e.version) {
       card.appendChild(el('p', { class: 'small muted' }, e.version));
     }

@@ -7,6 +7,40 @@ Security fixes say what was exploitable and how, rather than "hardened X". A cha
 entry for a security tool that hides the mechanism is asking the reader to take its word,
 and this project's whole argument is that you should not have to.
 
+## Unreleased
+
+### Fixed
+
+- **"Installed" was reported without checking whether the engine could run.** The handler
+  returned `{"ok": true}` on the strength of `Install` not erroring, which is a different
+  statement. They come apart without anything going wrong: installing php-malware-finder
+  fetches its YARA rules, and running it needs the `yara` binary — a system package no
+  unprivileged account can install. So the panel said "php-malware-finder installed", the
+  card underneath still said `unavailable` with the same button, and reloading changed
+  nothing because nothing had changed. The install now re-probes and reports what is true:
+  installed and working, or installed and still unable to run, with the reason — which is
+  the only actionable sentence on that screen.
+- **An install button was offered on engines that cannot be installed.** maldet is a system
+  package and the WordPress check needs a WordPress to check; both answer
+  `ErrNotInstallable`, so two of the three buttons on that screen returned 400 to anyone who
+  pressed them. `ProbeResult.Installable` always knew — `doctor` prints it — but it was
+  never stored, so the panel could not read it. It is now persisted (schema 4) and the
+  button appears only where it can honour the offer.
+- **A migration missing from the middle of the record never ran again.** The runner asked
+  `MAX(version)` and skipped everything at or below it, which is right only while the
+  recorded versions are a contiguous run. It also made a test vacuous: two tests simulate an
+  old database by deleting one migration's row and reopening, and once a later migration
+  existed, `MAX` came back higher and the migration under test was silently skipped. The
+  runner now reads which versions have run, not how far the highest one got.
+- **Three buttons in the update flow were unstyled.** `btn-primary` had no rule anywhere in
+  the stylesheet and `btn-quiet` was only defined inside the update banner, so "Install it",
+  "Restart the panel" and "Check for updates" rendered as the operating system's default
+  grey buttons — `rgb(240,240,240)`, `outset 2px`, Arial — in the middle of a dark panel.
+  They now use the same `.btn` / `.btn.primary` as every other button. The banner itself had
+  no border and no background either: it was written against `--line`, `--panel`, `--bg` and
+  `--fg`, none of which are declared. An undeclared custom property invalidates the whole
+  declaration, and `border-style` falls back to `none`.
+
 ## v0.1.8
 
 ### Fixed

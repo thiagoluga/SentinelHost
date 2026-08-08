@@ -101,9 +101,14 @@ func (s *Store) PurgeExpiredSessions(ctx context.Context) (int64, error) {
 
 // EngineState is what the panel shows in the "engines" area.
 type EngineState struct {
-	Slug                string
-	Available           bool
-	UnavailableReason   string
+	Slug              string
+	Available         bool
+	UnavailableReason string
+	// Installable reports whether Install() could resolve the unavailability.
+	//
+	// Stored rather than recomputed because the panel lists engines without probing
+	// them, and a button offered on the strength of a guess is a button that returns 400.
+	Installable         bool
 	Version             string
 	BinaryPath          string
 	SignaturesUpdatedAt time.Time
@@ -116,12 +121,13 @@ type EngineState struct {
 func (s *Store) SaveEngineState(ctx context.Context, st EngineState) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO engine_state (
-			slug, available, unavailable_reason, version, binary_path,
+			slug, available, unavailable_reason, installable, version, binary_path,
 			signatures_updated_at, last_probe_at, last_run_at, last_run_status
-		) VALUES (?,?,?,?,?,?,?,?,?)
+		) VALUES (?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(slug) DO UPDATE SET
 			available = excluded.available,
 			unavailable_reason = excluded.unavailable_reason,
+			installable = excluded.installable,
 			version = excluded.version,
 			binary_path = excluded.binary_path,
 			signatures_updated_at = COALESCE(excluded.signatures_updated_at, engine_state.signatures_updated_at),
@@ -129,7 +135,7 @@ func (s *Store) SaveEngineState(ctx context.Context, st EngineState) error {
 			last_run_at = COALESCE(excluded.last_run_at, engine_state.last_run_at),
 			last_run_status = COALESCE(excluded.last_run_status, engine_state.last_run_status)`,
 		st.Slug, boolToInt(st.Available), nullString(st.UnavailableReason),
-		nullString(st.Version), nullString(st.BinaryPath),
+		boolToInt(st.Installable), nullString(st.Version), nullString(st.BinaryPath),
 		nullTime(st.SignaturesUpdatedAt), formatTime(orNow(st.LastProbeAt)),
 		nullTime(st.LastRunAt), nullString(st.LastRunStatus))
 	if err != nil {
@@ -141,7 +147,7 @@ func (s *Store) SaveEngineState(ctx context.Context, st EngineState) error {
 // ListEngineStates returns the state of every known engine.
 func (s *Store) ListEngineStates(ctx context.Context) ([]EngineState, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT slug, available, unavailable_reason, version, binary_path,
+		SELECT slug, available, unavailable_reason, installable, version, binary_path,
 		       signatures_updated_at, last_probe_at, last_run_at, last_run_status
 		FROM engine_state ORDER BY slug`)
 	if err != nil {
@@ -153,16 +159,17 @@ func (s *Store) ListEngineStates(ctx context.Context) ([]EngineState, error) {
 	for rows.Next() {
 		var (
 			st                               EngineState
-			available                        int
+			available, installable           int
 			reason, version, path, runStatus sql.NullString
 			sigUpdated, lastProbe, lastRun   sql.NullString
 		)
-		if err := rows.Scan(&st.Slug, &available, &reason, &version, &path,
+		if err := rows.Scan(&st.Slug, &available, &reason, &installable, &version, &path,
 			&sigUpdated, &lastProbe, &lastRun, &runStatus); err != nil {
 			return nil, err
 		}
 		st.Available = available != 0
 		st.UnavailableReason = strFromNull(reason)
+		st.Installable = installable != 0
 		st.Version = strFromNull(version)
 		st.BinaryPath = strFromNull(path)
 		st.SignaturesUpdatedAt = timeFromNull(sigUpdated)
