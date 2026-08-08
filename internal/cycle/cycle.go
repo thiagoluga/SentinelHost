@@ -411,9 +411,13 @@ func (r *Runner) runEngines(ctx context.Context, opts Options, targets []string,
 
 		probe := adapter.SafeProbe(ctx, a, env)
 		_ = r.store.SaveEngineState(ctx, store.EngineState{
-			Slug:                slug,
-			Available:           probe.Available,
-			UnavailableReason:   probe.Reason,
+			Slug:              slug,
+			Available:         probe.Available,
+			UnavailableReason: probe.Reason,
+			// Recorded so the panel can tell an engine the user can install from one
+			// they have to ask their host for. Without it every unavailable engine got
+			// the same button, and two of the four could never honour it.
+			Installable:         probe.Installable,
 			Version:             probe.Version,
 			BinaryPath:          probe.BinaryPath,
 			SignaturesUpdatedAt: probe.SignaturesUpdatedAt,

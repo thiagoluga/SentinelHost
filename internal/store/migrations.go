@@ -314,6 +314,25 @@ var migrations = []migration{
 			 WHERE applied_at LIKE '____-__-__T__:__:__%Z' AND length(applied_at) <> 30`,
 		},
 	},
+	{
+		version: 4,
+		name:    "engine installability",
+		stmts: []string{
+			// Whether Install() could resolve this engine's unavailability.
+			//
+			// The probe has always known — ProbeResult.Installable, which `doctor` reads
+			// and prints. It was never stored, so the panel could not read it and offered
+			// "Install in my space" on every unavailable engine, including the ones whose
+			// own reason says it cannot work: maldet, which is a system package, and the
+			// WordPress check, whose complaint is that the directory is not a WordPress
+			// installation. Two of the three buttons on that screen returned 400.
+			//
+			// Defaults to 0 — not installable. Rows written before this migration are
+			// re-probed on the next cycle, and until then the safe answer is to not offer
+			// a button, rather than to offer one that may do nothing.
+			`ALTER TABLE engine_state ADD COLUMN installable INTEGER NOT NULL DEFAULT 0`,
+		},
+	},
 }
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -326,14 +345,41 @@ func (s *Store) migrate(ctx context.Context) error {
 		return fmt.Errorf("creating the migrations table: %w", err)
 	}
 
-	var current int
-	if err := s.db.QueryRowContext(ctx,
-		`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&current); err != nil {
+	// Which migrations have run, not how far the highest one got.
+	//
+	// This read `MAX(version)` and skipped everything at or below it, which is the same
+	// answer only while the recorded versions are a contiguous run from 1. The moment one
+	// is missing in the middle, the highest one hides it and it never runs again.
+	//
+	// It was not hypothetical. Two tests simulate "a database an earlier release left
+	// behind" by deleting the row for the migration under test and reopening — the natural
+	// way to write it, and it worked exactly until a later migration existed. Then `MAX`
+	// came back higher, the migration was skipped, and one of those tests started passing
+	// while asserting nothing at all. A test that cannot fail is worse than no test, and
+	// this is the reading that made it so.
+	applied := map[int]bool{}
+	rows, err := s.db.QueryContext(ctx, `SELECT version FROM schema_migrations`)
+	if err != nil {
+		return fmt.Errorf("reading the schema version: %w", err)
+	}
+	for rows.Next() {
+		var v int
+		if err := rows.Scan(&v); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("reading the schema version: %w", err)
+		}
+		applied[v] = true
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("reading the schema version: %w", err)
+	}
+	if err := rows.Close(); err != nil {
 		return fmt.Errorf("reading the schema version: %w", err)
 	}
 
 	for _, m := range migrations {
-		if m.version <= current {
+		if applied[m.version] {
 			continue
 		}
 		if err := s.applyMigration(ctx, m); err != nil {

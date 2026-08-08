@@ -327,18 +327,30 @@ legend{color:var(--muted);font-size:11px;padding:0 4px}
  * Deliberately not styled as an alarm. A newer version is news, not an incident, and a
  * panel that shouts about a release looks the same as one shouting about a backdoor —
  * which teaches the user to skim both. */
+/* Variables that exist.
+ *
+ * This block was written against --line, --panel, --bg and --fg. None of them are declared
+ * anywhere in this file: the palette is --grid, --surface, --page and --ink. A custom
+ * property that resolves to nothing makes the whole declaration invalid at computed-value
+ * time, so each longhand fell back to its initial value — and border-style's initial value
+ * is `none`. The banner had no border and no background, and the buttons inside it were
+ * whatever the browser draws by default, in the middle of a dark panel.
+ *
+ * Nothing warned about it. A typo'd variable is silent by design in CSS, which is the
+ * argument for spending these names rather than inventing new ones per component. */
 .update-banner{
   display:flex; align-items:center; gap:1rem; flex-wrap:wrap;
   margin:0 0 1.25rem; padding:.85rem 1rem;
-  border:1px solid var(--line); border-left:3px solid var(--accent);
-  border-radius:8px; background:var(--panel);
+  border:1px solid var(--grid); border-left:3px solid var(--accent);
+  border-radius:8px; background:var(--surface);
 }
 .update-banner p{margin:.2rem 0 0; color:var(--muted); font-size:.85rem}
-.update-banner .btn-quiet{
-  background:none; border:1px solid var(--line); color:var(--muted);
-  padding:.4rem .8rem; border-radius:6px; cursor:pointer;
-}
-.update-banner[hidden]{display:none}
+/* The buttons here use .btn / .btn.primary, the same as every other button in the panel.
+ * They used to carry .btn-primary and .btn-quiet — one of which had no rule anywhere, and
+ * the other only inside this banner, so the same button on Settings was unstyled. A button
+ * that looks like the operating system rather than the page reads as something the page did
+ * not mean to show, on the one screen that asks the user to replace the binary guarding
+ * their account. */
 
 /* The banner lays out as: text, actions, then the notes on their own full-width row. */
 .update-banner{align-items:flex-start}
@@ -351,9 +363,9 @@ legend{color:var(--muted);font-size:11px;padding:0 4px}
  * the author wrote survive without any of it being interpreted as markup. */
 .update-notes pre{
   margin:.5rem 0; padding:.6rem .75rem; max-height:14rem; overflow:auto;
-  background:var(--bg); border:1px solid var(--line); border-radius:6px;
+  background:var(--page); border:1px solid var(--grid); border-radius:6px;
   white-space:pre-wrap; word-break:break-word;
-  font-size:.8rem; line-height:1.45; color:var(--fg);
+  font-size:.8rem; line-height:1.45; color:var(--ink);
 }
 .update-notes a{font-size:.8rem}
 
