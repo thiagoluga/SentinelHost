@@ -545,16 +545,16 @@ func (r *Runner) runEngineBatches(
 // envFor assembles the adapter's environment.
 func (r *Runner) envFor(slug string) adapter.Environment {
 	e := r.cfg.Engines[slug]
-	binPath := e.Path
-	if slug == "wp-checksums" && binPath == "" {
-		// A native adapter: what it needs to know is where to look, not which
-		// binary to run.
-		binPath = firstRoot(r.cfg)
-	}
 	return adapter.Environment{
-		DataDir:    r.cfg.General.DataDir,
-		Runner:     r.exec,
-		BinaryPath: binPath,
+		DataDir: r.cfg.General.DataDir,
+		Runner:  r.exec,
+		// Only what the user configured. wp-checksums used to be handed firstRoot()
+		// here, dressed up as a BinaryPath, and it read that one directory as though
+		// it were the WordPress — so a second configured root was never looked at and
+		// a site one directory down was invisible. Roots carries all of them, and the
+		// adapter searches; an explicit Engines[slug].Path still overrides the search.
+		BinaryPath: e.Path,
+		Roots:      r.cfg.General.Roots,
 		ExtraArgs:  e.ExtraArgs,
 	}
 }
