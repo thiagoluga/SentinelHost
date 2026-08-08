@@ -7,7 +7,7 @@ Security fixes say what was exploitable and how, rather than "hardened X". A cha
 entry for a security tool that hides the mechanism is asking the reader to take its word,
 and this project's whole argument is that you should not have to.
 
-## Unreleased
+## v0.1.8
 
 ### Fixed
 
