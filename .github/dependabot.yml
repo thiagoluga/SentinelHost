@@ -1,0 +1,41 @@
+# Dependency updates.
+#
+# This tool runs with the permissions of the account it protects and can move that
+# account's files. Its dependency tree is therefore part of its attack surface, and a
+# transitive CVE in a Go module here is a CVE in a program with write access to somebody's
+# website.
+#
+# Grouped and weekly, not per-package and daily: a maintainer who gets six pull requests
+# every morning stops reading them, and an unread security update is the same as no
+# security update. Security-relevant bumps arrive on their own regardless of the schedule,
+# because Dependabot security updates are enabled separately at the repository level.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # One pull request for the routine bumps. They are reviewed together, and CI —
+      # which is what actually decides whether they are safe — runs once rather than
+      # five times.
+      go-dependencies:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+      include: scope

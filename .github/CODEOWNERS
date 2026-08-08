@@ -1,0 +1,38 @@
+# Who gets asked to look at a change.
+#
+# Review is not required to merge — this project has one maintainer, and a rule that
+# blocks every pull request on an approval nobody can give is a rule that gets switched
+# off. What this file does is make the request automatic, so a change to the parts below
+# cannot land without the maintainer having been shown it.
+#
+# The paths listed separately are the ones where a mistake is not recoverable by editing
+# a file afterwards.
+
+*                                   @thiagoluga
+
+# The quarantine is the only place in this project that removes a user's files. Every
+# defect here costs somebody a website, and two have been found already: a copy that was
+# verified after the unlink rather than before, and a vault the restore could not read.
+/internal/quarantine/               @thiagoluga
+
+# The verdict engine decides what gets quarantined. It is deliberately ignorant of which
+# engine produced a vote (Principle VI); a change that teaches it one is a change to the
+# project's shape, not to a file.
+/internal/verdict/                  @thiagoluga
+
+# The release key travels in these, and the panel is an administrative surface on a
+# public URL.
+/internal/selfupdate/               @thiagoluga
+/internal/web/                      @thiagoluga
+/.github/workflows/release.yml      @thiagoluga
+/tools/release-key/                 @thiagoluga
+/tools/verify-release/              @thiagoluga
+
+# The catalogue ships third-party rules that decide what gets quarantined on somebody
+# else's account. CI checks the digest is real; it cannot read the rules.
+/catalog/                           @thiagoluga
+
+# The rules the project is held to.
+/.specify/memory/constitution.md    @thiagoluga
+/DECISIONS.md                       @thiagoluga
+/SECURITY.md                        @thiagoluga
