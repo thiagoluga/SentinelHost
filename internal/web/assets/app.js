@@ -1021,7 +1021,7 @@ const TAB_LOADERS = {
   engines:    [['the engines', loadEngines]],
   schedule:   [['the configuration', loadConfig]],
   alerts:     [['the configuration', loadConfig]],
-  settings:   [['the configuration', loadConfig]],
+  settings:   [['the configuration', loadConfig], ['the version', loadVersionCard]],
 };
 
 // Tabs already fetched. Cleared on an explicit refresh, so "reload" still means reload.
@@ -1147,6 +1147,79 @@ async function loadUpdate() {
 
   banner.hidden = false;
 }
+
+/**
+ * The version block on Settings, and the button that re-asks.
+ *
+ * Separate from the banner on purpose. The banner appears only when there is something to
+ * do; this answers "what am I running", which is asked far more often — usually by someone
+ * about to report a problem, on an account where there is no shell to ask instead.
+ */
+async function loadVersionCard(force = false) {
+  const running = $('#v-running');
+  if (!running) return;
+
+  let s;
+  try {
+    s = await api('/api/update' + (force ? '?force=1' : ''));
+  } catch (e) {
+    // The version we know for certain is the one we are running; say that much and be
+    // explicit that the rest could not be read.
+    $('#v-latest').textContent = 'could not check';
+    $('#v-note').textContent = e.message;
+    return;
+  }
+
+  running.textContent = s.current || 'unknown';
+  // The sidebar too. It was only ever filled by the overview's loader, so opening the
+  // panel straight into any other tab left it reading "orchestrator" — a placeholder that
+  // looks like a value.
+  const side = $('#side-version');
+  if (side && s.current) side.textContent = s.current;
+
+  // Only shown when it differs — a row saying the same thing twice reads as a mistake.
+  const differs = s.on_disk && s.on_disk !== s.current;
+  $('#v-disk-label').hidden = !differs;
+  $('#v-disk').hidden = !differs;
+  if (differs) $('#v-disk').textContent = s.on_disk;
+
+  if (s.supported === false) {
+    $('#v-latest').textContent = 'not checked';
+    $('#v-note').textContent = s.reason || '';
+    $('#v-check').disabled = true;
+    return;
+  }
+  if (s.error) {
+    $('#v-latest').textContent = 'could not check';
+    $('#v-note').textContent = s.error;
+  } else {
+    $('#v-latest').textContent = s.latest || 'unknown';
+    $('#v-note').textContent = s.pending_restart
+      ? `${s.on_disk} is installed and takes effect when the panel restarts.`
+      : (s.newer ? 'A newer release is available — see the banner at the top.'
+                 : 'This is the latest release.');
+  }
+
+  // When, not just what. "No update" read a week after the last successful check is a
+  // different statement from the same words read a minute after one.
+  $('#v-checked').textContent = s.checked_at
+    ? `checked ${new Date(s.checked_at).toLocaleString()}`
+    : '';
+}
+
+$('#v-check')?.addEventListener('click', async () => {
+  const btn = $('#v-check');
+  btn.disabled = true;
+  btn.textContent = 'Checking…';
+  try {
+    await loadVersionCard(true);
+    // The banner reflects the same answer, so it is refreshed rather than left stale.
+    await loadUpdate();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Check for updates';
+  }
+});
 
 $('#update-dismiss')?.addEventListener('click', () => {
   // Hidden for this page view only, deliberately not remembered. An update the user

@@ -7,6 +7,27 @@ Security fixes say what was exploitable and how, rather than "hardened X". A cha
 entry for a security tool that hides the mechanism is asking the reader to take its word,
 and this project's whole argument is that you should not have to.
 
+## v0.1.5
+
+### Added
+
+- **A version block on Settings**, with the running version, the one on disk when they
+  differ, the latest release, and when that was last checked. The banner only appears when
+  there is something to do; "what am I running" gets asked far more often — usually by
+  somebody about to report a problem, on an account with no shell to ask instead.
+- **A "Check for updates" button** that really re-asks rather than returning the cached
+  answer. The cache exists because the panel checks on every page view and the release API
+  rate-limits by IP, but somebody clicking the button wants a fresh answer, and handing
+  them an hour-old one with no way to tell would make the button a decoration. The time of
+  the check is shown beside it: "no update" read a week after the last successful check is
+  a different statement from the same words read a minute after one.
+
+### Fixed
+
+- The sidebar showed the placeholder `orchestrator` instead of the version whenever the
+  panel was opened straight into a tab other than Overview, because only the overview's
+  loader filled it.
+
 ## v0.1.4
 
 ### Fixed

@@ -56,12 +56,25 @@ func (s *Server) handleUpdateStatus(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// ?force=1 asks GitHub again instead of reusing the cached answer.
+	//
+	// The cache exists because the panel checks on every page view and the release API
+	// rate-limits by IP. But a person who clicks "Check for updates" is asking precisely
+	// because they want a fresh answer — handing them an hour-old one, with no way to tell,
+	// would make the button a decoration.
+	if req.URL.Query().Get("force") == "1" {
+		s.updateMu.Lock()
+		s.updateCached = updateCache{}
+		s.updateMu.Unlock()
+	}
+
 	rel, err := s.cachedLatest()
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"supported": true,
-			"current":   s.updates.RunningVersion(),
-			"error":     err.Error(),
+			"supported":  true,
+			"current":    s.updates.RunningVersion(),
+			"checked_at": s.lastCheckedAt(),
+			"error":      err.Error(),
 		})
 		return
 	}
@@ -95,6 +108,9 @@ func (s *Server) handleUpdateStatus(w http.ResponseWriter, req *http.Request) {
 		"pending_restart": pendingRestart,
 		"latest":          rel.Version,
 		"newer":           newer,
+		// When the answer was actually obtained, so "no update" can be read together with
+		// how old that statement is.
+		"checked_at": s.lastCheckedAt(),
 		// What the user is being asked to install. Sent even when it is not newer, so the
 		// panel can show what the current version was released with.
 		"notes":     rel.Notes,
@@ -209,6 +225,16 @@ func (s *Server) cachedLatest() (selfupdate.Release, error) {
 	rel, err := s.updates.Latest()
 	s.updateCached = updateCache{at: time.Now(), rel: rel, err: err, have: true}
 	return rel, err
+}
+
+// lastCheckedAt reports when the release listing was last reached, in RFC 3339.
+func (s *Server) lastCheckedAt() string {
+	s.updateMu.Lock()
+	defer s.updateMu.Unlock()
+	if !s.updateCached.have {
+		return ""
+	}
+	return s.updateCached.at.UTC().Format(time.RFC3339)
 }
 
 func (s *Server) runningVersion() string {
