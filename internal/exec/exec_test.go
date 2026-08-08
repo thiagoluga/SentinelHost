@@ -255,34 +255,88 @@ func TestArchivingDoesNotEscapeTheDirectory(t *testing.T) {
 
 // Batcher --------------------------------------------------------------------
 
-func TestBatcherSplitsAndPausesBetweenBatches(t *testing.T) {
+// The pauses go BETWEEN the batches, and never after the last one.
+//
+// Recorded rather than timed. This used to measure the whole call and require it to finish
+// inside 200ms — twice the 100ms it really sleeps — and read a third pause into anything
+// slower. On a loaded container running the full suite it measured 248ms and failed while
+// the code was correct; alone in the same container it passed every time. The assertion was
+// reporting scheduler contention as a defect, and a suite that cries wolf teaches its
+// readers to skip the output.
+//
+// The trace below says the same thing without a clock in it: five items in batches of two
+// produce batch, pause, batch, pause, batch. A trailing pause would appear as a sixth entry
+// and no amount of load can invent one.
+func TestBatcherPausesBetweenBatchesAndNeverAfterTheLast(t *testing.T) {
 	b := sexec.NewBatcher(2, 50*time.Millisecond)
 	items := []string{"a", "b", "c", "d", "e"}
 
+	var trace []string
 	var batches [][]string
-	start := time.Now()
+	var slept []time.Duration
+
+	sexec.SetSleepForTest(b, func(_ context.Context, d time.Duration) error {
+		trace = append(trace, "pause")
+		slept = append(slept, d)
+		return nil
+	})
+
 	err := b.Each(context.Background(), items, func(_ context.Context, batch []string) error {
+		trace = append(trace, "batch")
 		batches = append(batches, append([]string(nil), batch...))
 		return nil
 	})
-	elapsed := time.Since(start)
-
 	if err != nil {
 		t.Fatalf("Each: %v", err)
 	}
+
+	want := []string{"batch", "pause", "batch", "pause", "batch"}
+	if strings.Join(trace, " ") != strings.Join(want, " ") {
+		t.Errorf("the order of work and pauses is wrong\n  got:    %v\n  wanted: %v", trace, want)
+	}
+
 	if len(batches) != 3 {
 		t.Fatalf("expected 3 batches, got %d: %v", len(batches), batches)
 	}
 	if len(batches[2]) != 1 {
 		t.Errorf("the last batch should hold 1 item, got %v", batches[2])
 	}
-	// 3 batches = 2 pauses. A third pause would mean sleeping after the last
-	// batch, delaying the end of the cycle for nothing.
+
+	// Each pause is the one that was configured. A batcher that paused twice but for a
+	// duration it invented would satisfy the trace above and starve the host anyway.
+	for i, d := range slept {
+		if d != 50*time.Millisecond {
+			t.Errorf("pause %d lasted %v, wanted the configured 50ms", i+1, d)
+		}
+	}
+}
+
+// And the pause is a real one.
+//
+// The test above replaces the sleep, so on its own it would pass against a batcher that
+// only pretended to pause. This runs the genuine article and asserts a LOWER bound only:
+// load can make a sleep longer, never shorter, so there is nothing here for a busy machine
+// to break. The upper bound is what was flaky, and the trace above covers what it was
+// trying to prove.
+func TestBatcherReallySleeps(t *testing.T) {
+	if testing.Short() {
+		t.Skip("this one actually sleeps; the ordering is proved without a clock above")
+	}
+
+	b := sexec.NewBatcher(2, 50*time.Millisecond)
+
+	start := time.Now()
+	err := b.Each(context.Background(), []string{"a", "b", "c", "d", "e"},
+		func(_ context.Context, _ []string) error { return nil })
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("Each: %v", err)
+	}
+	// Three batches, two pauses of 50ms. Anything below that means the pause that keeps
+	// this scanner from looking like continuous CPU usage is not happening.
 	if elapsed < 100*time.Millisecond {
 		t.Errorf("the pauses between batches did not happen: %v", elapsed)
-	}
-	if elapsed > 200*time.Millisecond {
-		t.Errorf("it paused after the last batch: %v", elapsed)
 	}
 }
 
