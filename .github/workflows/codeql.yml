@@ -1,0 +1,69 @@
+# CodeQL — dataflow analysis over the Go source.
+#
+# There is already golangci-lint and a SonarCloud quality gate, so the case for a third
+# analyser has to be specific rather than "it is a standard". It is this: CodeQL follows
+# TAINT ACROSS FUNCTION BOUNDARIES, which the other two mostly do not, and every serious
+# defect this project has had was of exactly that shape — a value that came from outside
+# reaching somewhere it should not.
+#
+# A filename with a newline in it reaching a scanner's argument list. A path parsed out of
+# engine text reaching os.Remove. An attacker-chosen name reaching a mail header. None of
+# those look wrong at the line where they are written; they look wrong when you follow
+# where the value came from.
+#
+# Not a required check. It is slower than the rest of CI and it is advisory: a finding
+# here is a question, not a verdict.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, because the interesting result is often a NEW query finding old code rather
+    # than new code failing an old query. Monday early, so a finding is waiting rather
+    # than arriving mid-week.
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze Go
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write   # to file the results under Security → Code scanning
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Initialise
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+          # security-extended over the default set. The default is tuned to keep noise
+          # low on a general codebase; this one runs with the permissions of the account
+          # it protects and can delete that account's files, so a false positive costs
+          # far less here than a missed one.
+          queries: security-extended
+
+      - name: Build
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:go

@@ -166,6 +166,18 @@ and proxies to it, so a host that kills long-lived processes stops mattering.
   reference
 - [`DECISIONS.md`](DECISIONS.md) — decisions taken where the spec was ambiguous
 
+## Contributing
+
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how a change gets in, and the eight principles
+  it has to survive
+- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — most reports here come from someone whose
+  site has just been broken into; this says how they get treated
+- [`SECURITY.md`](SECURITY.md) — report a vulnerability privately. A public issue for one
+  is a working exploit against every installation that has not updated yet.
+
+Discussion can happen in any language. Everything committed is in English, and
+[`CONTRIBUTING.md`](CONTRIBUTING.md) explains why.
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE).
