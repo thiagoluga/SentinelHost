@@ -59,6 +59,19 @@ code{background:var(--surface-2);padding:1px 5px;border-radius:4px;font-size:12p
   width:230px;flex:0 0 230px;background:var(--surface);
   border-right:1px solid var(--grid);padding:16px 12px;
   display:flex;flex-direction:column;gap:2px;
+  /* Its own height, and its own scroll.
+   *
+   * Without this the sidebar stretched to match whatever `main` was tall enough to need —
+   * so on a long page such as Settings, "Sign out" and the last-cycle line ended up below
+   * the fold, reachable only by scrolling a column that had nothing in it. Sticky keeps
+   * the navigation where the eye expects it while the content scrolls past. */
+  position:sticky; top:0; align-self:flex-start;
+  height:100vh; max-height:100vh; overflow-y:auto;
+}
+/* A narrow window is not the place to trap the navigation in a 100vh column: on a phone
+ * the sidebar sits above the content and scrolls with the page. */
+@media (max-width:768px){
+  .side{position:static; height:auto; max-height:none; overflow:visible}
 }
 .logo{display:flex;gap:10px;align-items:center;padding:4px 6px 16px}
 .logo b{display:block;font-size:14px}
