@@ -7,7 +7,7 @@ Security fixes say what was exploitable and how, rather than "hardened X". A cha
 entry for a security tool that hides the mechanism is asking the reader to take its word,
 and this project's whole argument is that you should not have to.
 
-## Unreleased
+## v0.1.11
 
 ### Fixed
 
@@ -22,6 +22,17 @@ and this project's whole argument is that you should not have to.
   stops being noticed. Links are now resolved and the two are separated, with the benign
   half still counted under `symlinked_directory_already_covered` — skipped is always
   recorded, but not everything skipped is a hole.
+
+### Changed
+
+- **The release workflow checks that a tag contains what its notes claim**, before
+  anything is built or signed: commits on `main` the tag does not contain, the changelog's
+  newest heading matching the tag, and no section still called `## Unreleased`. Written
+  after v0.1.9 shipped without a fix that had already been merged — built, signed and
+  installed on a real account, with the suite green against a tree that did not contain
+  the change. The workflow says plainly which of these would not have caught that (none,
+  at tag time) and which catches its aftermath (the orphaned `## Unreleased`), because a
+  guard described as stronger than it is stops people looking.
 
 ## v0.1.10
 
