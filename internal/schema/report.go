@@ -15,12 +15,19 @@ type Scope struct {
 	FilesConsidered int      `json:"files_considered"`
 	FilesScanned    int      `json:"files_scanned"`
 	// SkippedReasonCounts maps reason→count ("unchanged", "too_large",
-	// "unreadable", "excluded", "symlink", "symlinked_directory").
+	// "unreadable", "excluded", "symlink", "symlinked_directory",
+	// "symlinked_directory_already_covered").
 	//
 	// "symlink" and "symlinked_directory" are separate on purpose. A skipped linked
 	// file costs one file; a skipped linked directory costs everything under it, and
 	// if the target sits outside the configured roots nothing ever opens it while the
 	// web server may still serve it. One bucket could not tell those apart (D-053).
+	//
+	// "symlinked_directory_already_covered" is the benign half: the link resolves
+	// inside a configured root, so the target is walked under its real name and
+	// nothing is unseen. Counted, because nothing skipped goes unrecorded — but not
+	// as a gap. On cPanel every account links www to public_html, and a warning that
+	// fires on every install is one its reader learns to skip.
 	SkippedReasonCounts map[string]int `json:"skipped_reason_counts,omitempty"`
 }
 

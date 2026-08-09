@@ -132,11 +132,13 @@ jobs:
       # skipped looks exactly like `ok` on a package whose tests all passed.
       - name: The symlinked-directory accounting actually ran
         run: |
-          go test ./internal/baseline/ ./internal/adapter/wpchecksums/ -count=1 -v             -run 'Symlink' | tee /tmp/symlink.log
+          go test ./internal/baseline/ ./internal/adapter/wpchecksums/ -count=1 -v             -run 'Symlink|LinkInto' | tee /tmp/symlink.log
           grep -q -- '--- PASS: TestASymlinkedDirectoryIsNotCountedAsOneSkippedFile' /tmp/symlink.log
           grep -q -- '--- PASS: TestASymlinkToADirectoryInsideTheRootLosesNoCoverage' /tmp/symlink.log
           grep -q -- '--- PASS: TestASymlinkedDirectoryIsReportedRatherThanIgnored' /tmp/symlink.log
           grep -q -- '--- PASS: TestARootThatIsItselfASymlinkStillResolves' /tmp/symlink.log
+          grep -q -- '--- PASS: TestALinkIntoAlreadyCoveredGroundIsNotReportedAsAGap' /tmp/symlink.log
+          grep -q -- '--- PASS: TestALinkIntoTheSearchedTreeIsNotReportedAsADoorLeftClosed' /tmp/symlink.log
 
   build:
     runs-on: ubuntu-latest

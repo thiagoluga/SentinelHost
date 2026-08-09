@@ -103,9 +103,10 @@ func TestASymlinkedDirectoryIsNotCountedAsOneSkippedFile(t *testing.T) {
 // A symlink pointing at a directory INSIDE the root is still not followed, and still
 // counted — but its target is reached under its real name, so nothing is lost.
 //
-// Worth its own test because it is the case where the count looks alarming and is not:
-// the reader should be able to tell the two apart, which is only possible if the path
-// travels with the number.
+// This test was written one commit before the distinction existed, and its own comment
+// already said what was wrong: "the case where the count looks alarming and is not". It
+// then asserted the alarming bucket. The reader can now tell the two apart because the
+// counter does, so the assertion moved to the bucket that says "covered".
 func TestASymlinkToADirectoryInsideTheRootLosesNoCoverage(t *testing.T) {
 	root := t.TempDir()
 
@@ -125,8 +126,13 @@ func TestASymlinkToADirectoryInsideTheRootLosesNoCoverage(t *testing.T) {
 		t.Fatalf("Walk: %v", err)
 	}
 
-	if n := res.SkippedCounts["symlinked_directory"]; n != 1 {
-		t.Errorf("symlinked_directory=%d, wanted 1", n)
+	if n := res.SkippedCounts["symlinked_directory_already_covered"]; n != 1 {
+		t.Errorf("symlinked_directory_already_covered=%d, wanted 1 (all counts: %v)",
+			n, res.SkippedCounts)
+	}
+	if n := res.SkippedCounts["symlinked_directory"]; n != 0 {
+		t.Errorf("symlinked_directory=%d; this link hides nothing, and counting it as a "+
+			"gap is a warning that would fire on every cPanel account", n)
 	}
 	// The file is still covered, once, through the real path.
 	var found int
@@ -138,5 +144,70 @@ func TestASymlinkToADirectoryInsideTheRootLosesNoCoverage(t *testing.T) {
 	if found != 1 {
 		t.Errorf("x.php was walked %d time(s), wanted exactly 1 — through its real path "+
 			"and not through the link", found)
+	}
+}
+
+// A link into ground the walk already covers is not a gap.
+//
+// On cPanel every account has `www` linked to `public_html`, which is inside the root and
+// is walked under its real name — so nothing behind that link goes unseen. The first
+// version of this reporting called it an unopened door, which would have put a line nobody
+// can act on into every report on every account. The real one said so on day one:
+//
+//	2 directories reached through a symlink were not entered
+//	(/home1/motel510/access-logs, /home1/motel510/www)
+//
+// One of those is a genuine gap and the other is the standard layout, and the message
+// could not tell them apart. A warning that fires on every install is a warning that
+// teaches its reader to skip the section it lives in.
+func TestALinkIntoAlreadyCoveredGroundIsNotReportedAsAGap(t *testing.T) {
+	root := t.TempDir()
+
+	real := filepath.Join(root, "public_html")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(real, "index.php"), []byte("<?php\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	symlinkOrSkip(t, real, filepath.Join(root, "www"))
+
+	// And one that genuinely leaves the root.
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "hidden.php"), []byte("<?php\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	symlinkOrSkip(t, outside, filepath.Join(root, "elsewhere"))
+
+	res, err := baseline.Walk(context.Background(), baseline.WalkOptions{
+		Root: root, MaxDepth: 10,
+	})
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+
+	if n := res.SkippedCounts["symlinked_directory"]; n != 1 {
+		t.Errorf("symlinked_directory=%d, wanted 1 — only the link that leaves the root "+
+			"hides anything (all counts: %v)", n, res.SkippedCounts)
+	}
+	if n := res.SkippedCounts["symlinked_directory_already_covered"]; n != 1 {
+		t.Errorf("symlinked_directory_already_covered=%d, wanted 1. The link is still "+
+			"counted — it was skipped, and nothing skipped goes unrecorded — but not as a "+
+			"gap (all counts: %v)", n, res.SkippedCounts)
+	}
+	if len(res.SymlinkedDirs) != 1 || filepath.Base(res.SymlinkedDirs[0]) != "elsewhere" {
+		t.Errorf("SymlinkedDirs=%v, wanted only the one that leaves the root",
+			res.SymlinkedDirs)
+	}
+
+	// The covered content is still walked, once, under its real name.
+	var seen int
+	for _, e := range res.Entries {
+		if filepath.Base(e.Path) == "index.php" {
+			seen++
+		}
+	}
+	if seen != 1 {
+		t.Errorf("index.php was walked %d time(s), wanted exactly 1", seen)
 	}
 }

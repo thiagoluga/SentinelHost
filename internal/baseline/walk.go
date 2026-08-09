@@ -70,6 +70,34 @@ type WalkResult struct {
 // ErrRootUnsafe means the root is invalid.
 var ErrRootUnsafe = errors.New("invalid root for a walk")
 
+// pointsInside reports whether a symlink resolves to somewhere this walk already covers.
+//
+// The distinction between a warning and a false alarm. On cPanel every account links `www`
+// to `public_html`, which is inside the root and is walked under its real name — so
+// nothing behind that link goes unseen, and calling it a gap would put a line nobody can
+// act on into every report.
+//
+// EvalSymlinks resolves the whole chain. A link that cannot be resolved — dangling, or a
+// loop — answers false and is therefore reported: unresolvable is a gap, not a
+// reassurance.
+func pointsInside(link, root string) bool {
+	target, err := filepath.EvalSymlinks(link)
+	if err != nil {
+		return false
+	}
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return false
+	}
+	// Compared as path elements: /home/user2 must not count as inside /home/user, and a
+	// string prefix test would say it does.
+	rel, err := filepath.Rel(realRoot, target)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (!strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel))
+}
+
 // maxReportedSymlinkedDirs caps how many paths travel with the result.
 //
 // The count is always exact; only the list of examples is bounded. Somebody reading
@@ -137,6 +165,14 @@ func Walk(ctx context.Context, opts WalkOptions) (WalkResult, error) {
 			// Stat, not Lstat: the question is what the link POINTS AT. Following it to
 			// ask is safe; following it to walk is what is refused.
 			if target, err := os.Stat(path); err == nil && target.IsDir() {
+				// A link into ground this walk already covers hides nothing: the target
+				// is reached under its real name in the same pass. Counting it as a gap
+				// would put an unactionable line in every cPanel report, where `www` is
+				// always linked to `public_html`.
+				if pointsInside(path, root) {
+					res.SkippedCounts["symlinked_directory_already_covered"]++
+					return nil
+				}
 				res.SkippedCounts["symlinked_directory"]++
 				// Bounded. A site that links a thousand directories has a problem this
 				// list cannot fix, and a report that prints a thousand paths is one

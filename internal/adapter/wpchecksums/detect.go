@@ -142,6 +142,54 @@ func isSymlinkedDir(path string) bool {
 	return err == nil && target.IsDir()
 }
 
+// pointsInside reports whether a symlink resolves to somewhere the search already covers.
+//
+// This is the difference between a warning and a false alarm. On cPanel every account has
+// `www` linked to `public_html`, and `public_html` is inside the root and gets walked
+// under its real name — so nothing behind that link is unexamined. Reporting it as an
+// unopened door would put a line nobody can act on into every single report, which is how
+// a report stops being read.
+//
+// The first account this ran against said exactly that:
+//
+//	2 directories reached through a symlink were not entered
+//	(/home1/motel510/access-logs, /home1/motel510/www)
+//
+// One of those two is a genuine gap and the other is the standard cPanel layout, and the
+// message could not tell them apart.
+//
+// EvalSymlinks resolves the whole chain, so a link to a link to a covered directory
+// answers correctly. A link that cannot be resolved — dangling, or a loop — answers false,
+// which reports it: unresolvable is a gap, not a reassurance.
+func pointsInside(link string, roots []string) bool {
+	target, err := filepath.EvalSymlinks(link)
+	if err != nil {
+		return false
+	}
+	for _, root := range roots {
+		realRoot, err := filepath.EvalSymlinks(root)
+		if err != nil {
+			continue
+		}
+		if pathWithin(target, realRoot) {
+			return true
+		}
+	}
+	return false
+}
+
+// pathWithin reports whether path is root or sits under it.
+//
+// Compared as path elements rather than as strings: /home/user2 must not count as being
+// inside /home/user, and a prefix test would say it is.
+func pathWithin(path, root string) bool {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (!strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel))
+}
+
 // DetectAll finds every WordPress installation at or under the given roots.
 //
 // Detect() answers a narrower question — is THIS directory a WordPress — and that was
@@ -259,9 +307,12 @@ func walkForWordPress(ctx context.Context, root string, depth, maxInstalls, maxD
 					// must not be the soft way around it. Counted instead, so the
 					// abstention can say a door was left closed rather than implying
 					// there was nothing behind it.
-					if isSymlinkedDir(filepath.Join(dir, e.Name())) {
-						res.SymlinkedDirs = append(res.SymlinkedDirs,
-							filepath.Join(dir, e.Name()))
+					link := filepath.Join(dir, e.Name())
+					// Only the ones that hide something. A link into ground the
+					// search already covers loses nothing, and reporting it would
+					// put an unactionable line in every cPanel account's report.
+					if isSymlinkedDir(link) && !pointsInside(link, res.Roots) {
+						res.SymlinkedDirs = append(res.SymlinkedDirs, link)
 					}
 					continue
 				}
