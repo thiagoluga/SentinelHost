@@ -36,6 +36,84 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The whole history and every ref: the check below compares the tag against
+          # main, and a shallow clone has neither.
+          fetch-depth: 0
+
+      # Does this tag contain what the release will claim it contains?
+      #
+      # Written after v0.1.9 shipped without a fix that had been merged: the release was
+      # built, signed and installed on a real account, and the WordPress search fix was not
+      # in it. Nothing failed — the suite ran against the tag and was green, for a tree
+      # missing the change. It surfaced later as a second `## Unreleased` heading.
+      #
+      # Being precise about what these checks do and do not catch, because overstating a
+      # guard is how the next person stops looking:
+      #
+      #   - None of them would have fired when v0.1.9 was tagged. At that moment the tag
+      #     WAS the tip of main and the changelog WAS correct. The fix merged afterwards
+      #     and no new release was cut, which no tag-time check can see.
+      #   - What check 3 does catch is the aftermath. The orphaned `## Unreleased` section
+      #     that merge left behind would have failed the NEXT release, instead of sitting
+      #     there for two releases the way it did.
+      #   - Check 1 catches the neighbouring mistake, which is real and easier to make:
+      #     tagging a commit while main has moved past it.
+      #
+      # The discipline that actually prevents the original — cut a release after a merge,
+      # not before — is not enforceable here. This narrows the blast radius; it does not
+      # replace it.
+      #
+      # A release is the one artifact users install without being able to check it. Every
+      # other gate in this repository guards a pull request; this guards what leaves the
+      # building.
+      - name: The tag contains everything on main, and the changelog says which release
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          git fetch --quiet origin main
+
+          # 1. Commits on main that this tag does not contain.
+          #
+          # Failing rather than warning. A warning is what the last one was: printed,
+          # true, and read past. `[allow-behind-main]` in the tag message is the way to
+          # release deliberately from behind main — a hotfix from an older tag is a real
+          # thing, and it should have to be said out loud.
+          BEHIND=$(git rev-list --count "${TAG}..origin/main")
+          if [ "${BEHIND}" -gt 0 ]; then
+            echo "::group::commits on main that ${TAG} does NOT contain"
+            git log --oneline "${TAG}..origin/main"
+            echo "::endgroup::"
+            if git tag -l --format='%(contents)' "${TAG}" | grep -q '\[allow-behind-main\]'; then
+              echo "::warning::${TAG} is ${BEHIND} commit(s) behind main, allowed by the tag message."
+            else
+              echo "::error::${TAG} is ${BEHIND} commit(s) behind main. Those changes will not"
+              echo "::error::be in the release, and its notes will imply they are. Re-tag at main,"
+              echo "::error::or put [allow-behind-main] in the tag message if that is deliberate."
+              exit 1
+            fi
+          fi
+
+          # 2. The changelog's newest heading is this release.
+          TOP=$(grep -m1 '^## ' CHANGELOG.md | sed 's/^## //')
+          if [ "${TOP}" != "${TAG}" ]; then
+            echo "::error::CHANGELOG.md's newest section is '${TOP}', but the tag is '${TAG}'."
+            echo "::error::A release whose notes describe a different version is worse than none."
+            exit 1
+          fi
+
+          # 3. No section is still called Unreleased.
+          #
+          # An Unreleased heading at tag time means something merged that this release's
+          # notes do not describe. That is exactly the shape the v0.1.9 miss left behind.
+          if grep -q '^## Unreleased' CHANGELOG.md; then
+            echo "::error::CHANGELOG.md still has an '## Unreleased' section. Something merged"
+            echo "::error::that these release notes do not cover — fold it in or cut it separately."
+            exit 1
+          fi
+
+          echo "${TAG} contains all of main, and the changelog names it."
+
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ env.GO_VERSION }}
