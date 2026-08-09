@@ -136,8 +136,13 @@ func TestWalkNeverFollowsASymlink(t *testing.T) {
 			t.Fatalf("the walker followed the symlink and left the root: %s", e.Path)
 		}
 	}
-	if res.SkippedCounts["symlink"] == 0 {
-		t.Error("the symlink should be counted")
+	// This link points at a DIRECTORY, so it is counted as one — the bucket it used to
+	// share with linked files could not tell "one stray link" from "a whole tree nobody
+	// opened" (D-053). The refusal above is unchanged and is what this test is really for;
+	// the counter only has to name what was refused.
+	if res.SkippedCounts["symlinked_directory"] == 0 {
+		t.Errorf("the symlinked directory should be counted, and counted as a directory: %v",
+			res.SkippedCounts)
 	}
 }
 
