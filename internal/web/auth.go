@@ -181,11 +181,22 @@ func (s *Server) passwordSet(ctx context.Context) bool {
 	return h != ""
 }
 
-// setCookie writes the session cookie.
-func (s *Server) setCookie(w http.ResponseWriter, token string, expires time.Time, secure bool) {
-	http.SetCookie(w, &http.Cookie{
+// sessionCookie builds the cookie. One constructor, so setting and clearing cannot
+// describe different cookies.
+//
+// They already had: clearCookie omitted Secure, which setCookie sets. That particular
+// omission was harmless — the value being cleared is empty, so there is no secret to
+// travel in the clear, and browsers match a deletion on name, domain and path rather than
+// on Secure — but the shape of it is not. A cookie is deleted only if the deletion
+// describes the SAME cookie, so the day somebody adds a Domain or changes the Path in one
+// of two places, logout silently stops clearing anything and the browser keeps a cookie
+// the panel believes it took back.
+//
+// Making them one function removes the class rather than the instance.
+func (s *Server) newSessionCookie(value string, expires time.Time, secure bool) *http.Cookie {
+	return &http.Cookie{
 		Name:     sessionCookie,
-		Value:    token,
+		Value:    value,
 		Path:     "/",
 		Expires:  expires,
 		HttpOnly: true,
@@ -196,12 +207,22 @@ func (s *Server) setCookie(w http.ResponseWriter, token string, expires time.Tim
 		// over http://127.0.0.1 would make the browser drop the cookie and the
 		// login would never work.
 		Secure: secure,
-	})
+	}
 }
 
-func (s *Server) clearCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
-		Name: sessionCookie, Value: "", Path: "/", MaxAge: -1,
-		HttpOnly: true, SameSite: http.SameSiteStrictMode,
-	})
+// setCookie writes the session cookie.
+func (s *Server) setCookie(w http.ResponseWriter, token string, expires time.Time, secure bool) {
+	http.SetCookie(w, s.newSessionCookie(token, expires, secure))
+}
+
+// clearCookie takes the session cookie back.
+//
+// secure travels from the request rather than being assumed, exactly as it does when the
+// cookie is set: the two have to agree, and the request is the only thing that knows.
+func (s *Server) clearCookie(w http.ResponseWriter, secure bool) {
+	c := s.newSessionCookie("", time.Unix(0, 0), secure)
+	// MaxAge wins over Expires in every browser that supports it, and the zero Unix time
+	// covers the ones that do not.
+	c.MaxAge = -1
+	http.SetCookie(w, c)
 }
