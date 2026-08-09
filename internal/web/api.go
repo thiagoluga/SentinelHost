@@ -143,7 +143,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, req *http.Request) {
 	if c, err := req.Cookie(sessionCookie); err == nil {
 		_ = s.store.DeleteSession(req.Context(), c.Value)
 	}
-	s.clearCookie(w)
+	s.clearCookie(w, isSecureRequest(req))
 	writeJSON(w, http.StatusOK, map[string]any{"authenticated": false})
 }
 
