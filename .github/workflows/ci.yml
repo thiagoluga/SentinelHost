@@ -126,6 +126,17 @@ jobs:
           go test ./internal/quarantine/ -count=1 -v             -run 'HardLinked|Symlink|PlainFileIsStill' | tee /tmp/posix.log
           grep -q -- '--- PASS: TestAHardLinkedFileIsNotQuarantinedSilently' /tmp/posix.log
           grep -q -- '--- PASS: TestASymlinkIsRefusedRatherThanUnlinked' /tmp/posix.log
+      # Same reasoning, different subject: creating a symlink needs a privilege the
+      # Windows process does not have, so these skip on a workstation and this is the
+      # only place they run. Asserted by name, because `ok` on a package whose tests all
+      # skipped looks exactly like `ok` on a package whose tests all passed.
+      - name: The symlinked-directory accounting actually ran
+        run: |
+          go test ./internal/baseline/ ./internal/adapter/wpchecksums/ -count=1 -v             -run 'Symlink' | tee /tmp/symlink.log
+          grep -q -- '--- PASS: TestASymlinkedDirectoryIsNotCountedAsOneSkippedFile' /tmp/symlink.log
+          grep -q -- '--- PASS: TestASymlinkToADirectoryInsideTheRootLosesNoCoverage' /tmp/symlink.log
+          grep -q -- '--- PASS: TestASymlinkedDirectoryIsReportedRatherThanIgnored' /tmp/symlink.log
+          grep -q -- '--- PASS: TestARootThatIsItselfASymlinkStillResolves' /tmp/symlink.log
 
   build:
     runs-on: ubuntu-latest

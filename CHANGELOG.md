@@ -39,6 +39,32 @@ and this project's whole argument is that you should not have to.
   happened look like a definitive result. A search stopped by one of its own bounds says
   which bound stopped it.
 
+## Unreleased
+
+### Fixed
+
+- **A symlinked directory was counted as one skipped file.** The walk refuses to follow
+  symlinks — deliberately, because one pointing outside the configured roots would take
+  the scanner into a directory nobody authorised, and on shared hosting possibly into
+  another account. That is unchanged. What was wrong is that a skipped symlinked *file*
+  and a skipped symlinked *directory* both landed in one bucket, so `skipped: symlink=1`
+  meant either "one stray link" or "an entire web-reachable tree that nothing opened".
+  Counted, and therefore never silent — but understating the second case by four orders
+  of magnitude. `symlinked_directory` is now its own reason, the paths travel with the
+  count, and the cycle logs each one with what to do about it.
+- **The WordPress search skipped symlinked directories with no count at all.**
+  `os.ReadDir` returns entries describing the *link*, so `DirEntry.IsDir()` answers false
+  for a symlinked directory and the search dropped it without a trace — meaning an account
+  whose site sits behind one would be told "this does not look like a WordPress
+  installation". That is the defect the search was written to fix, reintroduced by the fix
+  itself. They are now recorded, and the abstention says a WordPress behind one is
+  *unexamined* rather than absent.
+- **The WordPress search ignored cancellation.** It was one `os.Open` when that was
+  harmless; since it learned to search it walks up to fifty thousand directories, so a
+  `scan` was slow to answer a Ctrl-C and a cycle could run past its own timeout. Worse, an
+  abandoned search reported "no WordPress found", which is the same sentence as "this
+  account has none". It now stops when asked and says it was cancelled.
+
 ## v0.1.9
 
 ### Fixed

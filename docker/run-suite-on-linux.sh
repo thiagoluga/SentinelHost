@@ -29,6 +29,11 @@ POSIX_ONLY=(
   TestASymlinkIsRefusedRatherThanUnlinked
   TestAPathOutsideTheRootsIsRefused
   TestTheReplacementInheritsTheModeWithoutGroupOrOtherWrite
+  TestASymlinkedDirectoryIsNotCountedAsOneSkippedFile
+  TestASymlinkToADirectoryInsideTheRootLosesNoCoverage
+  TestASymlinkedDirectoryIsReportedRatherThanIgnored
+  TestASymlinkedFileIsNotReportedAsASkippedDirectory
+  TestARootThatIsItselfASymlinkStillResolves
 )
 
 # Which package each one lives in. A single -run across ./... would work but takes the
@@ -39,6 +44,11 @@ declare -A POSIX_PKG=(
   [TestASymlinkIsRefusedRatherThanUnlinked]=./internal/quarantine/
   [TestAPathOutsideTheRootsIsRefused]=./internal/quarantine/
   [TestTheReplacementInheritsTheModeWithoutGroupOrOtherWrite]=./internal/selfupdate/
+  [TestASymlinkedDirectoryIsNotCountedAsOneSkippedFile]=./internal/baseline/
+  [TestASymlinkToADirectoryInsideTheRootLosesNoCoverage]=./internal/baseline/
+  [TestASymlinkedDirectoryIsReportedRatherThanIgnored]=./internal/adapter/wpchecksums/
+  [TestASymlinkedFileIsNotReportedAsASkippedDirectory]=./internal/adapter/wpchecksums/
+  [TestARootThatIsItselfASymlinkStillResolves]=./internal/adapter/wpchecksums/
 )
 
 echo "==> building $IMAGE"

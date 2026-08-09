@@ -47,6 +47,20 @@ type WalkResult struct {
 	// silently: the user needs to know that 12 files were not looked at because
 	// they were too large, otherwise the coverage looks complete.
 	SkippedCounts map[string]int
+	// SymlinkedDirs are directories reached through a symlink, which the walk refuses
+	// to descend into. Their PATHS, not just a count.
+	//
+	// A skipped symlinked FILE costs one file, and if its target is inside a root the
+	// walk reaches that target by its real name anyway. A skipped symlinked DIRECTORY
+	// costs everything underneath it, and if the target is outside the roots nothing
+	// ever looks at it — while the web server may still serve every file in there.
+	//
+	// Both used to land in one bucket called `symlink`, so `skipped: symlink=1` meant
+	// either "one stray link" or "an entire web-reachable tree that nothing opened".
+	// Counted, and therefore not silent — but the number understated the second case by
+	// four orders of magnitude, which is the same lie the count exists to prevent.
+	SymlinkedDirs []string
+
 	// Truncated says MaxFiles was reached. The cycle becomes `partial`.
 	Truncated bool
 	// Considered is how many entries were evaluated (before the exclusions).
@@ -55,6 +69,13 @@ type WalkResult struct {
 
 // ErrRootUnsafe means the root is invalid.
 var ErrRootUnsafe = errors.New("invalid root for a walk")
+
+// maxReportedSymlinkedDirs caps how many paths travel with the result.
+//
+// The count is always exact; only the list of examples is bounded. Somebody reading
+// "symlinked_directory=340" with twenty paths under it knows both the scale and where to
+// start, and neither number is invented.
+const maxReportedSymlinkedDirs = 20
 
 // Walk walks the root applying the exclusions and limits.
 //
@@ -108,7 +129,23 @@ func Walk(ctx context.Context, opts WalkOptions) (WalkResult, error) {
 		res.Considered++
 
 		// Symlink: count it and move on without opening it.
+		//
+		// Still never followed — see the note on Walk. What changed is that a link to a
+		// DIRECTORY is reported as its own thing, because it stands for a whole subtree
+		// nobody looked at rather than for one file.
 		if d.Type()&fs.ModeSymlink != 0 {
+			// Stat, not Lstat: the question is what the link POINTS AT. Following it to
+			// ask is safe; following it to walk is what is refused.
+			if target, err := os.Stat(path); err == nil && target.IsDir() {
+				res.SkippedCounts["symlinked_directory"]++
+				// Bounded. A site that links a thousand directories has a problem this
+				// list cannot fix, and a report that prints a thousand paths is one
+				// nobody reads.
+				if len(res.SymlinkedDirs) < maxReportedSymlinkedDirs {
+					res.SymlinkedDirs = append(res.SymlinkedDirs, path)
+				}
+				return nil
+			}
 			res.SkippedCounts["symlink"]++
 			return nil
 		}

@@ -1,9 +1,11 @@
 package wpchecksums
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -42,7 +44,7 @@ func TestWordPressInASubdirectoryIsFound(t *testing.T) {
 	home := t.TempDir()
 	want := plantWordPress(t, filepath.Join(home, "public_html", "example.com"), "6.5.2")
 
-	res := DetectAll([]string{home}, 0, 0, 0)
+	res := DetectAll(context.Background(), []string{home}, 0, 0, 0)
 
 	if len(res.Installs) != 1 {
 		t.Fatalf("found %d installations, wanted 1: %v", len(res.Installs), rootsOf(res))
@@ -69,7 +71,7 @@ func TestEveryInstallationOnTheAccountIsFound(t *testing.T) {
 	b := plantWordPress(t, filepath.Join(home, "public_html", "blog.example.com"), "6.4.1")
 	c := plantWordPress(t, filepath.Join(home, "outra", "loja"), "6.6")
 
-	res := DetectAll([]string{home}, 0, 0, 0)
+	res := DetectAll(context.Background(), []string{home}, 0, 0, 0)
 
 	got := rootsOf(res)
 	want := []string{a, b, c}
@@ -93,7 +95,7 @@ func TestABackupInsideWPContentIsNotASecondSite(t *testing.T) {
 	site := plantWordPress(t, filepath.Join(home, "public_html"), "6.5.2")
 	plantWordPress(t, filepath.Join(site, "wp-content", "backups", "old-site"), "5.9")
 
-	res := DetectAll([]string{home}, 0, 0, 0)
+	res := DetectAll(context.Background(), []string{home}, 0, 0, 0)
 
 	if len(res.Installs) != 1 {
 		t.Fatalf("found %d installations, wanted 1: %v", len(res.Installs), rootsOf(res))
@@ -113,7 +115,7 @@ func TestEveryConfiguredRootIsSearched(t *testing.T) {
 	one := plantWordPress(t, filepath.Join(home, "a", "site"), "6.5.2")
 	two := plantWordPress(t, filepath.Join(home, "b", "site"), "6.4.1")
 
-	res := DetectAll([]string{filepath.Join(home, "a"), filepath.Join(home, "b")}, 0, 0, 0)
+	res := DetectAll(context.Background(), []string{filepath.Join(home, "a"), filepath.Join(home, "b")}, 0, 0, 0)
 
 	got := rootsOf(res)
 	want := []string{one, two}
@@ -134,7 +136,7 @@ func TestATruncatedSearchSaysWhatStoppedIt(t *testing.T) {
 		plantWordPress(t, filepath.Join(home, "public_html", n), "6.5.2")
 	}
 
-	res := DetectAll([]string{home}, 0, 2, 0)
+	res := DetectAll(context.Background(), []string{home}, 0, 2, 0)
 
 	if len(res.Installs) != 2 {
 		t.Fatalf("found %d, wanted the ceiling of 2", len(res.Installs))
@@ -154,7 +156,7 @@ func TestTheDepthLimitIsRealAndTheDefaultIsGenerousEnough(t *testing.T) {
 	home := t.TempDir()
 	deep := plantWordPress(t, filepath.Join(home, "a", "b", "c", "d"), "6.5.2")
 
-	shallow := DetectAll([]string{home}, 2, 0, 0)
+	shallow := DetectAll(context.Background(), []string{home}, 2, 0, 0)
 	if len(shallow.Installs) != 0 {
 		t.Fatalf("depth 2 reached %v, which the test needs to be out of range", rootsOf(shallow))
 	}
@@ -164,7 +166,7 @@ func TestTheDepthLimitIsRealAndTheDefaultIsGenerousEnough(t *testing.T) {
 
 	// public_html/<domain>/<subdir> is three, and this is four. The default has to clear
 	// the layouts a hosting account actually uses.
-	deepEnough := DetectAll([]string{home}, 0, 0, 0)
+	deepEnough := DetectAll(context.Background(), []string{home}, 0, 0, 0)
 	if len(deepEnough.Installs) != 1 || deepEnough.Installs[0].Root != deep {
 		t.Errorf("the default depth of %d found %v, wanted %q",
 			DefaultSearchDepth, rootsOf(deepEnough), deep)
@@ -182,7 +184,7 @@ func TestAnAddonDomainInsideTheMainSiteIsItsOwnInstallation(t *testing.T) {
 	main := plantWordPress(t, filepath.Join(home, "public_html"), "6.5.2")
 	addon := plantWordPress(t, filepath.Join(home, "public_html", "loja.example.com"), "6.4.1")
 
-	res := DetectAll([]string{home}, 0, 0, 0)
+	res := DetectAll(context.Background(), []string{home}, 0, 0, 0)
 
 	got := rootsOf(res)
 	want := []string{main, addon}
@@ -197,7 +199,7 @@ func TestAMissingRootIsReportedAsUnreadable(t *testing.T) {
 	home := t.TempDir()
 	plantWordPress(t, filepath.Join(home, "site"), "6.5.2")
 
-	res := DetectAll([]string{home, filepath.Join(home, "does-not-exist")}, 0, 0, 0)
+	res := DetectAll(context.Background(), []string{home, filepath.Join(home, "does-not-exist")}, 0, 0, 0)
 
 	if len(res.Installs) != 1 {
 		t.Errorf("the readable root should still be searched: %v", rootsOf(res))
@@ -212,7 +214,7 @@ func TestAMissingRootIsReportedAsUnreadable(t *testing.T) {
 func TestARootThatIsItselfAWordPressStillWorks(t *testing.T) {
 	home := plantWordPress(t, t.TempDir(), "6.5.2")
 
-	res := DetectAll([]string{home}, 0, 0, 0)
+	res := DetectAll(context.Background(), []string{home}, 0, 0, 0)
 
 	if len(res.Installs) != 1 || res.Installs[0].Root != home {
 		t.Fatalf("found %v, wanted the root itself at %q", rootsOf(res), home)
@@ -226,7 +228,7 @@ func TestASiteThatIsNotWordPressFindsNothingAndSaysItLooked(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res := DetectAll([]string{home}, 0, 0, 0)
+	res := DetectAll(context.Background(), []string{home}, 0, 0, 0)
 
 	if len(res.Installs) != 0 {
 		t.Fatalf("found %v in a site that is not WordPress", rootsOf(res))
@@ -237,5 +239,39 @@ func TestASiteThatIsNotWordPressFindsNothingAndSaysItLooked(t *testing.T) {
 	}
 	if res.StoppedAt != "" {
 		t.Errorf("StoppedAt is %q, but nothing should have stopped this search", res.StoppedAt)
+	}
+}
+
+// A cancelled search stops, and says it was cancelled.
+//
+// Probe used to be a single os.Open and could afford to ignore its context. Since it
+// learned to search, it walks up to fifty thousand directories — and a search that cannot
+// be interrupted makes `scan` slow to answer a Ctrl-C and holds a cycle open past its own
+// timeout. This repository already made that argument for sleepCtx; the search was written
+// without it, by me, in the change that added it.
+//
+// It must also not report "no WordPress found" for a search it abandoned. That is the same
+// sentence as "this account has none", and this whole function exists because the two were
+// once the same sentence.
+func TestACancelledSearchStopsAndSaysSo(t *testing.T) {
+	home := t.TempDir()
+	plantWordPress(t, filepath.Join(home, "public_html", "example.com"), "6.5.2")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	res := DetectAll(ctx, []string{home}, 0, 0, 0)
+
+	if res.StoppedAt == "" {
+		t.Fatal("a cancelled search reported nothing about being cancelled, which reads " +
+			"exactly like an account with no WordPress on it")
+	}
+	if !strings.Contains(res.StoppedAt, "cancel") {
+		t.Errorf("StoppedAt is %q; it has to name cancellation, not some other bound",
+			res.StoppedAt)
+	}
+	if res.DirsWalked > 1 {
+		t.Errorf("walked %d directories after the context was already cancelled",
+			res.DirsWalked)
 	}
 }

@@ -1964,3 +1964,61 @@ answered a narrower question than its name implied, and every caller took the na
 word for months. The reason it survived is that its failure output was a confident
 sentence about a specific file — which is the same shape as D-051 and as the eight defects
 in D-022. **An answer that names a path sounds like it looked everywhere.**
+
+## D-053 — a symlinked directory is not one skipped file
+
+**Context**: `baseline.Walk` refuses to follow symlinks, and says why in its own comment —
+a link pointing outside the root would take the scanner into a directory nobody
+authorised, and on shared hosting possibly into another account. That decision is right
+and is not revisited here.
+
+What was wrong is the accounting. A skipped symlinked FILE and a skipped symlinked
+DIRECTORY both landed in one bucket called `symlink`, so `skipped: symlink=1` meant either
+of two things a reader cannot tell apart:
+
+- one stray link, whose target — if inside a root — the walk reaches under its real name
+  anyway, so nothing is lost;
+- an entire subtree nobody opened, and if its target lies outside the configured roots,
+  nothing in the cycle ever will, while the web server may serve every file inside it.
+
+It was counted, so it never violated the letter of the rule this project is organised
+around. It understated the second case by four orders of magnitude, which violates the
+point of it. **A count that cannot convey magnitude is a count that reassures.**
+
+The same defect had a second form. `wpchecksums.DetectAll`, added one day earlier in
+D-052, skipped symlinked directories with **no count at all** — because `os.ReadDir`
+returns entries describing the LINK, and `DirEntry.IsDir()` therefore answers false for a
+symlinked directory. Confirmed against Linux rather than assumed:
+
+```
+public_html    IsDir()=false Type=L---------  -> DetectAll would SKIP
+www            IsDir()=true  Type=d---------  -> DetectAll would DESCEND
+```
+
+So an account whose site sat behind a linked directory would be told "this does not look
+like a WordPress installation" — D-052's own defect, reintroduced by D-052's own fix, in
+the one place nobody would look for it.
+
+**Decision**: still never followed, always distinguished.
+
+- **`symlinked_directory` is its own skip reason**, separate from `symlink`, and the
+  walk carries the PATHS as well as the count — bounded at twenty examples, with the count
+  always exact. A number tells the reader something was skipped; the path is what lets
+  them do anything about it. The cycle logs a warning per path saying what to do: add the
+  real target to `general.roots` if the web server serves it.
+- **`DetectAll` records them too**, and the abstention says so: "N directories reached
+  through a symlink were not entered — a WordPress behind one is unexamined rather than
+  absent." Unexamined and absent must never read the same.
+- **The search takes a context.** `Probe` was one `os.Open` when it could afford to ignore
+  cancellation; after D-052 it walks up to fifty thousand directories. A search that
+  cannot be interrupted makes `scan` slow to answer a Ctrl-C and holds a cycle past its
+  own timeout — the argument `sleepCtx` was written for, which I did not apply to the
+  function I had just written. A cancelled search now says it was cancelled rather than
+  reporting that nothing was found.
+- **Both are POSIX-only tests**, registered by name in `docker/run-suite-on-linux.sh` and
+  asserted by name in CI. Creating a symlink needs a privilege the Windows process lacks,
+  so they skip on a workstation — and `ok` on a package whose tests all skipped is the
+  same line as `ok` on a package whose tests all passed.
+
+**What this does not change**: symlinks are still never followed, anywhere. This entry is
+about what the report says afterwards, not about where the scanner goes.
