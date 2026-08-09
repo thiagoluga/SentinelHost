@@ -107,3 +107,32 @@ func TestARootThatIsItselfASymlinkStillResolves(t *testing.T) {
 			len(res.Installs))
 	}
 }
+
+// The same distinction in the WordPress search.
+//
+// `www` -> `public_html` is universal on cPanel, and public_html is inside the root the
+// search already walks. Naming it as an unopened door would appear in every account's
+// abstention, which is how a message stops being read.
+func TestALinkIntoTheSearchedTreeIsNotReportedAsADoorLeftClosed(t *testing.T) {
+	home := t.TempDir()
+
+	real := filepath.Join(home, "public_html")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	symlinkOrSkip(t, real, filepath.Join(home, "www"))
+
+	elsewhere := t.TempDir()
+	symlinkOrSkip(t, elsewhere, filepath.Join(home, "outside"))
+
+	res := DetectAll(context.Background(), []string{home}, 0, 0, 0)
+
+	if len(res.SymlinkedDirs) != 1 {
+		t.Fatalf("SymlinkedDirs=%v, wanted only the link that leaves the searched tree",
+			res.SymlinkedDirs)
+	}
+	if filepath.Base(res.SymlinkedDirs[0]) != "outside" {
+		t.Errorf("reported %q; www points at public_html, which this search already walks",
+			res.SymlinkedDirs[0])
+	}
+}

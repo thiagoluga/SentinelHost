@@ -7,6 +7,22 @@ Security fixes say what was exploitable and how, rather than "hardened X". A cha
 entry for a security tool that hides the mechanism is asking the reader to take its word,
 and this project's whole argument is that you should not have to.
 
+## Unreleased
+
+### Fixed
+
+- **A symlink into ground already covered is no longer reported as a gap.** v0.1.10 began
+  naming every skipped symlinked directory, and the first real account showed what that
+  meant in practice: `2 directories reached through a symlink were not entered
+  (/home1/motel510/access-logs, /home1/motel510/www)`. On cPanel `www` is always linked to
+  `public_html`, which is inside the root and is walked under its real name — nothing
+  behind it goes unseen. One of those two paths was a genuine gap and the other was the
+  standard layout, and the message could not tell them apart. A warning that fires on
+  every install is one its reader learns to skip, which is how the real gap next to it
+  stops being noticed. Links are now resolved and the two are separated, with the benign
+  half still counted under `symlinked_directory_already_covered` — skipped is always
+  recorded, but not everything skipped is a hole.
+
 ## v0.1.10
 
 ### Fixed

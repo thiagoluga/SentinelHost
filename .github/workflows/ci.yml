@@ -137,6 +137,8 @@ jobs:
           grep -q -- '--- PASS: TestASymlinkToADirectoryInsideTheRootLosesNoCoverage' /tmp/symlink.log
           grep -q -- '--- PASS: TestASymlinkedDirectoryIsReportedRatherThanIgnored' /tmp/symlink.log
           grep -q -- '--- PASS: TestARootThatIsItselfASymlinkStillResolves' /tmp/symlink.log
+          grep -q -- '--- PASS: TestALinkIntoAlreadyCoveredGroundIsNotReportedAsAGap' /tmp/symlink.log
+          grep -q -- '--- PASS: TestALinkIntoTheSearchedTreeIsNotReportedAsADoorLeftClosed' /tmp/symlink.log
 
   build:
     runs-on: ubuntu-latest
