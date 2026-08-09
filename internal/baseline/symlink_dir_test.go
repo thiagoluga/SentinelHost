@@ -103,9 +103,10 @@ func TestASymlinkedDirectoryIsNotCountedAsOneSkippedFile(t *testing.T) {
 // A symlink pointing at a directory INSIDE the root is still not followed, and still
 // counted — but its target is reached under its real name, so nothing is lost.
 //
-// Worth its own test because it is the case where the count looks alarming and is not:
-// the reader should be able to tell the two apart, which is only possible if the path
-// travels with the number.
+// This test was written one commit before the distinction existed, and its own comment
+// already said what was wrong: "the case where the count looks alarming and is not". It
+// then asserted the alarming bucket. The reader can now tell the two apart because the
+// counter does, so the assertion moved to the bucket that says "covered".
 func TestASymlinkToADirectoryInsideTheRootLosesNoCoverage(t *testing.T) {
 	root := t.TempDir()
 
@@ -125,8 +126,13 @@ func TestASymlinkToADirectoryInsideTheRootLosesNoCoverage(t *testing.T) {
 		t.Fatalf("Walk: %v", err)
 	}
 
-	if n := res.SkippedCounts["symlinked_directory"]; n != 1 {
-		t.Errorf("symlinked_directory=%d, wanted 1", n)
+	if n := res.SkippedCounts["symlinked_directory_already_covered"]; n != 1 {
+		t.Errorf("symlinked_directory_already_covered=%d, wanted 1 (all counts: %v)",
+			n, res.SkippedCounts)
+	}
+	if n := res.SkippedCounts["symlinked_directory"]; n != 0 {
+		t.Errorf("symlinked_directory=%d; this link hides nothing, and counting it as a "+
+			"gap is a warning that would fire on every cPanel account", n)
 	}
 	// The file is still covered, once, through the real path.
 	var found int
