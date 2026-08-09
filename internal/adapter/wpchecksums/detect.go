@@ -10,6 +10,7 @@ package wpchecksums
 
 import (
 	"bufio"
+	"context"
 	"crypto/md5" // the WordPress.org API publishes MD5; this is not cryptographic use
 	"crypto/sha256"
 	"encoding/hex"
@@ -122,6 +123,23 @@ type SearchResult struct {
 	StoppedAt string
 	// Unreadable roots, which are a coverage gap and not an absence of WordPress.
 	Unreadable []string
+	// SymlinkedDirs are directories reached through a symlink, which the search does
+	// not enter. Recorded rather than dropped: a WordPress behind one is not absent,
+	// it is unexamined, and those must not read the same.
+	SymlinkedDirs []string
+}
+
+// isSymlinkedDir reports whether a path is a symlink whose target is a directory.
+//
+// os.Stat follows the link, which is the right question to ask here — the search wants
+// to know what is behind the door, not to walk through it.
+func isSymlinkedDir(path string) bool {
+	li, err := os.Lstat(path)
+	if err != nil || li.Mode()&os.ModeSymlink == 0 {
+		return false
+	}
+	target, err := os.Stat(path)
+	return err == nil && target.IsDir()
 }
 
 // DetectAll finds every WordPress installation at or under the given roots.
@@ -146,7 +164,7 @@ type SearchResult struct {
 // What keeps a backup out is skipDirs: wp-content is never descended into, and that is
 // where a staging or backup copy lives. Treating one of those as its own site would
 // report every finding in it twice.
-func DetectAll(roots []string, depth, maxInstalls, maxDirs int) SearchResult {
+func DetectAll(ctx context.Context, roots []string, depth, maxInstalls, maxDirs int) SearchResult {
 	if depth <= 0 {
 		depth = DefaultSearchDepth
 	}
@@ -175,7 +193,7 @@ func DetectAll(roots []string, depth, maxInstalls, maxDirs int) SearchResult {
 		if res.StoppedAt != "" {
 			break
 		}
-		walkForWordPress(abs, depth, maxInstalls, maxDirs, seen, &res)
+		walkForWordPress(ctx, abs, depth, maxInstalls, maxDirs, seen, &res)
 	}
 	return res
 }
@@ -183,12 +201,22 @@ func DetectAll(roots []string, depth, maxInstalls, maxDirs int) SearchResult {
 // walkForWordPress descends one root, breadth-first by level so the shallowest
 // installations are found first — those are the real sites, and a ceiling on the number
 // found should keep them rather than whatever the walker reached first.
-func walkForWordPress(root string, depth, maxInstalls, maxDirs int, seen map[string]bool, res *SearchResult) {
+func walkForWordPress(ctx context.Context, root string, depth, maxInstalls, maxDirs int, seen map[string]bool, res *SearchResult) {
 	level := []string{root}
 
 	for d := 0; d <= depth && len(level) > 0; d++ {
 		var next []string
 		for _, dir := range level {
+			// Cancellation is checked per directory, not per root.
+			//
+			// Probe used to be one os.Open and could afford to ignore the context. It
+			// now walks up to fifty thousand directories, and a search that cannot be
+			// interrupted makes `scan` slow to answer a Ctrl-C and holds a cycle open
+			// past its own timeout — the same argument sleepCtx was written for.
+			if err := ctx.Err(); err != nil {
+				res.StoppedAt = "the search was cancelled: " + err.Error()
+				return
+			}
 			if res.DirsWalked >= maxDirs {
 				res.StoppedAt = fmt.Sprintf(
 					"the search stopped after examining %d directories", maxDirs)
@@ -217,7 +245,24 @@ func walkForWordPress(root string, depth, maxInstalls, maxDirs int, seen map[str
 				continue
 			}
 			for _, e := range entries {
-				if !e.IsDir() || strings.HasPrefix(e.Name(), ".") || skipDirs[e.Name()] {
+				if strings.HasPrefix(e.Name(), ".") || skipDirs[e.Name()] {
+					continue
+				}
+				if !e.IsDir() {
+					// DirEntry.IsDir() describes the LINK, not its target, so a
+					// symlinked directory answers false here and would simply vanish
+					// from the search. That is the defect this whole function was
+					// written to fix, in a second disguise: a site under a symlinked
+					// directory reported as "this account has no WordPress".
+					//
+					// Not followed — the walker refuses for a good reason, and this
+					// must not be the soft way around it. Counted instead, so the
+					// abstention can say a door was left closed rather than implying
+					// there was nothing behind it.
+					if isSymlinkedDir(filepath.Join(dir, e.Name())) {
+						res.SymlinkedDirs = append(res.SymlinkedDirs,
+							filepath.Join(dir, e.Name()))
+					}
 					continue
 				}
 				next = append(next, filepath.Join(dir, e.Name()))

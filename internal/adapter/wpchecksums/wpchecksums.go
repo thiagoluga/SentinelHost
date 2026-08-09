@@ -92,13 +92,13 @@ func searchRoots(env adapter.Environment) []string {
 // legitimacy, and that vote is a veto — a file identical to the official checksum is
 // never quarantined however many heuristics flag it (D-005). Silent, it leaves genuine
 // core files to be judged by heuristics alone.
-func (a *Adapter) Probe(_ context.Context, env adapter.Environment) adapter.ProbeResult {
+func (a *Adapter) Probe(ctx context.Context, env adapter.Environment) adapter.ProbeResult {
 	roots := searchRoots(env)
 	if len(roots) == 0 {
 		return adapter.Unavailable("no site root was given to the adapter")
 	}
 
-	res := DetectAll(roots, a.searchDepth, 0, 0)
+	res := DetectAll(ctx, roots, a.searchDepth, 0, 0)
 	if len(res.Installs) == 0 {
 		// Not a failure: a site that is not WordPress is an ordinary case, and the
 		// adapter abstains without penalizing the other engines.
@@ -112,6 +112,15 @@ func (a *Adapter) Probe(_ context.Context, env adapter.Environment) adapter.Prob
 			ErrNotWordPress, strings.Join(roots, ", "), res.Depth, res.DirsWalked)
 		if len(res.Unreadable) > 0 {
 			reason += fmt.Sprintf("; could not read %s", strings.Join(res.Unreadable, ", "))
+		}
+		// A door the search did not open belongs in the same sentence as "found
+		// nothing", or the two become the same statement to whoever reads it.
+		if n := len(res.SymlinkedDirs); n > 0 {
+			reason += fmt.Sprintf("; %d director%s reached through a symlink %s not "+
+				"entered (%s) — symlinks are never followed, so a WordPress behind one "+
+				"is unexamined rather than absent",
+				n, plural(n, "y", "ies"), plural(n, "was", "were"),
+				strings.Join(res.SymlinkedDirs, ", "))
 		}
 		if res.StoppedAt != "" {
 			reason += "; " + res.StoppedAt
@@ -223,7 +232,7 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 		// with only a ScanRequest. The request's own root is the answer then.
 		roots = []string{req.Root}
 	}
-	res := DetectAll(roots, a.searchDepth, 0, 0)
+	res := DetectAll(ctx, roots, a.searchDepth, 0, 0)
 	if len(res.Installs) == 0 {
 		out.Status = schema.StatusFailed
 		out.FinishedAt = time.Now()
@@ -548,4 +557,13 @@ func finding(raw adapter.RawOutput, lf LocalFile, detectedAt time.Time, rule, ms
 		ScanID:         raw.ScanID,
 		DetectedAt:     detectedAt,
 	}
+}
+
+// plural picks a suffix. A message that says "1 directories" reads as a program that
+// did not look closely, on a line whose whole job is to be believed.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }

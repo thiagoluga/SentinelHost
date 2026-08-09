@@ -323,6 +323,19 @@ func (r *Runner) collectTargets(ctx context.Context, opts Options, sum *Summary)
 		for k, v := range res.SkippedCounts {
 			sum.SkippedCounts[k] += v
 		}
+		// A directory reached through a symlink was not walked, and if its target sits
+		// outside the configured roots nothing in this cycle ever opens it — while the
+		// web server may serve every file inside. That is worth a line naming the path,
+		// not a number in a list: "symlinked_directory=1" tells the reader something was
+		// skipped, and the path tells them what to do about it.
+		for _, dir := range res.SymlinkedDirs {
+			r.log(ctx, "warn", store.CatScan, fmt.Sprintf(
+				"%s is a symlink to a directory and was not scanned. Symlinks are never "+
+					"followed, because one pointing outside the configured roots would take "+
+					"the scanner into a directory nobody authorised — on shared hosting, "+
+					"possibly another account. If the content behind it is served by the web "+
+					"server, add its real path to general.roots", dir), sum.ScanID, nil)
+		}
 		if res.Truncated {
 			sum.SkippedCounts["truncated"]++
 		}
