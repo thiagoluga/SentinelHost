@@ -7,9 +7,47 @@ Security fixes say what was exploitable and how, rather than "hardened X". A cha
 entry for a security tool that hides the mechanism is asking the reader to take its word,
 and this project's whole argument is that you should not have to.
 
-## Unreleased
+## v0.1.10
 
 ### Fixed
+
+- **A symlinked directory was counted as one skipped file.** The walk refuses to follow
+  symlinks — deliberately, because one pointing outside the configured roots would take
+  the scanner into a directory nobody authorised, and on shared hosting possibly into
+  another account. That is unchanged. What was wrong is that a skipped symlinked *file*
+  and a skipped symlinked *directory* both landed in one bucket, so `skipped: symlink=1`
+  meant either "one stray link" or "an entire web-reachable tree that nothing opened".
+  Counted, and therefore never silent — but understating the second case by four orders
+  of magnitude. `symlinked_directory` is now its own reason, the paths travel with the
+  count, and the cycle logs each one with what to do about it.
+- **The WordPress search skipped symlinked directories with no count at all.**
+  `os.ReadDir` returns entries describing the *link*, so `DirEntry.IsDir()` answers false
+  for a symlinked directory and the search dropped it without a trace — meaning an account
+  whose site sits behind one would be told "this does not look like a WordPress
+  installation". That is the defect the search was written to fix, reintroduced by the fix
+  itself. They are now recorded, and the abstention says a WordPress behind one is
+  *unexamined* rather than absent.
+- **The WordPress search ignored cancellation.** It was one `os.Open` when that was
+  harmless; since it learned to search it walks up to fifty thousand directories, so a
+  `scan` was slow to answer a Ctrl-C and a cycle could run past its own timeout. Worse, an
+  abandoned search reported "no WordPress found", which is the same sentence as "this
+  account has none". It now stops when asked and says it was cancelled.
+- **The session cookie could not be cleared by a deletion that no longer described it.**
+  `setCookie` and `clearCookie` were two hand-written literals and had already drifted —
+  the clearing omitted `Secure`. That instance was harmless: the value being cleared is
+  empty, a browser matches a deletion on name, domain and path rather than on `Secure`,
+  and logout deletes the session server-side first. The shape was not. A cookie is deleted
+  only when the deletion describes the same cookie, so adding a `Domain` in one of the two
+  places would have made logout stop clearing anything, with nothing failing to say so.
+  Both now come from one constructor.
+
+### Fixed — merged before this release, and left out of the last one
+
+These landed in #70, after v0.1.9 had already been tagged: the tag went on the changelog
+commit and the fix merged behind it, so the release that was cut and installed on the
+validation account contained none of it. The evidence was on screen and went unread — the
+deploy printed `wp-includes/version.php does not exist`, which is the OLD message, from
+the code this section says was replaced.
 
 - **The WordPress check only ever looked at one directory, and it was almost never the
   right one.** It asked whether the configured root *was* a WordPress — so on a hosting
@@ -38,32 +76,6 @@ and this project's whole argument is that you should not have to.
   can be checked; `wp-includes/version.php does not exist` made a search that never
   happened look like a definitive result. A search stopped by one of its own bounds says
   which bound stopped it.
-
-## Unreleased
-
-### Fixed
-
-- **A symlinked directory was counted as one skipped file.** The walk refuses to follow
-  symlinks — deliberately, because one pointing outside the configured roots would take
-  the scanner into a directory nobody authorised, and on shared hosting possibly into
-  another account. That is unchanged. What was wrong is that a skipped symlinked *file*
-  and a skipped symlinked *directory* both landed in one bucket, so `skipped: symlink=1`
-  meant either "one stray link" or "an entire web-reachable tree that nothing opened".
-  Counted, and therefore never silent — but understating the second case by four orders
-  of magnitude. `symlinked_directory` is now its own reason, the paths travel with the
-  count, and the cycle logs each one with what to do about it.
-- **The WordPress search skipped symlinked directories with no count at all.**
-  `os.ReadDir` returns entries describing the *link*, so `DirEntry.IsDir()` answers false
-  for a symlinked directory and the search dropped it without a trace — meaning an account
-  whose site sits behind one would be told "this does not look like a WordPress
-  installation". That is the defect the search was written to fix, reintroduced by the fix
-  itself. They are now recorded, and the abstention says a WordPress behind one is
-  *unexamined* rather than absent.
-- **The WordPress search ignored cancellation.** It was one `os.Open` when that was
-  harmless; since it learned to search it walks up to fifty thousand directories, so a
-  `scan` was slow to answer a Ctrl-C and a cycle could run past its own timeout. Worse, an
-  abandoned search reported "no WordPress found", which is the same sentence as "this
-  account has none". It now stops when asked and says it was cancelled.
 
 ## v0.1.9
 
