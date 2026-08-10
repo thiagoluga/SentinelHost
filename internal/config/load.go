@@ -377,3 +377,49 @@ func (c *Config) EnsureDataDirs() error {
 	}
 	return nil
 }
+
+// rejectedSuffix names the copy kept when a configuration cannot be parsed.
+const rejectedSuffix = ".rejected"
+
+// PreserveUnreadable keeps a copy of a configuration that could not be parsed.
+//
+// This exists because the evidence was lost. An account's config.toml became invalid TOML
+// — `Key 'alerts.email' has already been defined` at line 93 — and every start died
+// reading it, 54 times. By the time anyone looked, the file had been repaired and
+// overwritten, and with it went the only artifact that could have explained how it got
+// that way. The cause is still unknown, and the current configuration, three archived
+// ones, the encoder's field order and a round trip over hostile values were all checked
+// and all clean.
+//
+// SaveTo will not produce one any more: since v0.1.7 it reads back what it wrote before
+// letting it replace anything. But that only covers what THIS program writes. A control
+// panel's file manager, an editor over FTP, a second process — none of those are
+// prevented, and the failure looks identical from here.
+//
+// So the next occurrence leaves something to look at. Written once: the FIRST failure is
+// the interesting one, and a copy per start would have produced fifty-four identical
+// files on an account with a disk quota. An existing copy is never overwritten, for the
+// same reason.
+//
+// Best effort. A configuration that cannot be read is already fatal; failing to archive it
+// must not change what the user is told about that, so every error here is returned for
+// the caller to mention and never replaces the original one.
+func PreserveUnreadable(path string) (string, error) {
+	dest := path + rejectedSuffix
+	if _, err := os.Stat(dest); err == nil {
+		// Something is already kept. That copy is from the first failure, which is the
+		// one worth having.
+		return dest, nil
+	}
+
+	data, err := os.ReadFile(path) // #nosec G304 -- the path the user configured
+	if err != nil {
+		return "", fmt.Errorf("reading %s to preserve it: %w", path, err)
+	}
+	// 0600: the file holds the SMTP password and the webhook secrets, exactly as the
+	// original does. A diagnostic copy must not be more readable than what it copies.
+	if err := os.WriteFile(dest, data, 0o600); err != nil {
+		return "", fmt.Errorf("writing %s: %w", dest, err)
+	}
+	return dest, nil
+}

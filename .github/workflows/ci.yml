@@ -139,6 +139,11 @@ jobs:
           grep -q -- '--- PASS: TestARootThatIsItselfASymlinkStillResolves' /tmp/symlink.log
           grep -q -- '--- PASS: TestALinkIntoAlreadyCoveredGroundIsNotReportedAsAGap' /tmp/symlink.log
           grep -q -- '--- PASS: TestALinkIntoTheSearchedTreeIsNotReportedAsADoorLeftClosed' /tmp/symlink.log
+      # Also POSIX-only: it asserts the mode of a file, and Windows has no opinion on that.
+      - name: The kept configuration copy is not world-readable
+        run: |
+          go test ./internal/config/ -count=1 -v -run 'KeptCopy' | tee /tmp/perms.log
+          grep -q -- '--- PASS: TestTheKeptCopyIsNotWorldReadable' /tmp/perms.log
 
   build:
     runs-on: ubuntu-latest

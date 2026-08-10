@@ -36,6 +36,7 @@ POSIX_ONLY=(
   TestARootThatIsItselfASymlinkStillResolves
   TestALinkIntoAlreadyCoveredGroundIsNotReportedAsAGap
   TestALinkIntoTheSearchedTreeIsNotReportedAsADoorLeftClosed
+  TestTheKeptCopyIsNotWorldReadable
 )
 
 # Which package each one lives in. A single -run across ./... would work but takes the
@@ -53,6 +54,7 @@ declare -A POSIX_PKG=(
   [TestARootThatIsItselfASymlinkStillResolves]=./internal/adapter/wpchecksums/
   [TestALinkIntoAlreadyCoveredGroundIsNotReportedAsAGap]=./internal/baseline/
   [TestALinkIntoTheSearchedTreeIsNotReportedAsADoorLeftClosed]=./internal/adapter/wpchecksums/
+  [TestTheKeptCopyIsNotWorldReadable]=./internal/config/
 )
 
 echo "==> building $IMAGE"
