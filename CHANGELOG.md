@@ -7,6 +7,24 @@ Security fixes say what was exploitable and how, rather than "hardened X". A cha
 entry for a security tool that hides the mechanism is asking the reader to take its word,
 and this project's whole argument is that you should not have to.
 
+## v0.1.12
+
+### Added
+
+- **A configuration that cannot be read is kept, instead of being lost to the repair.** An
+  account's `config.toml` became invalid TOML and every start died reading it — fifty-four
+  of them, each triggered by a visit. By the time it was investigated the file had been
+  fixed and overwritten, and the only artifact that could have explained how it got that
+  way was gone. It is now copied to `<path>.rejected` before anyone repairs it: once, at
+  the first failure, 0600 because it carries the SMTP password and the webhook secrets,
+  and never in front of the error that actually stopped the panel.
+
+  **This does not find the cause, and the cause is still unknown.** Checked and clean: the
+  account's live configuration, three archived copies beside it, the encoder's field order,
+  and a round trip over hostile values. `SaveTo` has been unable to produce one since
+  v0.1.7, which reads back what it wrote — but that covers only what this program writes,
+  and a control panel's file manager or an editor over FTP are not prevented.
+
 ## v0.1.11
 
 ### Fixed
