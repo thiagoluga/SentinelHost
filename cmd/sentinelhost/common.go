@@ -57,7 +57,30 @@ func openApp(ctx context.Context, configPath string) (*app, error) {
 		if errors.Is(err, config.ErrNotFound) {
 			return nil, fmt.Errorf("%w\n\nRun this first:  sentinelhost config init --root <path to the site>", err)
 		}
-		return nil, err
+		// The file exists and cannot be read. Keep a copy before anybody repairs it.
+		//
+		// An account lost this evidence once. config.toml became invalid TOML, every start
+		// died reading it — fifty-four times, each triggered by a visit — and by the time
+		// it was investigated the file had been fixed and overwritten. The cause is still
+		// unknown because there was nothing left to look at.
+		//
+		// Archiving never changes what the user is told about the real failure: it is
+		// appended to it, and its own failure is appended too rather than replacing
+		// anything. A diagnostic that can hide the diagnosis is worse than none.
+		// One line, deliberately.
+		//
+		// This message goes to panel.log when the panel is started by the PHP bridge, and
+		// the bridge puts the log's LAST non-banner line on its waiting page — which is
+		// the only way an account with no shell ever sees why the panel is down. A
+		// multi-line error would put the last sentence there and hide the first, so the
+		// parse error and the copy's path share one line, with the parse error first.
+		kept, keepErr := config.PreserveUnreadable(configPath)
+		if keepErr != nil {
+			return nil, fmt.Errorf("%w (a copy could not be kept for diagnosis: %v)", err, keepErr)
+		}
+		return nil, fmt.Errorf("%w — a copy of the unreadable file was kept at %s; "+
+			"please keep it, this has happened once before and the cause is still unknown",
+			err, kept)
 	}
 
 	res := cfg.Validate()
