@@ -19,7 +19,7 @@ import (
 // prints, what the scan.completed webhook carries, and what gets written to the database.
 // Three machine consumers were told a file nobody could open had been looked at.
 //
-// D-046 recorded this exact defect in this exact place, found the same way: "by looking at
+// D-031 recorded this same divergence in this same summary, found the same way: "by looking at
 // the JSON at all. The text output had been correct this whole session and I had read it a
 // dozen times; the machine interface next to it was saying the opposite thing, and nothing
 // checked that the two agreed." Nothing checked this time either — so this test exists to

@@ -285,7 +285,8 @@ func (s Summary) Event() map[string]any {
 	// and the summary written to the database — said `"skipped": {}` and
 	// `"status": "completed"`. Three machine consumers were told nothing was missed.
 	//
-	// D-046 records the same defect being found in the same place: "by looking at the JSON
+	// D-031 records the same divergence in this same summary, found the same way: "by
+	// looking at the JSON
 	// at all. The text output had been correct this whole session and I had read it a dozen
 	// times; the machine interface next to it was saying the opposite thing, and nothing
 	// checked that the two agreed." Nothing checked this time either.
