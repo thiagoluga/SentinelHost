@@ -684,8 +684,11 @@ section "A filename the engines cannot be asked about"
 # distinguishable from a file that was looked at and found clean — otherwise the fix
 # replaced one silent coverage hole with another.
 if [[ "${SH_EVASION_PLANTED:-0}" = "1" ]]; then
-  ev_json=$(sentinelhost scan --config "$CONFIG" --full --json 2>/dev/null || true)
-  ev_count=$(printf '%s' "$ev_json" | grep -o '"unscannable_path_name":[0-9]*' | head -1 | cut -d: -f2)
+  ev_json=$(sentinelhost scan --config "$CFG" --full --json 2>/dev/null || true)
+  # The JSON is indented, so the value is "unscannable_path_name": 1 with a space. The
+  # original pattern had none and could never have matched — a second way this check was
+  # unable to observe what it reported.
+  ev_count=$(printf '%s' "$ev_json" | grep -oE '"unscannable_path_name":[[:space:]]*[0-9]+' | head -1 | grep -oE '[0-9]+$')
   if [[ -n "$ev_count" && "$ev_count" -ge 1 ]]; then
     ok "the unscannable path was counted ($ev_count), not dropped"
   else
@@ -693,7 +696,7 @@ if [[ "${SH_EVASION_PLANTED:-0}" = "1" ]]; then
   fi
 
   # And it must not have been handed to an engine as two paths.
-  if printf '%s' "$ev_json" | grep -q '"file_path":"[^"]*evasion/x"'; then
+  if printf '%s' "$ev_json" | grep -qE '"file_path":[[:space:]]*"[^"]*evasion/x"'; then
     fail "the split half of the filename reached a finding, so the list was written anyway"
   else
     ok "no half-path reached a finding"

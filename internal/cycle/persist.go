@@ -274,6 +274,31 @@ func (r *Runner) finish(ctx context.Context, sum *Summary, status schema.ScanSta
 func (s Summary) Event() map[string]any {
 	var ran []string
 	abstained := make([]map[string]string, 0)
+	// What each engine could not look at, by engine.
+	//
+	// This was dropped, and the terminal was the only place it existed. A cycle where a
+	// payload's filename could not be expressed to any engine printed
+	//
+	//     skipped: unscannable_path_name=1
+	//
+	// on screen, while this object — which feeds `scan --json`, the scan.completed webhook
+	// and the summary written to the database — said `"skipped": {}` and
+	// `"status": "completed"`. Three machine consumers were told nothing was missed.
+	//
+	// D-046 records the same defect being found in the same place: "by looking at the JSON
+	// at all. The text output had been correct this whole session and I had read it a dozen
+	// times; the machine interface next to it was saying the opposite thing, and nothing
+	// checked that the two agreed." Nothing checked this time either.
+	enginesSkipped := map[string]map[string]int{}
+	for _, e := range s.Engines {
+		if len(e.Skipped) > 0 {
+			counts := make(map[string]int, len(e.Skipped))
+			for reason, n := range e.Skipped {
+				counts[reason] = n
+			}
+			enginesSkipped[e.Slug] = counts
+		}
+	}
 	for _, e := range s.Engines {
 		if e.Available && e.Status == schema.StatusCompleted {
 			ran = append(ran, e.Slug)
@@ -298,14 +323,24 @@ func (s Summary) Event() map[string]any {
 	}
 
 	return map[string]any{
-		"scan_id":           s.ScanID,
-		"mode":              string(s.Mode),
-		"started_at":        s.StartedAt.Format(time.RFC3339),
-		"finished_at":       s.FinishedAt.Format(time.RFC3339),
-		"status":            string(s.Status),
-		"files_considered":  s.FilesConsidered,
-		"files_scanned":     s.FilesScanned,
-		"skipped":           s.SkippedCounts,
+		"scan_id":          s.ScanID,
+		"mode":             string(s.Mode),
+		"started_at":       s.StartedAt.Format(time.RFC3339),
+		"finished_at":      s.FinishedAt.Format(time.RFC3339),
+		"status":           string(s.Status),
+		"files_considered": s.FilesConsidered,
+		"files_scanned":    s.FilesScanned,
+		// The walker's own skips: files it saw and did not hand on.
+		"skipped": s.SkippedCounts,
+		// What the ENGINES could not look at, which is a different question and used to
+		// have no answer here at all. Kept separate rather than merged: a file refused by
+		// three engines is one file the cycle did not look at, not three, and summing them
+		// into the number above would inflate it by however many engines happen to be
+		// installed. Attribution also survives — "which engine could not, and why".
+		//
+		// engines_ran stays a list of names: the webhook contract documents it as one, and
+		// this is additive rather than a change to something a consumer already parses.
+		"engines_skipped":   enginesSkipped,
 		"engines_ran":       ran,
 		"engines_abstained": abstained,
 		"verdicts":          verdicts,
