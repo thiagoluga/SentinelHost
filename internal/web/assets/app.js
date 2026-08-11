@@ -100,6 +100,54 @@ function fmtDay(s) {
   return isNaN(d) ? '—' : d.toLocaleDateString(undefined);
 }
 
+// What a cycle did not look at, phrased so it cannot be mistaken for a clean result.
+//
+// Two different things miss a file and they are reported separately, because adding them
+// would invent a number that is true of neither: `skipped` is what the walk never handed
+// on (too large, a symlink, an excluded path), and `engines_skipped` is what an engine
+// could not be asked about — a filename holding a newline cannot be passed as an argument
+// to a command-line scanner, so the file goes unexamined while the engine still completes.
+//
+// null is not zero. A cycle recorded before the server sent these fields cannot say what it
+// missed, and answering "nothing" on its behalf is the reassuring lie the whole feature
+// exists to prevent.
+function unexamined(scan) {
+  if (!scan) return { any: false, text: 'not recorded' };
+  const walk = scan.skipped;
+  const engines = scan.engines_skipped;
+  if (walk == null && engines == null) return { any: false, text: 'not recorded' };
+
+  const total = (obj) => Object.values(obj || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+  const parts = [];
+
+  const walked = total(walk);
+  if (walked > 0) {
+    const why = Object.keys(walk).join(', ').replace(/_/g, ' ');
+    parts.push(`${walked} skipped by the walk (${why})`);
+  }
+
+  if (engines) {
+    Object.entries(engines).forEach(([slug, reasons]) => {
+      const n = total(reasons);
+      if (n > 0) {
+        const why = Object.keys(reasons).join(', ').replace(/_/g, ' ');
+        parts.push(`${n} ${slug} could not be asked about (${why})`);
+      }
+    });
+  }
+
+  if (parts.length === 0) {
+    // Distinguish "the walk reported nothing missed" from "the record predates the field".
+    return engines == null
+      ? { any: false, text: 'nothing skipped by the walk; engines not recorded' }
+      : { any: false, text: 'nothing' };
+  }
+  // any is what a caller keys off to decide whether to say anything at all. It is true
+  // only for a real count — never for "not recorded", which is the case a caller must not
+  // quietly turn into silence.
+  return { any: true, text: parts.join('; ') };
+}
+
 const LEVEL_CLASS = {
   confirmed: 'b-crit', likely: 'b-serious', suspicious: 'b-warn', clean: 'b-good',
 };
@@ -293,6 +341,7 @@ async function loadStatus() {
     ['Status', s.last_scan.status || '—'],
     ['Considered', s.last_scan.files_considered],
     ['Scanned', s.last_scan.files_scanned],
+    ['Not looked at', unexamined(s.last_scan).text],
     ['Roots', (s.roots || []).join(', ')],
   ].forEach(([label, value]) => {
     const d = el('div');
@@ -379,7 +428,9 @@ $('#btn-scan').addEventListener('click', async (ev) => {
   ev.target.textContent = 'Scanning…';
   try {
     const r = await api('/api/scan', { method: 'POST', body: JSON.stringify({ full: false }) });
-    toast(`Cycle ${r.scan_id} finished: ${r.files_scanned} file(s) scanned.`);
+    const missed = unexamined(r);
+    toast(`Cycle ${r.scan_id} finished: ${r.files_scanned} file(s) scanned` +
+          (missed.any ? `. Not looked at: ${missed.text}.` : '.'));
     await refreshAfterAction();
   } catch (e) {
     toast(e.message, true);

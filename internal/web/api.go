@@ -219,6 +219,20 @@ func (s *Server) handleStatus(w http.ResponseWriter, req *http.Request) {
 			"status":           last.Status,
 			"files_considered": last.FilesConsidered,
 			"files_scanned":    last.FilesScanned,
+			// What the cycle did NOT look at, forwarded from the stored summary.
+			//
+			// The comment above says coverage always travels with the summary, and engine
+			// availability did. This did not: the dashboard showed "Considered 2 / Scanned 2"
+			// for a cycle in which a file was handed to no engine at all, because the two
+			// skip maps stopped at this handler. #87 put them in the machine interface; the
+			// panel is the surface a human actually reads, and it was still saying the
+			// cycle looked at everything.
+			//
+			// Two fields, not one total. A file the walk never handed on is unexamined; a
+			// file one engine could not be asked about may still have been examined by
+			// another. Adding them would invent a number that is true of neither.
+			"skipped":         summaryMap(last.Summary, "skipped"),
+			"engines_skipped": summaryMap(last.Summary, "engines_skipped"),
 		},
 		"verdicts": map[string]int{
 			"confirmed":  levels[schema.LevelConfirmed],
@@ -718,4 +732,32 @@ func (s *Server) logAction(req *http.Request, msg string, fields map[string]any)
 	_ = s.store.Log(req.Context(), store.Event{
 		Level: "info", Category: store.CatConfig, Message: msg, Fields: fields,
 	})
+}
+
+// summaryMap pulls one nested object out of a stored scan summary, distinguishing
+// "nothing was missed" from "this record cannot say".
+//
+// The summary comes back from SQLite through encoding/json, so every nested object is a
+// map[string]any and every number is a float64 — the typed maps that went in do not come
+// back out.
+//
+// The nil return is the point. A cycle recorded BEFORE engines_skipped existed has no such
+// key, and answering `{}` for it would state that nothing was missed on the authority of a
+// record that was never able to say so — the exact substitution of silence for evidence
+// that this field was added to stop. Absent key means absent knowledge, and reaches the
+// panel as null so it can render "not recorded" instead of a reassuring zero.
+func summaryMap(summary map[string]any, key string) map[string]any {
+	if summary == nil {
+		return nil
+	}
+	raw, present := summary[key]
+	if !present {
+		return nil
+	}
+	nested, ok := raw.(map[string]any)
+	if !ok || nested == nil {
+		// The key is there but unreadable — still not evidence of an empty result.
+		return nil
+	}
+	return nested
 }
