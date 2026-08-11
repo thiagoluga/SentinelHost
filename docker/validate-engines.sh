@@ -701,6 +701,29 @@ if [[ "${SH_EVASION_PLANTED:-0}" = "1" ]]; then
   else
     ok "no half-path reached a finding"
   fi
+
+  # The two interfaces have to agree.
+  #
+  # This is the check that was actually missing. Both #87 and, before it, D-031 were the
+  # same defect: the terminal was right, the JSON beside it was wrong, and nothing compared
+  # them. Each time it was found by a person happening to look at the JSON. Asserting one
+  # specific field, as the check above does, only catches the divergence already known
+  # about; comparing the two outputs catches the next one in either direction.
+  ev_text=$(sentinelhost scan --config "$CFG" --full 2>/dev/null || true)
+  text_count=$(printf '%s' "$ev_text" | grep -oE 'unscannable_path_name=[0-9]+' | head -1 | grep -oE '[0-9]+$')
+  json_count=$(printf '%s' "$ev_json" | grep -oE '"unscannable_path_name":[[:space:]]*[0-9]+' | head -1 | grep -oE '[0-9]+$')
+
+  # State both before interpreting either. "" and "0" are different answers — one means the
+  # scan never said, the other means it said none — and an -eq comparison would silently
+  # treat the first as the second.
+  echo "    terminal says: ${text_count:-<absent>}   JSON says: ${json_count:-<absent>}"
+  if [[ -z "$text_count" && -z "$json_count" ]]; then
+    fail "neither interface mentions the unscannable path, so they agree on the wrong answer"
+  elif [[ "$text_count" != "$json_count" ]]; then
+    fail "the terminal and the JSON disagree (${text_count:-<absent>} vs ${json_count:-<absent>}) — this exact divergence is D-031 and #87, twice"
+  else
+    ok "the terminal and the JSON tell the same story ($text_count)"
+  fi
 else
   warn "the evasion payload was never planted, so this section proves nothing"
 fi
