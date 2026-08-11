@@ -29,6 +29,29 @@ type Scope struct {
 	// as a gap. On cPanel every account links www to public_html, and a warning that
 	// fires on every install is one its reader learns to skip.
 	SkippedReasonCounts map[string]int `json:"skipped_reason_counts,omitempty"`
+
+	// NoteCounts is bookkeeping an engine wants recorded that is NOT a coverage gap.
+	//
+	// It exists because SkippedReasonCounts answers exactly one question — what did the
+	// scan NOT look at? — and things that are not gaps kept ending up in it, where every
+	// reader downstream treats them as lost coverage.
+	//
+	// wpchecksums learned this first: a plugin that verified CLEAN was once counted under
+	// "plugin_verified", so a user reading "skipped: plugin_verified=1" concluded coverage
+	// was lost and went hunting for a problem that did not exist. It was taken out. The
+	// same mistake was still live in two other adapters:
+	//
+	//   - "unknown_rule" counts a finding whose rule is not in the adapter's table. The
+	//     finding IS reported, as other/medium/heuristic; the count exists so the table
+	//     gets maintained. On a real account this reads 260, and calling that a gap tells
+	//     the operator 260 files went unexamined when every one of them is in the report.
+	//   - "outside_requested_scope" counts findings the engine volunteered about paths the
+	//     orchestrator did not ask for. Dropping them is correct and costs no coverage of
+	//     what WAS asked for.
+	//
+	// Both are worth recording — nothing an engine reports gets discarded silently — but
+	// not in the field that means "unexamined".
+	NoteCounts map[string]int `json:"note_counts,omitempty"`
 }
 
 // ResourceUsage is the real cost of running the engine. It feeds the panel and

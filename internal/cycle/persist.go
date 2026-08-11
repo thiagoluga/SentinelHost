@@ -62,6 +62,14 @@ func mergeReports(scanID, slug, engineVersion string, partials []schema.ScanRepo
 			}
 			out.Scope.SkippedReasonCounts[k] += v
 		}
+		// Notes merge the same way. Dropping them here would be the silent discard this
+		// project is organised against, just applied to the bookkeeping half.
+		for k, v := range p.Scope.NoteCounts {
+			if out.Scope.NoteCounts == nil {
+				out.Scope.NoteCounts = map[string]int{}
+			}
+			out.Scope.NoteCounts[k] += v
+		}
 
 		if p.Abstains() {
 			out.Status = worstStatus(out.Status, p.Status)
@@ -291,6 +299,7 @@ func (s Summary) Event() map[string]any {
 	// times; the machine interface next to it was saying the opposite thing, and nothing
 	// checked that the two agreed." Nothing checked this time either.
 	enginesSkipped := map[string]map[string]int{}
+	enginesNotes := map[string]map[string]int{}
 	for _, e := range s.Engines {
 		if len(e.Skipped) > 0 {
 			counts := make(map[string]int, len(e.Skipped))
@@ -298,6 +307,15 @@ func (s Summary) Event() map[string]any {
 				counts[reason] = n
 			}
 			enginesSkipped[e.Slug] = counts
+		}
+		// Notes travel too, in their own field. They are not coverage, and they are not
+		// nothing: an unmapped rule is the signal that an adapter's table needs a line.
+		if len(e.Notes) > 0 {
+			counts := make(map[string]int, len(e.Notes))
+			for note, n := range e.Notes {
+				counts[note] = n
+			}
+			enginesNotes[e.Slug] = counts
 		}
 	}
 	for _, e := range s.Engines {
@@ -342,6 +360,7 @@ func (s Summary) Event() map[string]any {
 		// engines_ran stays a list of names: the webhook contract documents it as one, and
 		// this is additive rather than a change to something a consumer already parses.
 		"engines_skipped":   enginesSkipped,
+		"engines_notes":     enginesNotes,
 		"engines_ran":       ran,
 		"engines_abstained": abstained,
 		"verdicts":          verdicts,

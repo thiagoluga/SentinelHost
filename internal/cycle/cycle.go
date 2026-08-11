@@ -104,6 +104,15 @@ type EngineOutcome struct {
 	// up nowhere looks like a plugin that was verified and found clean — the same
 	// silent failure the project fights everywhere.
 	Skipped map[string]int
+	// Notes is what the engine wants recorded that is NOT a coverage gap.
+	//
+	// Kept apart from Skipped because every reader downstream treats Skipped as lost
+	// coverage, and two of the counts living there were not: "unknown_rule" and
+	// "unknown_signature_family" describe findings that ARE in the report under a generic
+	// mapping, and "outside_requested_scope" describes paths nobody asked about. On a real
+	// account that read "skipped: outside_requested_scope=853, unknown_rule=260" — 1113
+	// files announced as unexamined when none of them were.
+	Notes map[string]int
 }
 
 // Summary is the cycle's result.
@@ -470,6 +479,7 @@ func (r *Runner) runEngines(ctx context.Context, opts Options, targets []string,
 			Slug: slug, Available: true, Status: merged.Status,
 			Findings: len(merged.Findings), Duration: r.now().Sub(start),
 			Skipped: merged.Scope.SkippedReasonCounts,
+			Notes:   merged.Scope.NoteCounts,
 		}
 		if merged.Abstains() {
 			outcome.Reason = merged.Error

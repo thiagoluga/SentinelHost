@@ -164,6 +164,13 @@ func printReport(w *os.File, sum cycle.Summary, maint *housekeeping.Result) {
 		if len(e.Skipped) > 0 {
 			fmt.Fprintf(w, "      skipped: %s\n", formatSkipped(e.Skipped))
 		}
+		// Notes are not coverage and must not print under "skipped", which every reader
+		// of this output has been taught means lost coverage. They are still printed: an
+		// unmapped rule is how an adapter's table gets maintained, and a maintenance
+		// signal that exists only in the database gets maintained by nobody.
+		if len(e.Notes) > 0 {
+			fmt.Fprintf(w, "      notes: %s\n", formatSkipped(e.Notes))
+		}
 	}
 	// An abstention from an engine that was never even probed (enabled in the
 	// configuration but with no adapter in this binary) also enters the list: the
