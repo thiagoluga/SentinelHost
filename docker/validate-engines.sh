@@ -479,7 +479,35 @@ if [[ "${n_amw:-0}" -gt 0 ]] && [[ "$orch_amw" -eq 0 ]]; then
   fail "AMWScan found $n_amw file(s) on its own and the orchestrator saw 0"
   info "the signature of an accepted-and-ignored flag: the engine walked something else"
 elif [[ "${n_amw:-0}" -gt 0 ]]; then
-  ok "the orchestrator saw what AMWScan saw on its own ($orch_amw vs $n_amw)"
+  # A shortfall has to be ACCOUNTED FOR, not tolerated.
+  #
+  # This used to pass on any non-zero count, printing "the orchestrator saw what AMWScan
+  # saw on its own (3 vs 4)" — a tick mark whose own parenthetical contradicted it. It was
+  # written to catch a flag the engine accepts and ignores, which shows up as total loss.
+  # Partial loss is the same bug wearing a smaller number, and it is the likelier one: a
+  # path that fails to match the requested set is dropped one file at a time.
+  #
+  # The difference is legitimate when the engine, which always walks the whole root, saw
+  # things the orchestrator never asked about. That is exactly what the adapter counts
+  # under outside_requested_scope, so the check can now subtract it instead of shrugging.
+  shortfall=$(( n_amw - orch_amw ))
+  if [[ "$shortfall" -le 0 ]]; then
+    ok "the orchestrator saw everything AMWScan saw on its own ($orch_amw of $n_amw)"
+  else
+    scope_json=$(sentinelhost scan --config "$CFG" --full --json 2>/dev/null || true)
+    # State the evidence before interpreting it: an empty read is not an accounted zero.
+    if [[ -z "$scope_json" ]]; then
+      fail "the orchestrator saw $orch_amw of AMWScan's $n_amw and the JSON could not be read to explain the $shortfall missing"
+    else
+      excused=$(printf '%s' "$scope_json"         | grep -oE '"(outside_requested_scope|vanished_before_hashing|forged_report_path)":[[:space:]]*[0-9]+'         | grep -oE '[0-9]+$' | awk '{t+=$1} END {print t+0}')
+      echo "    AMWScan alone: $n_amw   orchestrator: $orch_amw   accounted for: $excused"
+      if [[ "$shortfall" -le "$excused" ]]; then
+        ok "the $shortfall AMWScan finding(s) the orchestrator did not take are accounted for"
+      else
+        fail "$(( shortfall - excused )) AMWScan finding(s) went missing with nothing to explain them — a path that fails to match the requested set is dropped one file at a time"
+      fi
+    fi
+  fi
 fi
 
 orch_pmf=$(grep -oE '✓ php-malware-finder +[0-9]+ finding' <<<"$scan_output" | grep -oE '[0-9]+' | head -1)
