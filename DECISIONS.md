@@ -2022,3 +2022,74 @@ the one place nobody would look for it.
 
 **What this does not change**: symlinks are still never followed, anywhere. This entry is
 about what the report says afterwards, not about where the scanner goes.
+
+## D-054 — the machine interface has to say what the terminal says
+
+**Context**: `make validate-engines` failed, and the failure was worth reading twice —
+because the check that failed could not observe the thing it reported on.
+
+It reported:
+
+> ✗ a payload whose filename holds a newline was neither scanned nor counted
+
+Two defects in that one check, each independently fatal to it:
+
+- it passed `--config "$CONFIG"`, and the variable in that script is `$CFG`. Under
+  `set -u` the command aborted, the trailing `|| true` swallowed the abort, and the empty
+  output was read as "the count is absent".
+- its pattern was `"unscannable_path_name":[0-9]*` against **indented** JSON, where the
+  value is preceded by a space. It could never have matched even had the command run.
+
+So the guard reported a security regression it had never looked for. That is this
+project's central failure mode occurring inside the tool built to detect it — a check that
+cannot fail honestly is worse than no check, for the same reason a scanner that reports
+zero findings without scanning is worse than no scanner.
+
+And then the real defect underneath, which a working check would have caught. Against the
+real binary, a payload whose filename holds a newline — the evasion closed in #45, "a
+filename is attacker input" — prints on the terminal:
+
+```
+skipped: unscannable_path_name=1
+```
+
+and emits, for the same scan:
+
+```json
+{ "skipped": {}, "status": "completed", "files_scanned": 2 }
+```
+
+`Summary.Event()` built `engines_ran` from engine slugs alone and dropped each engine's
+`Skipped` map on the floor. That object is not a display concern: it is `scan --json`, the
+`scan.completed` webhook, and the summary row written to the database. Three machine
+consumers were told that a file nobody could open had been examined.
+
+D-031 records this same divergence, in this same summary object, found the same way:
+"by looking at the JSON at all. The text output had been correct this whole session and
+I had read it a dozen times; the machine interface next to it was saying the opposite
+thing, and nothing checked that the two agreed." Nothing checked this time either.
+**The text output being right is not evidence about the JSON, and it never has been
+here.**
+
+**Decision**: engine skips travel with the summary, attributed and unsummed.
+
+- **`engines_skipped` is a new field**, mapping engine slug to reason to count, rather
+  than a change to `engines_ran`. The webhook contract documents `engines_ran` as a list
+  of names; widening it to objects would break every consumer that parses it today, to
+  carry information that can be added beside it instead.
+- **Not merged into `skipped`.** A file refused by three engines is one file the cycle did
+  not look at, not three. Summing them would make the number grow with however many
+  engines happen to be installed — a count that moves for reasons unrelated to the site is
+  a count nobody can act on. Separation also keeps attribution: which engine could not,
+  and why.
+- **An engine that skipped nothing does not appear**, so the field stays readable and its
+  presence means something.
+- **The engine still counts as having run.** It did, over everything it could be given.
+  Turning a partial engine into an abstention would trade one wrong answer for another.
+- **The test is the thing that checks the two agree**, and it was confirmed by mutation:
+  restoring the old behaviour fails with "engines_skipped = map[]; a file no engine could
+  be asked about has to reach the machine interface, or a monitor reads `completed` and
+  stops looking".
+
+**What this does not change**: the terminal output, which was correct throughout. This
+entry is about the interface that no human reads and every integration does.

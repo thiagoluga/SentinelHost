@@ -105,7 +105,9 @@ after the configured retention.
   "finished_at": "2026-07-23T03:04:41-03:00",
   "files_considered": 18234,
   "files_scanned": 412,
+  "skipped": { "too_large": 6 },
   "engines_ran": ["wp-checksums", "amwscan", "php-malware-finder"],
+  "engines_skipped": { "amwscan": { "unscannable_path_name": 1 } },
   "engines_abstained": [{ "engine": "maldet", "reason": "the binary was not found on PATH" }],
   "verdicts": { "confirmed": 1, "likely": 0, "suspicious": 3, "clean": 408 },
   "actions": { "quarantined": 1, "recommended": 0, "failed": 0 }
@@ -114,6 +116,25 @@ after the configured retention.
 
 `engines_abstained` always travels with the summary: a cycle in which half the engines
 failed must not look like a clean cycle (Principle VI).
+
+Coverage is reported twice because two different things can miss a file, and a consumer
+deciding whether a cycle is trustworthy needs both:
+
+- **`skipped`** — files the walk saw and did not hand on: too large, a symlink, an
+  excluded path. Reasons and counts as the walk recorded them.
+- **`engines_skipped`** — what an engine could not be asked about, keyed by engine slug.
+  A filename holding a newline cannot be expressed as an argument to a command-line
+  scanner, so the engine reports `unscannable_path_name` and the file goes unexamined
+  while the engine itself still completes.
+
+They are kept apart rather than added together. A file refused by three engines is one
+file the cycle did not look at, not three, and summing them would make the number grow
+with however many engines happen to be installed. Keeping them separate also preserves
+attribution: which engine could not, and why.
+
+A cycle with `"status": "completed"` and a non-empty `engines_skipped` scanned less than
+it considered. Treating `completed` alone as "everything was examined" is the reading this
+field exists to prevent (D-054).
 
 ### `engine.failed`
 
