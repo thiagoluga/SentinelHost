@@ -169,6 +169,14 @@ func chatMessage(env Envelope, esc escaper) string {
 			considered, _ := num(data["files_considered"])
 			fmt.Fprintf(&b, "files: %.0f scanned of %.0f considered\n", scanned, considered)
 		}
+		// "412 scanned of 18234 considered" reads as full coverage of what was considered,
+		// and with an unscannable path it is not: the file was considered, counted as
+		// scanned, and handed to no engine. D-054 put that in the JSON and D-055 put it on
+		// the panel; this is the surface that wakes somebody up, and it was still sending
+		// only the two numbers that look reassuring together.
+		if missed := notLookedAt(data); missed != "" {
+			fmt.Fprintf(&b, "not looked at: %s\n", esc(missed))
+		}
 		if v := asMap(data["verdicts"]); len(v) > 0 {
 			fmt.Fprintf(&b, "verdicts: %s\n", esc(counts(v)))
 		}
@@ -358,4 +366,64 @@ func firstNonEmpty(vs ...string) string {
 		}
 	}
 	return "unknown"
+}
+
+// notLookedAt renders what a cycle could not examine, or "" when there is nothing to say.
+//
+// Silence is deliberate for the empty case. This line sits under "files: N scanned of M
+// considered", which is accurate on its own when nothing was missed; adding "not looked
+// at: nothing" to every alert would train the reader to skip the line that matters on the
+// one occasion it is not empty.
+//
+// The two maps are kept apart and never summed, for D-054's reason: a file the walk never
+// handed on is unexamined, while a file one engine could not be asked about may still have
+// been examined by another.
+func notLookedAt(data map[string]any) string {
+	var parts []string
+
+	if walk := asMap(data["skipped"]); len(walk) > 0 {
+		if total := sumCounts(walk); total > 0 {
+			parts = append(parts, fmt.Sprintf("%d skipped by the walk (%s)", total, reasons(walk)))
+		}
+	}
+
+	engines := asMap(data["engines_skipped"])
+	slugs := make([]string, 0, len(engines))
+	for slug := range engines {
+		slugs = append(slugs, slug)
+	}
+	sort.Strings(slugs) // a message that reorders itself between cycles is hard to diff
+	for _, slug := range slugs {
+		per := asMap(engines[slug])
+		if total := sumCounts(per); total > 0 {
+			parts = append(parts,
+				fmt.Sprintf("%d %s could not be asked about (%s)", total, slug, reasons(per)))
+		}
+	}
+
+	return strings.Join(parts, "; ")
+}
+
+// sumCounts adds a reason→count map, ignoring values that are not numbers.
+func sumCounts(m map[string]any) int {
+	total := 0
+	for _, v := range m {
+		if n, ok := num(v); ok {
+			total += int(n)
+		}
+	}
+	return total
+}
+
+// reasons lists the keys of a reason→count map in a stable order, made readable.
+//
+// The reason is the actionable half. "1 skipped" tells a reader something is wrong;
+// "1 skipped (unscannable path name)" tells them what to go and look at.
+func reasons(m map[string]any) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, strings.ReplaceAll(k, "_", " "))
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ", ")
 }
