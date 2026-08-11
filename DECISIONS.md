@@ -2093,3 +2093,46 @@ here.**
 
 **What this does not change**: the terminal output, which was correct throughout. This
 entry is about the interface that no human reads and every integration does.
+
+## D-055 — the panel says what the cycle did not look at, and "not recorded" is an answer
+
+**Context**: the counterpart of D-054, found the way D-032 was found after D-031 — by
+asking whether the panel repeats the mistake the CLI had just stopped making. It did.
+
+With a file no engine could be asked about, the dashboard showed
+
+```
+Considered  2
+Scanned     2
+```
+
+side by side, and the post-scan toast said `2 file(s) scanned.` Both read as full
+coverage. The two skip maps were in the stored summary the whole time; they stopped at the
+handler, which assembles `last_scan` field by field and never forwarded them.
+
+The comment already sitting above that payload had stated the rule it was breaking: "The
+coverage always travels with the summary. A panel that shows '0 threats' without saying
+that half the engines are down hides exactly the information the user needs in order to
+trust the number." Engine availability travelled. What went unexamined did not. **A rule
+written in a comment above the code is not enforced by being there.**
+
+**Decision**: both skip maps reach the panel, and an absent one is not an empty one.
+
+- **Two fields, never one total**, for D-054's reason: a file the walk never handed on is
+  unexamined, while a file one engine could not be asked about may still have been examined
+  by another. Adding them invents a number true of neither.
+- **`summaryMap` returns nil for an absent or unreadable key.** A cycle recorded before
+  these fields existed has no such key, and answering `{}` would state that nothing was
+  missed on the authority of a record that was never able to make the claim. The panel
+  renders `not recorded`, which is a different sentence from `nothing`.
+- **The JSON round trip is pinned by a test.** The typed maps that go into SQLite come back
+  as `map[string]any` of `float64`. A helper that asserted the original types would answer
+  nil for every stored cycle and report "not recorded" to every user forever — while
+  passing a test written against the types it was given rather than the types it receives.
+  That is D-022's failure shape exactly, one layer down.
+
+**What is NOT covered, stated rather than implied**: the JavaScript helper was exercised
+against seven shapes with `node` during development, but this repository has no JS test
+harness, so nothing re-runs it. The Go side is tested; the rendering is not. Adding a JS
+toolchain is a larger decision than this change should make on its own, and pretending the
+coverage exists would be the same lie the change is about.
