@@ -2136,3 +2136,48 @@ against seven shapes with `node` during development, but this repository has no 
 harness, so nothing re-runs it. The Go side is tested; the rendering is not. Adding a JS
 toolchain is a larger decision than this change should make on its own, and pretending the
 coverage exists would be the same lie the change is about.
+
+## D-056 — a skip is not always a gap
+
+**Context**: found by reading a real account's cycle instead of a fixture, after D-054 made
+engine skips visible in the machine interface. The host reported:
+
+```
+skipped: outside_requested_scope=853, unknown_rule=260
+```
+
+which announces 1113 unexamined files. **Not one of them was unexamined.** The 260 are
+findings sitting in the report under a generic category, and the 853 are paths the
+orchestrator never asked about.
+
+`Scope.SkippedReasonCounts` is documented to answer exactly one question — what did the
+scan NOT look at — and wpchecksums had already been through this: a plugin that verified
+CLEAN was once counted there under `plugin_verified`, so a user reading
+`skipped: plugin_verified=1` concluded coverage was lost and went hunting for a problem
+that did not exist. It was taken out, with a comment saying only genuine gaps go in.
+
+Two other adapters were still doing it, and D-054 had just amplified them: the counts now
+travel to the webhook, the database, the panel and the alert, where the wording is "could
+not be asked about". The fix that made coverage honest made this dishonesty louder.
+
+**Decision**: `Scope.NoteCounts`, separate from `SkippedReasonCounts`.
+
+- **A note is recorded, never discarded** — `engines_notes` in the event, a `notes:` line
+  in the text report. An unmapped rule is how an adapter's rule table gets maintained, and
+  a maintenance signal that exists only in the database gets maintained by nobody.
+- **`unknown_rule`, `unknown_signature_family`, `outside_requested_scope` are notes.** The
+  first two count findings that ARE reported, under `other`/`medium`/`heuristic`; the third
+  counts paths outside what was asked for, whose absence costs no coverage of what was.
+- **`vanished_before_hashing` and `forged_report_path` stay gaps.** A file that disappeared
+  before it could be hashed really was not examined.
+- **The panel and the alert read only `engines_skipped`**, so their existing wording became
+  correct without being touched. Notes deliberately do not reach the alert: an alert that
+  reports 1113 non-problems is one its reader turns off, and then it reports nothing.
+- **The tests assert both halves** — that the count is present in `NoteCounts` AND absent
+  from `SkippedReasonCounts`. Asserting only the first would let a future change put it in
+  both and pass.
+
+**What this says about the earlier fix**: D-054 was correct and incomplete. Making a
+number visible does not make it true, and the visibility is what exposed that this one was
+not. The lesson is not "check the JSON" — it is that surfacing a count obliges you to
+check what the count actually means.

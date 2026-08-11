@@ -227,8 +227,15 @@ func TestAnUnknownFamilyIsNotDiscarded(t *testing.T) {
 	if rep.Findings[0].Category != schema.CategoryOther {
 		t.Errorf("category: %q, expected other", rep.Findings[0].Category)
 	}
-	if rep.Scope.SkippedReasonCounts["unknown_signature_family"] == 0 {
-		t.Errorf("the unknown family should be counted: %v", rep.Scope.SkippedReasonCounts)
+	if rep.Scope.NoteCounts["unknown_signature_family"] == 0 {
+		t.Errorf("the unknown family should be counted: %v", rep.Scope.NoteCounts)
+	}
+	// And NOT as a coverage gap. The hit is in the report above under the generic
+	// category; counting it as skipped tells the operator a file went unexamined when it
+	// is sitting in the findings list they are reading.
+	if n, ok := rep.Scope.SkippedReasonCounts["unknown_signature_family"]; ok {
+		t.Errorf("counted as a gap (%d): SkippedReasonCounts answers what the scan did "+
+			"NOT look at, and this hit was looked at", n)
 	}
 }
 

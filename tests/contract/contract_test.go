@@ -191,8 +191,14 @@ func TestAMWScanAnUnknownRuleIsNotDiscarded(t *testing.T) {
 	if !found {
 		t.Fatal("the unknown-rule finding was discarded")
 	}
-	if rep.Scope.SkippedReasonCounts["unknown_rule"] == 0 {
-		t.Errorf("the unknown rule should be counted: %v", rep.Scope.SkippedReasonCounts)
+	if rep.Scope.NoteCounts["unknown_rule"] == 0 {
+		t.Errorf("the unknown rule should be counted: %v", rep.Scope.NoteCounts)
+	}
+	// And NOT as a coverage gap. The finding is in the report above as other/medium;
+	// counting it as skipped announces an unexamined file that is sitting in the list.
+	if n, ok := rep.Scope.SkippedReasonCounts["unknown_rule"]; ok {
+		t.Errorf("counted as a gap (%d): SkippedReasonCounts answers what the scan did "+
+			"NOT look at, and this finding was looked at", n)
 	}
 }
 

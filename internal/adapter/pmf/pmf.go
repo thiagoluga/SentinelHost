@@ -367,10 +367,11 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 	}
 
 	if unknown > 0 {
-		if rep.Scope.SkippedReasonCounts == nil {
-			rep.Scope.SkippedReasonCounts = map[string]int{}
+		if rep.Scope.NoteCounts == nil {
+			rep.Scope.NoteCounts = map[string]int{}
 		}
-		rep.Scope.SkippedReasonCounts["unknown_rule"] = unknown
+		// Not a gap: the finding is in the report as other/medium/heuristic.
+		rep.Scope.NoteCounts["unknown_rule"] = unknown
 	}
 	return rep, nil
 }

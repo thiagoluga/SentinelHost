@@ -518,10 +518,12 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 	}
 
 	if totals.unknownFamilies > 0 {
-		if rep.Scope.SkippedReasonCounts == nil {
-			rep.Scope.SkippedReasonCounts = map[string]int{}
+		if rep.Scope.NoteCounts == nil {
+			rep.Scope.NoteCounts = map[string]int{}
 		}
-		rep.Scope.SkippedReasonCounts["unknown_signature_family"] = totals.unknownFamilies
+		// Not a gap: classify() falls back to a generic mapping and the hit is reported.
+		// The count is here so the family table gets maintained.
+		rep.Scope.NoteCounts["unknown_signature_family"] = totals.unknownFamilies
 	}
 	return rep, nil
 }

@@ -108,6 +108,7 @@ after the configured retention.
   "skipped": { "too_large": 6 },
   "engines_ran": ["wp-checksums", "amwscan", "php-malware-finder"],
   "engines_skipped": { "amwscan": { "unscannable_path_name": 1 } },
+  "engines_notes": { "amwscan": { "unknown_rule": 260, "outside_requested_scope": 853 } },
   "engines_abstained": [{ "engine": "maldet", "reason": "the binary was not found on PATH" }],
   "verdicts": { "confirmed": 1, "likely": 0, "suspicious": 3, "clean": 408 },
   "actions": { "quarantined": 1, "recommended": 0, "failed": 0 }
@@ -131,6 +132,19 @@ They are kept apart rather than added together. A file refused by three engines 
 file the cycle did not look at, not three, and summing them would make the number grow
 with however many engines happen to be installed. Keeping them separate also preserves
 attribution: which engine could not, and why.
+
+- **`engines_notes`** — bookkeeping an engine wants recorded that is **not** a coverage
+  gap, keyed by engine slug. `unknown_rule` and `unknown_signature_family` count findings
+  whose rule is missing from the adapter's table: the finding IS in the report, under a
+  generic category, and the count exists so the table gets maintained.
+  `outside_requested_scope` counts findings the engine volunteered about paths the
+  orchestrator never asked for.
+
+The split matters more than it looks. One real account reported `outside_requested_scope=853,
+unknown_rule=260` as skips — 1113 files announced as unexamined, none of which were. A
+consumer deciding whether to trust a cycle must read `engines_skipped` and ignore
+`engines_notes`; a maintainer deciding whether an adapter's rule table needs a line reads
+the opposite one.
 
 A cycle with `"status": "completed"` and a non-empty `engines_skipped` scanned less than
 it considered. Treating `completed` alone as "everything was examined" is the reading this
