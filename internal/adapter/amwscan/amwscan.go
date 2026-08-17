@@ -398,6 +398,33 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 		return out, fmt.Errorf("reading the AMWScan report: %w", err)
 	}
 
+	// And the archive has to hold what Parse reads.
+	//
+	// The executor archives the PROCESS's stdout and points RawRef at it. For this engine
+	// that file is the wrong stream: --silent keeps stdout empty of findings, and the
+	// report the adapter just loaded into out.Stdout never reached the disk. So RawRef
+	// pointed at a file that Parse would read as a completed scan with no findings — and
+	// schema.ScanReport.RawRef documents the field as being "for auditing and for
+	// reprocessing through Parse()". Reprocessing it returned zero, with no error to say
+	// why. On the validation host the archived file is 1251 bytes without one `File:` line.
+	//
+	// The process's own stdout and stderr stay where they are: with --silent they hold
+	// PHP warnings rather than findings, which is worth keeping for diagnosis and worth
+	// not confusing with the report.
+	if out.RawRef != "" {
+		reportCopy := filepath.Join(filepath.Dir(out.RawRef), Slug+".report.log")
+		if err := os.WriteFile(reportCopy, content, 0o600); err != nil {
+			// A failed archive does not invalidate the scan — the findings are in memory
+			// and the cycle proceeds. But RawRef must not be left pointing at the stdout
+			// file, because that is the misleading state this block exists to end: an
+			// auditor following it would read a scan that found nothing. No pointer is a
+			// worse audit trail than a good one and a better trail than a false one.
+			out.RawRef = ""
+		} else {
+			out.RawRef = reportCopy
+		}
+	}
+
 	return out, nil
 }
 
