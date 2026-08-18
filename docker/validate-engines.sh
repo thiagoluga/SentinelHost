@@ -350,7 +350,12 @@ section "Running the engines directly (the baseline)"
 if [[ -f "$PHAR" ]] && [[ -n "${help_amw:-}" ]]; then
   php -d memory_limit=256M "$PHAR" --report --report-format txt \
       --path-report /tmp/direct --no-colors --silent "$SITE" >/dev/null 2>&1
-  n_amw=$(grep -c '^File:' /tmp/direct.log 2>/dev/null || echo 0)
+  # `grep -c` prints 0 AND exits 1 when it matches nothing, so `|| echo 0` appended a
+  # SECOND zero and left the variable holding two lines, each reading 0. Every arithmetic
+  # test on it after that died with "arithmetic syntax error" and evaluated false — so an
+  # AMWScan that legitimately found nothing on its own would skip this entire cross-check
+  # in silence, which is the outcome the cross-check exists to make impossible.
+  n_amw=$( { grep -c '^File:' /tmp/direct.log || true; } 2>/dev/null )
   info "AMWScan directly over the root: $n_amw file(s) flagged"
   ok "a real report is available at /tmp/direct.log (use it as a new fixture)"
 fi
@@ -756,6 +761,63 @@ else
   warn "the evasion payload was never planted, so this section proves nothing"
 fi
 
+# ---------------------------------------------------------------------------
+section "The audit trail (schema: raw_ref is for reprocessing through Parse)"
+
+# An archive with no findings in it cannot be reprocessed into findings.
+#
+# raw_ref is documented as being "for auditing and for reprocessing through Parse()". For
+# AMWScan the executor archives the PROCESS's stdout, which --silent keeps empty of
+# findings; the report the adapter parses was read straight into memory and never written
+# beside it. Following raw_ref therefore led to a file that Parse reads as a completed scan
+# that found nothing — the project's signature failure, inside the evidence trail.
+#
+# Only reachable against a real engine, which is why it lives here: nothing in the Go suite
+# exercises Scan at all, and Parse is only ever fed fixtures.
+# `config init` does not write data_dir when it equals the default, so an absent key means
+# ~/.sentinelhost rather than "unknown". Which one was used gets printed either way: a
+# check that silently looked in the wrong directory would report an empty archive as an
+# absent one, and this whole section is about not confusing those two.
+raw_line=$(grep -E '^[[:space:]]*data_dir[[:space:]]*=' "$CFG" | head -1)
+DATA=$(printf '%s' "$raw_line" | sed -E 's/^[^=]*=[[:space:]]*//; s/^"//; s/"[[:space:]]*$//')
+# Quoted on purpose. The first version printed the value unquoted, and an invisible
+# character showed as a blank — indistinguishable from "the key is absent". A stray chr(1)
+# from a bad sed replacement is what made this check look in a directory named after a
+# control character and report that it proved nothing. It was right that it proved nothing.
+echo "  the data_dir line in the config: '${raw_line:-<none>}'"
+if [[ -n "${DATA// /}" ]]; then
+  echo "  data_dir: '$DATA' (from the config)"
+else
+  DATA="$HOME/.sentinelhost"
+  echo "  data_dir: '$DATA' (the default; the config does not set it)"
+fi
+if [[ ! -d "$DATA/raw" ]]; then
+  warn "no raw archive directory at $DATA/raw: this section proves nothing"
+else
+  # The probe's own archive is excluded. `engines` runs AMWScan once just to read its
+  # version, and that invocation archives a couple of hundred bytes under raw/adhoc/. When
+  # a run has no scan to show — the engines failed to install, say — `ls -t` hands back the
+  # probe, and the audit trail would be graded on a file never meant to hold findings.
+  archived=$(ls -t "$DATA"/raw/*/amwscan* 2>/dev/null | grep -v -- '-probe' | head -1)
+  echo "  newest amwscan archive: ${archived:-<none>}"
+  if [[ -z "$archived" ]]; then
+    warn "the orchestrator archived nothing for amwscan, so there is no trail to check"
+  else
+    # State the counts before interpreting either of them.
+    bytes=$(wc -c < "$archived")
+    files=$( { grep -c '^File:' "$archived" || true; } 2>/dev/null )
+    echo "    bytes: $bytes   'File:' entries: $files   findings this cycle: ${orch_amw:-0}"
+    if [[ "${orch_amw:-0}" -eq 0 ]]; then
+      warn "amwscan reported no findings this cycle, so an empty archive proves nothing"
+    elif [[ "$files" -ge 1 ]]; then
+      ok "the archive holds the report Parse reads ($files entr(y|ies) for ${orch_amw} finding(s))"
+    else
+      fail "raw_ref points at $archived, which holds no findings at all — reprocessing it through Parse returns zero, and schema documents this field as being for exactly that"
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 section "Installer (Principle VII: installation in one command)"
 
 # install.sh is exercised against a "release" served locally. Without this, the only
