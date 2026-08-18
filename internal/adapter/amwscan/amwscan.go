@@ -487,10 +487,14 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 	allowed := allowedTargets(raw)
 
 	type pending struct {
-		rule  string
+		rule string
+		// extra is the parenthesised token: the function name for Function (eval), the
+		// pattern name for Exploit (base64_long), the hash for Signature (11413268). It
+		// is what classify keys on.
 		extra string
 		line  int64
-		tag   string
+		// snippet is the matched source line, shown as evidence and never classified on.
+		snippet string
 	}
 
 	var (
@@ -516,7 +520,7 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 			return
 		}
 
-		m, known := classify(current.rule, current.tag)
+		m, known := classify(current.rule, current.extra)
 		if !known {
 			unknown++
 		}
@@ -536,8 +540,8 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 		if current.extra != "" {
 			snippet += " (" + current.extra + ")"
 		}
-		if current.tag != "" {
-			snippet += " => " + current.tag
+		if current.snippet != "" {
+			snippet += " => " + current.snippet
 		}
 
 		rep.Findings = append(rep.Findings, schema.Finding{
@@ -621,9 +625,24 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 		if sectionRe.MatchString(line) {
 			continue
 		}
-		// The line "      => backdoor" is the category the engine assigned.
-		if m := tagRe.FindStringSubmatch(line); m != nil && current != nil && current.tag == "" {
-			current.tag = strings.TrimSpace(m[1])
+		// The indented "      => ..." line is the MATCHED SOURCE, not a category.
+		//
+		// It was read as the category, and given priority over everything else, because the
+		// stored fixture happened to show short values there — "=> backdoor", "=> eval" —
+		// that look exactly like category names. Against the real engine the same position
+		// holds the code that matched:
+		//
+		//     => exec('kill -' . (int) $signal . ' ' . (int) $pid . ' 2>/dev/null', $out, $code)
+		//
+		// which is content of the scanned file. Classifying on it means the category and
+		// severity of a finding could be steered by whatever the file's author put there,
+		// and on a real account it produced "categories" like `lave`, `ipconfig` and
+		// `suhosin` — fragments of somebody's source code.
+		//
+		// It is kept, because it is the evidence a user needs to see why a file was
+		// flagged. It is no longer allowed to decide what the finding IS.
+		if m := tagRe.FindStringSubmatch(line); m != nil && current != nil && current.snippet == "" {
+			current.snippet = strings.TrimSpace(m[1])
 			continue
 		}
 	}

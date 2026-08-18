@@ -67,12 +67,27 @@ var ruleTable = map[string]mapping{
 //
 // The second return value says whether the rule was known — the adapter uses it
 // to count how many new rules showed up.
-func classify(rule, tag string) (mapping, bool) {
-	// The tag (the report's "=> backdoor" line) is more specific than the rule
-	// name, so it wins: "Signature" with tag "backdoor" says more than
-	// "Signature" alone.
-	if tag != "" {
-		if m, ok := ruleTable[strings.ToLower(strings.TrimSpace(tag))]; ok {
+func classify(rule, detail string) (mapping, bool) {
+	// The parenthesised token is the discriminator, and it used to be thrown away.
+	//
+	// Real AMWScan output names the rule generically and puts the specific thing in
+	// parentheses:
+	//
+	//     => [!] Function (eval)
+	//     => [!] Function (exec) [line 147]
+	//     => [!] Signature (11413268) [line 66]
+	//
+	// "Function" is not in this table and never will be, so every one of those landed on
+	// other/medium/heuristic while the word that decides the answer sat one pair of
+	// brackets away. On one real account that was 199 `eval` and 29 `exec` findings shown
+	// as generic medium heuristics — eval being the single strongest backdoor indicator
+	// PHP has.
+	//
+	// Tried before the rule name because it is strictly more specific. A hash from
+	// Signature (11413268) matches nothing here and falls through to "signature", which is
+	// the intended answer for it.
+	if detail != "" {
+		if m, ok := ruleTable[strings.ToLower(strings.TrimSpace(detail))]; ok {
 			return m, true
 		}
 	}
