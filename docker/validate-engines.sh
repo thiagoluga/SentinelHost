@@ -499,12 +499,22 @@ elif [[ "${n_amw:-0}" -gt 0 ]]; then
   if [[ "$shortfall" -le 0 ]]; then
     ok "the orchestrator saw everything AMWScan saw on its own ($orch_amw of $n_amw)"
   else
-    scope_json=$(sentinelhost scan --config "$CFG" --full --json 2>/dev/null || true)
+    # Read from the cycle already run above, rather than running another one.
+    #
+    # This used to launch a second full scan just to read three counters. On a real
+    # WordPress each one costs about eight minutes, and three checks added in one day
+    # each doing that took `make validate-engines` from a quarter of an hour to nearly an
+    # hour — long enough that a person stops running it, which is the only way this script
+    # actually fails.
+    #
+    # The counters are in $scan_output already: since #92 the text report prints the
+    # engine's notes and gaps on their own lines. Same cycle, same numbers, no second walk.
+    excused_src="$scan_output"
     # State the evidence before interpreting it: an empty read is not an accounted zero.
-    if [[ -z "$scope_json" ]]; then
-      fail "the orchestrator saw $orch_amw of AMWScan's $n_amw and the JSON could not be read to explain the $shortfall missing"
+    if [[ -z "$excused_src" ]]; then
+      fail "the orchestrator saw $orch_amw of AMWScan's $n_amw and the cycle output could not be read to explain the $shortfall missing"
     else
-      excused=$(printf '%s' "$scope_json"         | grep -oE '"(outside_requested_scope|vanished_before_hashing|forged_report_path)":[[:space:]]*[0-9]+'         | grep -oE '[0-9]+$' | awk '{t+=$1} END {print t+0}')
+      excused=$(printf '%s' "$excused_src"         | grep -oE '(outside_requested_scope|vanished_before_hashing|forged_report_path)=[0-9]+'         | grep -oE '[0-9]+$' | awk '{t+=$1} END {print t+0}')
       echo "    AMWScan alone: $n_amw   orchestrator: $orch_amw   accounted for: $excused"
       if [[ "$shortfall" -le "$excused" ]]; then
         ok "the $shortfall AMWScan finding(s) the orchestrator did not take are accounted for"
