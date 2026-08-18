@@ -61,6 +61,60 @@ var ruleTable = map[string]mapping{
 	"suspicious":  {schema.CategoryOther, schema.SeverityMedium, schema.ConfidenceHeuristic},
 	"unsafe":      {schema.CategoryOther, schema.SeverityMedium, schema.ConfidenceHeuristic},
 	"permissions": {schema.CategorySuspiciousPerms, schema.SeverityMedium, schema.ConfidenceAnomaly},
+
+	// AMWScan's Exploit vocabulary, mapped from the descriptions the engine itself prints
+	// on the "- " line under every finding. Those descriptions are quoted here so the next
+	// person can check the mapping against the source rather than against my reading of it.
+	// Captured from a live account (see tests/testdata/raw/amwscan/PROVENANCE.md), where
+	// `execution` alone accounted for 732 findings.
+	//
+	// "RCE (Remote Code Execution) allow remote attackers to execute PHP code on the
+	// target machine via HTTP" — the same thing `eval` means, which is why it lands in the
+	// same place.
+	"execution": {schema.CategoryBackdoor, schema.SeverityCritical, schema.ConfidenceHeuristic},
+	// "Nano is a family of PHP webshells which are code golfed to be extremely stealthy
+	// and efficient" — a named webshell family, not a pattern that happens to look bad.
+	"nano": {schema.CategoryWebshell, schema.SeverityCritical, schema.ConfidenceHeuristic},
+	// "LFI (Local File Inclusion), through a image inclusion, allow remote attackers to
+	// inject and execute arbitrary commands or code" — the same category and weight the
+	// table already gives plain `include`.
+	"clever_include": {schema.CategoryInjection, schema.SeverityHigh, schema.ConfidenceHeuristic},
+
+	// The obfuscation family. Every one of these says "usually used for the obfuscation of
+	// malicious code", and USUALLY is the operative word: minified libraries, licence
+	// blobs and legitimate encoders trip them too.
+	//
+	// Medium, matching the existing `encoded` entry rather than `obfuscated`. Obfuscation
+	// on its own is a reason to look, not a reason to act, and a heuristic that fires on
+	// ordinary vendor code at high severity is one whose severity stops meaning anything.
+	"base64_long":             {schema.CategoryObfuscation, schema.SeverityMedium, schema.ConfidenceHeuristic},
+	"hex_char":                {schema.CategoryObfuscation, schema.SeverityMedium, schema.ConfidenceHeuristic},
+	"double_var2":             {schema.CategoryObfuscation, schema.SeverityMedium, schema.ConfidenceHeuristic},
+	"concat_vars_array":       {schema.CategoryObfuscation, schema.SeverityMedium, schema.ConfidenceHeuristic},
+	"concat_vars_with_spaces": {schema.CategoryObfuscation, schema.SeverityMedium, schema.ConfidenceHeuristic},
+
+	// "Comments composed by 5 random chars usually used to detect if a file is infected
+	// yet" — a marker malware leaves behind to recognise its own work. Not a technique the
+	// file performs, so it is not backdoor or webshell; it is a strong sign the file has
+	// been touched by something that keeps bookkeeping.
+	"infected_comment": {schema.CategoryOther, schema.SeverityHigh, schema.ConfidenceHeuristic},
+
+	// Two are deliberately NOT here, and the reason belongs next to the ones that are.
+	//
+	//   etc_passwd — "the /etc/passwd file on Unix systems contains password information,
+	//     an attacker who has accessed the etc/passwd file may attempt a brute force
+	//     attack". True of an attacker; also true of every config parser, test fixture and
+	//     tutorial that mentions the path. The engine is describing what the string means
+	//     when an attacker wrote it, and the pattern cannot tell who did.
+	//
+	//   php_uname — the engine files it under RCE. It is one information-gathering call,
+	//     which diagnostics and installers make legitimately. Calling that critical on its
+	//     own would put ordinary code next to webshells in the same list.
+	//
+	// Both stay unknown, which means other/medium/heuristic and a line in the note counts
+	// so they keep showing up as something to decide about. That is the honest state for a
+	// pattern whose meaning depends on who wrote the file, and an unmapped rule is not a
+	// discarded one.
 }
 
 // classify translates the engine's rule name into the normalized schema.
