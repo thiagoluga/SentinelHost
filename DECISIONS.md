@@ -2181,3 +2181,72 @@ not be asked about". The fix that made coverage honest made this dishonesty loud
 number visible does not make it true, and the visibility is what exposed that this one was
 not. The lesson is not "check the JSON" — it is that surfacing a count obliges you to
 check what the count actually means.
+
+## D-057 — the discriminator is in the parentheses, and a real capture is not enough
+
+**Context**: found by reading the raw AMWScan report from a live account, which only became
+possible with #94 — until then `raw_ref` pointed at the process's stdout, which `--silent`
+keeps empty of findings.
+
+The real engine names the rule generically and puts the specific thing in parentheses:
+
+```text
+ => [!] Function (exec) [line 147]
+    - Potentially dangerous function `exec`
+      => exec('kill -' . (int) $signal . ' ' . (int) $pid . ' 2>/dev/null', $out, $code)
+```
+
+`Function` is not in the rule table and never will be. `exec` is, and always was. The
+adapter captured it into a field used only for display and classified on the rule name, so
+on that account 288 of 333 `Function` findings — 199 of them `eval` — came out as
+`other`/`medium`/`heuristic`.
+
+And the indented `=> ...` line was read as the category the engine assigned, **with
+priority over everything else**. It is the source that matched. On that account the
+resulting "categories" read `lave`, `tressa`, `ipconfig`, `suhosin`: fragments of somebody
+else's code. `lave` is `eval` backwards, because AMWScan detects `strrev`-obfuscated calls
+and prints the reversed string — so an obfuscated backdoor classified as unknown while the
+plain word sat one pair of brackets away.
+
+**Decision**: classify on the parenthesised token, fall back to the rule name, never on the
+matched source.
+
+- **The token first, because it is strictly more specific.** A hash from
+  `Signature (11413268)` matches nothing in the table and falls through to `signature`,
+  which is the intended answer for it.
+- **The matched source is kept as evidence and never classified on.** It comes out of the
+  scanned file, which means the file's author chooses it. Nothing exploits that today —
+  the snippet is usually far too long to collide with a table key — but what a finding IS
+  must not be selectable by the thing being examined.
+
+**This changes scores, and that is stated rather than buried.** The `Function` cases do
+not: `eval` and the unknown fallback are both `heuristic`, so the multiplier is identical
+and only the category and severity a human reads to triage change. `Signature` does. Those
+were classified by the snippet — the word `backdoor` in the container's corpus, a heuristic
+entry — and now reach `signature`:
+
+```text
+before:  vote: amwscan  weight 0.80 x heuristic = 0.64  (rule Signature)
+after:   vote: amwscan  weight 0.80 x signature = 0.80  (rule Signature)
+```
+
+That is the weight the project always intended for a signature hit. It also means a site
+with a signature plus one weak vote can now cross from `likely` to `confirmed`, and
+`confirmed` is what authorises an automatic quarantine. In the validation corpus nothing
+crossed: `confirmed=1 likely=3 suspicious=3` both with and without the change, same image,
+only the classification line reverted.
+
+**The lesson, which is not the obvious one**: the fixture this was all built on is
+**genuine**. `=> backdoor` really was printed, because that hit's matched content happened
+to be the word "backdoor". A real capture was taken, and a wrong model was still built on
+it, because one sample cannot tell you which parts of a line are structure and which are
+content. D-022 says verify against reality rather than assumption; this adds that **a real
+capture is necessary and not sufficient** — where a format matters, capture more than one
+file, from more than one site. The second capture disagreed with the first about the only
+thing that mattered.
+
+**What was deliberately not done**: the `Exploit` vocabulary — `execution` (732 on that
+account), `base64_long`, `hex_char`, `nano`, `etc_passwd`, `php_uname`, `clever_include` —
+is still unmapped. Each needs the engine's own description read before being mapped, and
+those descriptions are in the report on the `- ` line under each finding. Mapping them from
+the names alone is the guess this entry is about not making.

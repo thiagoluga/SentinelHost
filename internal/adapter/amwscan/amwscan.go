@@ -398,6 +398,33 @@ func (a *Adapter) Scan(ctx context.Context, env adapter.Environment, req adapter
 		return out, fmt.Errorf("reading the AMWScan report: %w", err)
 	}
 
+	// And the archive has to hold what Parse reads.
+	//
+	// The executor archives the PROCESS's stdout and points RawRef at it. For this engine
+	// that file is the wrong stream: --silent keeps stdout empty of findings, and the
+	// report the adapter just loaded into out.Stdout never reached the disk. So RawRef
+	// pointed at a file that Parse would read as a completed scan with no findings — and
+	// schema.ScanReport.RawRef documents the field as being "for auditing and for
+	// reprocessing through Parse()". Reprocessing it returned zero, with no error to say
+	// why. On the validation host the archived file is 1251 bytes without one `File:` line.
+	//
+	// The process's own stdout and stderr stay where they are: with --silent they hold
+	// PHP warnings rather than findings, which is worth keeping for diagnosis and worth
+	// not confusing with the report.
+	if out.RawRef != "" {
+		reportCopy := filepath.Join(filepath.Dir(out.RawRef), Slug+".report.log")
+		if err := os.WriteFile(reportCopy, content, 0o600); err != nil {
+			// A failed archive does not invalidate the scan — the findings are in memory
+			// and the cycle proceeds. But RawRef must not be left pointing at the stdout
+			// file, because that is the misleading state this block exists to end: an
+			// auditor following it would read a scan that found nothing. No pointer is a
+			// worse audit trail than a good one and a better trail than a false one.
+			out.RawRef = ""
+		} else {
+			out.RawRef = reportCopy
+		}
+	}
+
 	return out, nil
 }
 
@@ -460,10 +487,14 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 	allowed := allowedTargets(raw)
 
 	type pending struct {
-		rule  string
+		rule string
+		// extra is the parenthesised token: the function name for Function (eval), the
+		// pattern name for Exploit (base64_long), the hash for Signature (11413268). It
+		// is what classify keys on.
 		extra string
 		line  int64
-		tag   string
+		// snippet is the matched source line, shown as evidence and never classified on.
+		snippet string
 	}
 
 	var (
@@ -489,7 +520,7 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 			return
 		}
 
-		m, known := classify(current.rule, current.tag)
+		m, known := classify(current.rule, current.extra)
 		if !known {
 			unknown++
 		}
@@ -509,8 +540,8 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 		if current.extra != "" {
 			snippet += " (" + current.extra + ")"
 		}
-		if current.tag != "" {
-			snippet += " => " + current.tag
+		if current.snippet != "" {
+			snippet += " => " + current.snippet
 		}
 
 		rep.Findings = append(rep.Findings, schema.Finding{
@@ -594,9 +625,24 @@ func (a *Adapter) Parse(raw adapter.RawOutput) (schema.ScanReport, error) {
 		if sectionRe.MatchString(line) {
 			continue
 		}
-		// The line "      => backdoor" is the category the engine assigned.
-		if m := tagRe.FindStringSubmatch(line); m != nil && current != nil && current.tag == "" {
-			current.tag = strings.TrimSpace(m[1])
+		// The indented "      => ..." line is the MATCHED SOURCE, not a category.
+		//
+		// It was read as the category, and given priority over everything else, because the
+		// stored fixture happened to show short values there — "=> backdoor", "=> eval" —
+		// that look exactly like category names. Against the real engine the same position
+		// holds the code that matched:
+		//
+		//     => exec('kill -' . (int) $signal . ' ' . (int) $pid . ' 2>/dev/null', $out, $code)
+		//
+		// which is content of the scanned file. Classifying on it means the category and
+		// severity of a finding could be steered by whatever the file's author put there,
+		// and on a real account it produced "categories" like `lave`, `ipconfig` and
+		// `suhosin` — fragments of somebody's source code.
+		//
+		// It is kept, because it is the evidence a user needs to see why a file was
+		// flagged. It is no longer allowed to decide what the finding IS.
+		if m := tagRe.FindStringSubmatch(line); m != nil && current != nil && current.snippet == "" {
+			current.snippet = strings.TrimSpace(m[1])
 			continue
 		}
 	}
