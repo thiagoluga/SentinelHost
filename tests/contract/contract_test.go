@@ -100,18 +100,37 @@ func TestAMWScanParsesFindings(t *testing.T) {
 	}
 }
 
-func TestAMWScanTheTagBeatsTheRuleName(t *testing.T) {
-	// The line "      => backdoor" is more specific than the rule name:
-	// "Signature" alone does not say which family the finding belongs to.
+// This test used to assert the opposite, and it was wrong in the way D-022 describes:
+// an assumption about an external format, plus a test written to confirm the assumption.
+//
+// It read the indented "      => backdoor" line as the category the engine assigned, and
+// gave it priority over everything else. That line is the SOURCE THAT MATCHED. It looked
+// like a category only because this fixture was shaped by hand; the real engine puts code
+// there, and on a live account it produced "categories" reading `lave`, `ipconfig` and
+// `suhosin` — one of which is `eval` spelled backwards, from AMWScan's own detection of
+// strrev-obfuscated calls.
+//
+// A Signature hit is known malware. That is what the engine means by it, and no line of
+// the scanned file's own source gets to say otherwise — least of all because its author
+// chose what is written there.
+func TestAMWScanASignatureIsKnownMalware(t *testing.T) {
 	a := amwscan.New().WithStat(fakeStat)
 	rep, err := a.Parse(raw(amwscan.Slug, fixture(t, "amwscan", "success-with-findings.txt"), schema.StatusCompleted))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
+	seen := 0
 	for _, f := range rep.Findings {
-		if f.Rule == "Signature" && f.Category != schema.CategoryBackdoor {
-			t.Errorf("the `backdoor` tag should have set the category, got %q", f.Category)
+		if f.Rule != "Signature" {
+			continue
 		}
+		seen++
+		if f.Category != schema.CategoryKnownMalware {
+			t.Errorf("a Signature hit came out as %q, wanted known_malware", f.Category)
+		}
+	}
+	if seen == 0 {
+		t.Fatal("the fixture carries no Signature finding")
 	}
 }
 
